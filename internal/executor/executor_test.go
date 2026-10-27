@@ -91,6 +91,8 @@ func TestBuiltinSystemPromptFramesTheHeadlessRun(t *testing.T) {
 		"Monitor",               // nor does leaving something in the background
 		"waiting for something", // so a run must not end by announcing a wait
 		"ids and links",         // unfinished work is named concretely instead
+		"whole disk",            // no open-ended scans that raise privacy prompts
+		"a path the task",       // while named paths (e.g. OneDrive files) stay allowed
 	} {
 		if !strings.Contains(headlessSystemPrompt, want) {
 			t.Fatalf("headless prompt must mention %q", want)

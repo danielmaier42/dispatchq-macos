@@ -1238,6 +1238,14 @@ ends with a question — all of which die with the run. So the prompt tells it t
 - name anything unfinished concretely — pull request, build, run ids and links —
   in the last message, because that message is what reaches your phone.
 
+It also tells a run never to search the whole disk or home folder (`find /`,
+`find ~`) for a tool or file. Such a sweep walks into Music, Photos, OneDrive and
+network volumes, and macOS attributes every access by a run to DispatchQ, so you
+would see an unexplained privacy prompt for DispatchQ that blocks the run until
+answered. Paths a task names, or that its instructions point to, stay
+accessible: a job that reads a spreadsheet in OneDrive still does, and macOS asks
+once for that folder.
+
 You don't need to repeat any of this in a task's prompt. None of it applies to
 a [script job](#script-jobs): there is no model to tell anything to.
 

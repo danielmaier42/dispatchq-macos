@@ -653,7 +653,7 @@ in the list, and leaving Settings keeps the draft for the session.
 | | | Review provider / Review model | Which provider answers the review, and with which model. Only providers that can hold an *aside* are offered; *Default* follows the global default provider, and the model falls back to the reviewing provider's own default. |
 | | Assistant | Assistant provider / Assistant model | Which provider answers in [Ask DispatchQ](#asking-dispatchq) and drafts the GitHub issue on the [Feedback](#sending-feedback) page, and with which model. Left at *DispatchQ's choice*, on Claude Code the chat uses a mid-size model (Sonnet) and feedback a small one (Haiku), rather than whatever you picked for real tasks; other harnesses use their own default. Only providers that can hold an *aside* are offered. |
 | **System** | Danger zone | Remove DispatchQ from this Mac | **Uninstall…** asks you to type *uninstall*, then opens the uninstaller in the macOS Installer. Your tasks, history and settings are kept unless you select them under **Customize**. See [Uninstall](#uninstall). |
-| **About** | Software updates | Version / Check for updates | Current version, when the last check ran, and a manual **Check for updates**; an available update shows its notes with **Download & install**, **Dismiss** and **All releases**. On a development build, **Reinstall** downloads the latest release and opens its installer; it stays disabled, with the reason, while that release is older than the oldest one that can read this build's data (2.0.0 for now, since 1.x cannot run on data moved by the DispatchQ rename). |
+| **About** | Software updates | Version / Check for updates | Current version, when the last check ran, and a manual **Check for updates** (`dispatchq update check` does the same from a terminal; the running app shows the result within a minute); an available update shows its notes with **Download & install**, **Dismiss** and **All releases**. On a development build, **Reinstall** downloads the latest release and opens its installer; it stays disabled, with the reason, while that release is older than the oldest one that can read this build's data (2.0.0 for now, since 1.x cannot run on data moved by the DispatchQ rename). |
 
 ## Providers
 
@@ -1054,6 +1054,7 @@ dispatchq settings [--json] [--default-provider ID]
                  [--pushover=BOOL] [--pushover-token T] [--pushover-user U]
                  [--ntfy=BOOL] [--ntfy-server S] [--ntfy-topic T] [--ntfy-token T]
                  [--webhook=BOOL] [--webhook-url U] [--webhook-template J]
+dispatchq update check [--json]                  # check for a newer release now; the app shows its update prompt
 dispatchq uninstall [--purge] [--yes]            # run the uninstaller in the terminal (see Uninstall)
 dispatchq --version
 ```

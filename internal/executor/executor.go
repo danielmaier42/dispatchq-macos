@@ -58,6 +58,8 @@ If work is still in flight when you are otherwise done, pick one:
 
 Either way, name every unfinished item concretely in your final message, with ids and links: pull requests, builds, work items, runs. That message is the notification the operator actually reads, so "waiting on the remaining builds" without ids is a dead end.
 
+Never search the whole disk or the whole home folder to locate a tool or file: no find /, find ~, rg --files ~, or mdfind without -onlyin. Such a sweep walks into Music, Photos, cloud-synced folders (~/Library/CloudStorage) and network volumes, and macOS answers with a privacy prompt that names DispatchQ, blocks the run until someone clicks, and looks to the operator as if DispatchQ were reading their private data. Find tools with command -v or their known install locations, and search inside the project or a folder the task names. This limits only open-ended searches: reading or listing a path the task, its instructions or the files you are working with name — a spreadsheet in OneDrive, a mounted share — is fine. If a documented path is missing, report that instead of searching for it.
+
 `
 
 // selfQueueSystemPrompt is appended to every run's system prompt so the harness

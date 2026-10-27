@@ -88,6 +88,9 @@ Usage:
                    (--paused=true stops every run globally; nothing starts, not
                    even run-now, until it is set back to false. --backfill-urgency
                    is the provider urgency above which backfill tasks run)
+  dispatchq update check [--json]
+                 (the running app checks GitHub for a newer release now, as Check for
+                 updates in About does, and shows its update prompt if there is one)
   dispatchq uninstall [--purge] [--yes]
                  (run the uninstaller package: remove the app, its background agent,
                  the wake permission and the installer receipt; --purge also deletes
@@ -115,6 +118,10 @@ func run(args []string) error {
 	// the uninstall is about to remove.
 	if args[0] == "uninstall" {
 		return cmdUninstall(args[1:])
+	}
+	// The update check is the daemon's; the CLI only asks it.
+	if args[0] == "update" {
+		return cmdUpdate(args[1:])
 	}
 
 	st, err := openStore()

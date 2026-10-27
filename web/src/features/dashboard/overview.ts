@@ -19,11 +19,12 @@ export function nextAt(t: QueueTask, now = Date.now()): Date | null | undefined 
 }
 
 // upNext is what the queue will start next: enabled tasks that are not
-// running, due ones first in queue order, then by start time.
+// running, due ones first in queue order, then by start time. Quiet-history
+// tasks are left out: a frequent watcher would otherwise always fill the card.
 export function upNext(tasks: QueueTask[], now = Date.now()): NextTask[] {
   const out: (NextTask & {i: number})[] = []
   tasks.forEach((task, i) => {
-    if (!task.enabled || task.running) return
+    if (!task.enabled || task.running || task.quiet_history) return
     const at = nextAt(task, now)
     if (at === undefined) return
     out.push({task, at, i})

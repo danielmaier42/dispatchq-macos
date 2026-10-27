@@ -434,7 +434,8 @@ first. The window opens on the Dashboard:
   [pool](#provider-pools) on one line, its members in the order a run started
   now would take them. Below that, cards in the order they need action:
   runs that **failed in the last 24 hours** (first while there are any), what
-  is **up next** (due tasks first, with the reason a task is held), what is
+  is **up next** (due tasks first, with the reason a task is held; tasks with
+  quiet history are left out), what is
   **running now** (and runs a rate limit paused, with their resume time), and
   the **last 7 days** (runs, success rate, tokens and cost). Each entry opens
   its log or its task; *+N more* opens the Log filtered to failures, or the
@@ -1554,6 +1555,8 @@ the record. Mark such a task **Quiet history** (the switch in the task form, or
   where **Cancel resume** lives.
 - While it is running, the Queue shows the task's *running* badge as usual, but
   there is no Log entry to open (and so no live log or **Cancel task**).
+- The Dashboard's **Up next** card leaves it out; the Queue still lists it with
+  its next run.
 
 Everything else — notifications the run sends, artifacts it publishes, tasks it
 queues — is unaffected. A task queued from inside a quiet-history run is **not**

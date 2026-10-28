@@ -5,7 +5,18 @@ import {BACKFILL_MAX, urgencyText} from './backfill'
 
 // UrgencyGauge puts a provider's urgency on the threshold's own scale, with
 // the threshold as a tick, so "above it" reads without comparing numbers.
-export function UrgencyGauge({u, threshold, spare}: {u: PoolRanking; threshold: number; spare: boolean}) {
+// barClassName lets a tight layout shorten the bar.
+export function UrgencyGauge({
+  u,
+  threshold,
+  spare,
+  barClassName,
+}: {
+  u: PoolRanking
+  threshold: number
+  spare: boolean
+  barClassName?: string
+}) {
   const text = urgencyText(u)
   if (u.tier > 0) return <div className="text-[12px] text-muted-foreground">{text}</div>
   const pos = (v: number) => `${(Math.min(v, BACKFILL_MAX) / BACKFILL_MAX) * 100}%`
@@ -21,7 +32,7 @@ export function UrgencyGauge({u, threshold, spare}: {u: PoolRanking; threshold: 
         className="flex w-fit items-center gap-2.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         tabIndex={0}
       >
-        <div className="relative h-1.5 w-20 rounded-full bg-surface-3">
+        <div className={cn('relative h-1.5 w-20 rounded-full bg-surface-3', barClassName)}>
           <div
             className={cn(
               'h-full rounded-full transition-[width] duration-300',
@@ -34,7 +45,7 @@ export function UrgencyGauge({u, threshold, spare}: {u: PoolRanking; threshold: 
             style={{left: pos(threshold)}}
           />
         </div>
-        <span className="text-[12px] text-muted-foreground tabular-nums">{text}</span>
+        <span className="text-[12px] whitespace-nowrap text-muted-foreground tabular-nums">{text}</span>
       </div>
     </Tooltip>
   )

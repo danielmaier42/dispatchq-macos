@@ -26,8 +26,28 @@ import {
 
 const valueTone = {ok: 'text-foreground', warning: 'text-warning-text', danger: 'text-danger'}
 const meterTone = {ok: 'accent', warning: 'warning', danger: 'danger'} as const
-// One template for every row, so the windows line up down a column.
-const row = 'grid grid-cols-[minmax(140px,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_180px] items-center gap-x-5'
+// One template for every row, so the windows line up down a column. The card
+// is the size container: below 700px the four columns no longer fit, so the
+// windows leave the provider's line and each takes a line of its own under it,
+// instead of meter, share and reset running into each other.
+const row =
+  'grid grid-cols-[minmax(6rem,1fr)_minmax(0,auto)] items-center gap-x-5 gap-y-1.5 @min-[700px]:grid-cols-[minmax(140px,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_180px]'
+const head = 'col-start-1 row-start-1'
+const gauge = 'col-start-2 row-start-1 @min-[700px]:col-start-4'
+// slot places a window by its column on a wide card and by its order among the
+// windows shown on a narrow one, so a provider with only a weekly window shows
+// it first below its name instead of after an empty line.
+const slot = {
+  first: {
+    2: 'col-span-full row-start-2 @min-[700px]:col-span-1 @min-[700px]:col-start-2 @min-[700px]:row-start-1',
+    3: 'col-span-full row-start-2 @min-[700px]:col-span-1 @min-[700px]:col-start-3 @min-[700px]:row-start-1',
+  },
+  second: {
+    3: 'col-span-full row-start-3 @min-[700px]:col-span-1 @min-[700px]:col-start-3 @min-[700px]:row-start-1',
+  },
+}
+const bothWindows =
+  'col-span-full row-start-2 @min-[700px]:col-span-2 @min-[700px]:col-start-2 @min-[700px]:row-start-1'
 
 // AllowanceStrip is how much of each enabled provider's allowance is left,
 // one line per provider, at the top of the Dashboard because it decides what
@@ -51,7 +71,7 @@ export function AllowanceStrip({
   const threshold = backfillThreshold(useSettings().data)
 
   return (
-    <Card className="mb-4 overflow-hidden">
+    <Card className="@container mb-4 overflow-hidden">
       <div className="flex items-center gap-2 border-b border-border py-1.5 pr-2 pl-4">
         <h2 className="text-[13px] font-semibold">Allowance</h2>
         <Tooltip
@@ -70,10 +90,9 @@ export function AllowanceStrip({
         <div className="divide-y divide-border">
           {[0, 1].map((i) => (
             <div key={i} className={cn(row, 'px-4 py-2.5')}>
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-3" />
-              <Skeleton className="h-3" />
-              <span />
+              <Skeleton className={cn(head, 'h-4 w-32')} />
+              <Skeleton className={cn(slot.first[2], 'h-3')} />
+              <Skeleton className={cn(slot.second[3], 'h-3')} />
             </div>
           ))}
         </div>
@@ -119,10 +138,11 @@ function ProviderLine({
   const failed = readFailed(l)
   const [five, week] = windowSlots(l.windows)
   const hasWindows = !!(five || week)
+  const weekSlot = five ? slot.second[3] : slot.first[3]
   const age = rowAge(l, newest)
   return (
     <div className={cn(row, 'min-h-10 px-4 py-2')}>
-      <div className="flex min-w-0 items-center gap-2">
+      <div className={cn(head, 'flex min-w-0 items-center gap-2')}>
         <ProviderLogo kind={kind} className="size-4" />
         <Tooltip
           content={[p.type_name, l.plan, p.default && 'default'].filter(Boolean).join(' · ') || p.name}
@@ -131,7 +151,7 @@ function ProviderLine({
             {p.name}
           </span>
         </Tooltip>
-        <div className="ml-auto shrink-0 text-[11.5px] text-subtle-foreground tabular-nums">
+        <div className="shrink-0 text-[11.5px] text-subtle-foreground tabular-nums @min-[700px]:ml-auto">
           {failed && hasWindows ? (
             <Tooltip content={limitStatusText(l, now)}>
               <span className="inline-flex items-center gap-1 text-warning-text" tabIndex={0}>
@@ -150,23 +170,31 @@ function ProviderLine({
       </div>
       {hasWindows ? (
         <>
-          <WindowCell w={five} now={now} dim={failed} />
-          <WindowCell w={week} now={now} dim={failed} />
+          <WindowCell w={five} now={now} dim={failed} className={slot.first[2]} />
+          <WindowCell w={week} now={now} dim={failed} className={weekSlot} />
         </>
       ) : (
         // Without windows the reason takes their place: muted where there is
         // simply nothing to show, in warning colour only for a failed read.
         <p
           className={cn(
-            'col-span-2 truncate text-[12.5px]',
+            bothWindows,
+            'truncate text-[12.5px]',
             failed ? 'text-warning-text' : 'text-muted-foreground',
           )}
         >
           {limitStatusText(l, now)}
         </p>
       )}
-      <div className="flex min-w-0 justify-end">
-        {p.urgency && hasWindows && <UrgencyGauge u={p.urgency} threshold={threshold} spare={p.backfill} />}
+      <div className={cn(gauge, 'flex min-w-0 justify-end')}>
+        {p.urgency && hasWindows && (
+          <UrgencyGauge
+            u={p.urgency}
+            threshold={threshold}
+            spare={p.backfill}
+            barClassName="hidden w-12 @min-[250px]:block @min-[700px]:w-20"
+          />
+        )}
       </div>
     </div>
   )
@@ -174,8 +202,18 @@ function ProviderLine({
 
 // WindowCell is one allowance window on a single line: its name, a meter of
 // what is left, the share left and when it resets.
-function WindowCell({w, now, dim}: {w: LimitWindow | null; now: number; dim: boolean}) {
-  if (!w) return <div aria-hidden />
+function WindowCell({
+  w,
+  now,
+  dim,
+  className,
+}: {
+  w: LimitWindow | null
+  now: number
+  dim: boolean
+  className: string
+}) {
+  if (!w) return null
   const left = windowLeft(w)
   const level = leftLevel(left)
   const reset = !w.resets_at
@@ -190,6 +228,7 @@ function WindowCell({w, now, dim}: {w: LimitWindow | null; now: number; dim: boo
       <div
         tabIndex={0}
         className={cn(
+          className,
           'flex min-w-0 items-center gap-2 rounded-sm text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
           dim && 'opacity-60',
         )}

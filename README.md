@@ -425,7 +425,9 @@ first. The window opens on the Dashboard:
   window (for Claude the 5-hour and the weekly window, for Codex the windows its
   account has) and when each resets; a bar turns orange at 25% left and red at
   10%. At the right end of each line sits the provider's urgency on a small
-  gauge with the [backfill threshold](#backfill-tasks) as a tick. The label shows
+  gauge with the [backfill threshold](#backfill-tasks) as a tick. In a narrow
+  window each allowance window moves to a line of its own under the
+  provider's name. The label shows
   only the urgency value, without a running-task count; it turns
   green while the provider is above it. It is read without spending any usage
   (see [How much is left](#how-much-is-left)); the strip says how old the

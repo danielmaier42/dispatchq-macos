@@ -3,7 +3,8 @@ import {cn} from '@/lib/utils'
 
 // ViewLayout is the frame every view uses: a header with the title and the
 // view's actions, an optional toolbar row under it (filters), then the
-// scrolling content. Views never position their own chrome.
+// scrolling content. Views never position their own chrome. When the actions
+// leave the title less than 18rem, they move to a line of their own.
 export function ViewLayout({
   title,
   subtitle,
@@ -29,15 +30,19 @@ export function ViewLayout({
       <header className="shrink-0 border-b border-border bg-background/80 backdrop-blur-xl">
         <div
           className={cn(
-            'mx-auto flex min-h-14 w-full items-center gap-3 px-6 py-2.5',
+            'mx-auto flex min-h-14 w-full flex-wrap items-center gap-x-3 gap-y-2 px-6 py-2.5',
             !wide && 'max-w-[1120px]',
           )}
         >
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-[1_1_18rem]">
             <h1 className="truncate text-[17px] leading-6 font-semibold tracking-[-0.01em]">{title}</h1>
             {subtitle && <p className="truncate text-[12.5px] text-muted-foreground">{subtitle}</p>}
           </div>
-          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          {actions && (
+            <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
+              {actions}
+            </div>
+          )}
         </div>
         {toolbar && (
           <div

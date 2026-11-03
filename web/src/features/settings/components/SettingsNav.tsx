@@ -10,7 +10,8 @@ const MARK_TIP: Record<NavMark, string> = {
   unsaved: 'Unsaved changes',
 }
 
-// SettingsNav is the section list on the left. It is a vertical tab list:
+// SettingsNav is the section list on the left (in a narrow content area, a
+// wrapping row above the section). It is a tab list:
 // ↑/↓ (and Home/End) move between sections, as in System Settings.
 export function SettingsNav({
   sections,
@@ -50,7 +51,7 @@ export function SettingsNav({
       aria-orientation="vertical"
       aria-label="Settings sections"
       onKeyDown={onKeyDown}
-      className="-mx-1 flex gap-0.5 overflow-x-auto px-1 pb-1 md:sticky md:top-0 md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0"
+      className="flex flex-wrap gap-0.5 @3xl/settings:sticky @3xl/settings:top-0 @3xl/settings:flex-col @3xl/settings:flex-nowrap"
     >
       {sections.map((s) => {
         const active = s.id === current

@@ -108,7 +108,7 @@ export function axisLabels(buckets: ChartBucket[], unit: ChartUnit, today = loca
   })
 }
 
-// narrowSkips marks the labels a narrow window leaves out: every second shown
+// narrowSkips marks the labels a narrow chart leaves out: every second shown
 // one, counted from the newest so the latest label always stays.
 export function narrowSkips(labels: string[]): boolean[] {
   let shown = 0

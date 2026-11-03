@@ -42,11 +42,15 @@ export function OverviewCards() {
   const now = useNow()
   const failures = recentFailures(runs.data ?? [], now).length
   return (
-    <div className="mb-7 grid items-start gap-3 md:grid-cols-2">
-      {cardOrder(failures).map((id) => {
-        const Tile = cards[id]
-        return <Tile key={id} />
-      })}
+    // Two columns only where the content area, not the window, has room for
+    // them: the sidebar and the assistant panel take their share first.
+    <div className="@container mb-7">
+      <div className="grid items-start gap-3 @3xl:grid-cols-2">
+        {cardOrder(failures).map((id) => {
+          const Tile = cards[id]
+          return <Tile key={id} />
+        })}
+      </div>
     </div>
   )
 }

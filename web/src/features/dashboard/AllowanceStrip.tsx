@@ -27,27 +27,27 @@ import {
 const valueTone = {ok: 'text-foreground', warning: 'text-warning-text', danger: 'text-danger'}
 const meterTone = {ok: 'accent', warning: 'warning', danger: 'danger'} as const
 // One template for every row, so the windows line up down a column. The card
-// is the size container: below 700px the four columns no longer fit, so the
+// is the size container: below 860px the four columns no longer fit, so the
 // windows leave the provider's line and each takes a line of its own under it,
 // instead of meter, share and reset running into each other.
 const row =
-  'grid grid-cols-[minmax(6rem,1fr)_minmax(0,auto)] items-center gap-x-5 gap-y-1.5 @min-[700px]:grid-cols-[minmax(140px,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_180px]'
+  'grid grid-cols-[minmax(6rem,1fr)_minmax(0,auto)] items-center gap-x-5 gap-y-1.5 @min-[860px]:grid-cols-[minmax(140px,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_180px]'
 const head = 'col-start-1 row-start-1'
-const gauge = 'col-start-2 row-start-1 @min-[700px]:col-start-4'
+const gauge = 'col-start-2 row-start-1 @min-[860px]:col-start-4'
 // slot places a window by its column on a wide card and by its order among the
 // windows shown on a narrow one, so a provider with only a weekly window shows
 // it first below its name instead of after an empty line.
 const slot = {
   first: {
-    2: 'col-span-full row-start-2 @min-[700px]:col-span-1 @min-[700px]:col-start-2 @min-[700px]:row-start-1',
-    3: 'col-span-full row-start-2 @min-[700px]:col-span-1 @min-[700px]:col-start-3 @min-[700px]:row-start-1',
+    2: 'col-span-full row-start-2 @min-[860px]:col-span-1 @min-[860px]:col-start-2 @min-[860px]:row-start-1',
+    3: 'col-span-full row-start-2 @min-[860px]:col-span-1 @min-[860px]:col-start-3 @min-[860px]:row-start-1',
   },
   second: {
-    3: 'col-span-full row-start-3 @min-[700px]:col-span-1 @min-[700px]:col-start-3 @min-[700px]:row-start-1',
+    3: 'col-span-full row-start-3 @min-[860px]:col-span-1 @min-[860px]:col-start-3 @min-[860px]:row-start-1',
   },
 }
 const bothWindows =
-  'col-span-full row-start-2 @min-[700px]:col-span-2 @min-[700px]:col-start-2 @min-[700px]:row-start-1'
+  'col-span-full row-start-2 @min-[860px]:col-span-2 @min-[860px]:col-start-2 @min-[860px]:row-start-1'
 
 // AllowanceStrip is how much of each enabled provider's allowance is left,
 // one line per provider, at the top of the Dashboard because it decides what
@@ -151,7 +151,7 @@ function ProviderLine({
             {p.name}
           </span>
         </Tooltip>
-        <div className="shrink-0 text-[11.5px] text-subtle-foreground tabular-nums @min-[700px]:ml-auto">
+        <div className="shrink-0 text-[11.5px] text-subtle-foreground tabular-nums @min-[860px]:ml-auto">
           {failed && hasWindows ? (
             <Tooltip content={limitStatusText(l, now)}>
               <span className="inline-flex items-center gap-1 text-warning-text" tabIndex={0}>
@@ -192,7 +192,7 @@ function ProviderLine({
             u={p.urgency}
             threshold={threshold}
             spare={p.backfill}
-            barClassName="hidden w-12 @min-[250px]:block @min-[700px]:w-20"
+            barClassName="hidden w-12 @min-[250px]:block @min-[860px]:w-20"
           />
         )}
       </div>

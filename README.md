@@ -411,7 +411,12 @@ directly (**⌘N**), and the **command palette** (**⌘K**): type to jump to a v
 pause or resume all runs, switch the appearance, open a task (or run it now)
 or a recent run's log. **⌘1** to **⌘8** switch views in sidebar order. In a
 narrow window the sidebar folds to a column of icons, each named in a tooltip;
-its toggle lays the full sidebar over the view until a view is picked. Tasks
+its toggle lays the full sidebar over the view until a view is picked. Every
+view fits a window about 850 px wide as well: a view's header puts its
+controls on a line of their own when they would crowd the title, Settings
+lists its sections in a wrapping row above the section, a Log entry moves its
+duration and tokens under the task name, and a notification keeps its title
+whole while the task name beside it gives way. Tasks
 are added and edited in a panel that slides in from the right, so the list stays
 visible. Its sections run What (name, group, job type), When, Prompt or
 Script, Where, How it runs, so the schedule is in view before the long prompt;
@@ -1802,7 +1807,8 @@ Practicalities:
 
 **Ask DispatchQ** at the top of the sidebar (**⌘J**, or type a question into
 the command palette and pick *Ask DispatchQ*) opens a chat docked to the right
-of the window. It stays open while you switch views, and it does only DispatchQ
+of the window; in a window narrower than about 1100 px it lies over the view's
+right edge instead of squeezing the view. It stays open while you switch views, and it does only DispatchQ
 things: answer about the queue, runs and artifacts, take you to them, and plan
 or change jobs. It answers in your language, in a sentence or two; anything else
 it declines in one line.

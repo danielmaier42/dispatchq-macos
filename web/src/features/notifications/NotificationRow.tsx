@@ -36,7 +36,8 @@ function openNotification(n: AppNotification) {
 }
 
 // One notification as one row: the kind's icon with the unread dot on its
-// corner, the title with the message under it, when it was sent and where a click leads; the
+// corner, the title with the message under it (the title keeps its width and
+// the task name beside it gives way first), when it was sent and where a click leads; the
 // mark-read eye shows while the pointer or focus is on the row. The whole row
 // opens the notification through a stretched button under the title, so the
 // row holds no button inside a button and the eye stays its own target. The
@@ -78,7 +79,7 @@ export function NotificationRow({n}: {n: AppNotification}) {
             data-notification-open
             onClick={() => openNotification(n)}
             className={cn(
-              "min-w-0 truncate text-left text-[13px] leading-5 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-accent/40 focus-visible:after:ring-inset",
+              "max-w-full shrink-0 truncate text-left text-[13px] leading-5 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-accent/40 focus-visible:after:ring-inset",
               n.unread ? 'font-semibold' : 'font-medium',
             )}
           >

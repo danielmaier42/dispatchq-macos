@@ -14,7 +14,8 @@ import {StatusPill} from './StatusPill'
 
 // RunRow is one run in the Log. A click anywhere opens its log (which marks it
 // read); the title is the keyboard target. The figures on the right give way
-// to the row's actions on hover, so a row stays calm until it is pointed at.
+// to the row's actions on hover, so a row stays calm until it is pointed at;
+// in a narrow row they move under the title instead.
 export function RunRow({
   run,
   showProvider,
@@ -39,7 +40,7 @@ export function RunRow({
   return (
     <div
       onClick={() => openRunLog(run.run_id)}
-      className="group/row relative flex min-h-12 cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-2/70"
+      className="group/row @container/run relative flex min-h-12 cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-surface-2/70"
     >
       {depth > 0 && (
         <CornerDownRight
@@ -99,10 +100,16 @@ export function RunRow({
             </>
           )}
         </div>
+        {/* A narrow row keeps its title and gives the figures a line of their own. */}
+        {metrics.short.length > 0 && (
+          <div className="truncate text-[12px] text-subtle-foreground tabular-nums @2xl/run:hidden">
+            {metrics.short.join(' · ')}
+          </div>
+        )}
       </div>
 
       <div className="grid shrink-0 items-center justify-items-end">
-        <span className="col-start-1 row-start-1 hidden text-[12px] text-subtle-foreground tabular-nums transition-opacity group-focus-within/row:opacity-0 group-hover/row:opacity-0 sm:block">
+        <span className="col-start-1 row-start-1 hidden text-[12px] text-subtle-foreground tabular-nums transition-opacity group-focus-within/row:opacity-0 group-hover/row:opacity-0 @2xl/run:block">
           {metrics.short.join(' · ')}
         </span>
         <RowActions run={run} />

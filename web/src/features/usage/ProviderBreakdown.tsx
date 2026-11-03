@@ -3,6 +3,7 @@ import {Section} from '@/components/layout/view-layout'
 import {OverviewCard} from '@/features/dashboard/OverviewCard'
 import {duration} from '@/lib/format'
 import type {StatsBucket, StatsProvider} from '@/lib/types'
+import {cn} from '@/lib/utils'
 import {Period} from './UsageSummary'
 import {bucketValue, metricDef, type Metric} from './usage'
 
@@ -79,9 +80,7 @@ function Row({
   nested?: boolean
 }) {
   return (
-    <div
-      className={nested ? 'flex items-center gap-4 py-1 pr-2 pl-6' : 'flex items-center gap-4 px-2 py-1.5'}
-    >
+    <div className={cn('@container/prow flex items-center gap-4', nested ? 'py-1 pr-2 pl-6' : 'px-2 py-1.5')}>
       <div className="min-w-0 flex-1">
         <div className={nested ? 'truncate font-mono text-[12.5px]' : 'truncate text-[13.5px] font-medium'}>
           {name}
@@ -91,7 +90,7 @@ function Row({
           {duration(b.duration_ms)}
         </div>
       </div>
-      <div className="hidden w-40 shrink-0 items-center gap-2 sm:flex">
+      <div className="hidden w-24 shrink-0 items-center gap-2 sm:flex @2xl/prow:w-40">
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
           <div
             className={nested ? 'h-full rounded-full bg-accent/50' : 'h-full rounded-full bg-accent'}
@@ -102,7 +101,7 @@ function Row({
           {Math.round(share * 100)}%
         </span>
       </div>
-      <div className="w-36 shrink-0 text-right whitespace-nowrap tabular-nums">
+      <div className="w-28 shrink-0 text-right whitespace-nowrap tabular-nums @2xl/prow:w-36">
         <span className={nested ? 'text-[13px] font-medium' : 'text-[14px] font-semibold'}>
           {metricDef(metric).fmt(bucketValue(metric, b))}
         </span>{' '}

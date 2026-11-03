@@ -20,9 +20,10 @@ const EXAMPLES = [
   'Plan a job for every weekday at 7',
 ]
 
-// AssistantPanel is the chat docked to the right of the window. It stays open
-// across views, so an answer that opens a run or an artifact leaves the
-// conversation where it was.
+// AssistantPanel is the chat docked to the right of the window; in a window
+// too narrow to give the view its room beside it, it lies over the view's
+// right edge instead of squeezing it. It stays open across views, so an answer
+// that opens a run or an artifact leaves the conversation where it was.
 export function AssistantPanel() {
   const s = useAssistant()
   const info = useAssistantInfo()
@@ -54,7 +55,7 @@ export function AssistantPanel() {
   return (
     <aside
       aria-label="Assistant"
-      className="flex w-[380px] shrink-0 animate-in flex-col border-l border-border bg-surface"
+      className="flex w-[380px] max-w-full shrink-0 animate-in flex-col border-l border-border bg-surface max-[1099px]:fixed max-[1099px]:inset-y-0 max-[1099px]:right-0 max-[1099px]:z-30 max-[1099px]:shadow-xl"
     >
       <header className="flex items-center gap-2 border-b border-border px-4 py-3">
         <div className="flex size-7 items-center justify-center rounded-full bg-ai-soft text-ai [&_svg]:size-3.5">

@@ -48,7 +48,7 @@ export function UsageChart({
   const narrowHidden = narrowSkips(labels)
 
   return (
-    <div className="flex gap-3">
+    <div className="@container/chart flex gap-3">
       <div
         className="relative w-12 shrink-0 text-right text-[11px] text-subtle-foreground tabular-nums"
         style={{height: PLOT_H}}
@@ -116,7 +116,7 @@ export function UsageChart({
                   className={cn(
                     'absolute top-0 text-[10.5px] whitespace-nowrap text-subtle-foreground',
                     at === i && 'font-medium text-foreground',
-                    narrowHidden[i] && 'max-sm:invisible',
+                    narrowHidden[i] && '@max-2xl/chart:invisible',
                   )}
                   style={{
                     left: `${((i + 0.5) / count) * 100}%`,

@@ -49,14 +49,18 @@ export function SettingsView() {
 
   return (
     <ViewLayout title="Settings">
-      <div className="flex flex-col gap-6 md:flex-row md:gap-8">
-        <nav className="shrink-0 md:w-48">
-          <SettingsNav sections={SECTIONS} current={current} marks={marks} onSelect={setSection} />
-        </nav>
-        <div className="min-w-0 flex-1">
-          <SectionTitle title={def.label} description={def.description} />
-          <SectionBody id={current} form={form} />
-          {form.dirty && <SaveBar sections={edited} />}
+      {/* The section list sits beside the section only where the content area,
+          not the window, has room for both. */}
+      <div className="@container/settings">
+        <div className="flex flex-col gap-6 @3xl/settings:flex-row @3xl/settings:gap-8">
+          <nav className="shrink-0 @3xl/settings:w-48">
+            <SettingsNav sections={SECTIONS} current={current} marks={marks} onSelect={setSection} />
+          </nav>
+          <div className="min-w-0 flex-1">
+            <SectionTitle title={def.label} description={def.description} />
+            <SectionBody id={current} form={form} />
+            {form.dirty && <SaveBar sections={edited} />}
+          </div>
         </div>
       </div>
     </ViewLayout>

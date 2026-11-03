@@ -26,7 +26,7 @@ const entry = (name: string, windows: LimitWindow[]): LimitsEntry => ({
 
 const cellOf = (label: string) => screen.getByText(label).parentElement as HTMLElement
 
-// Below 700px each window gets its own line under the provider's name; the
+// Below 860px each window gets its own line under the provider's name; the
 // card's width decides, through container queries that jsdom cannot evaluate,
 // so these pin the placement each width relies on.
 describe('AllowanceStrip', () => {
@@ -46,9 +46,9 @@ describe('AllowanceStrip', () => {
     const five = cellOf('5 hours').className
     const week = cellOf('Week').className
     expect(five).toContain('row-start-2')
-    expect(five).toContain('@min-[700px]:col-start-2')
+    expect(five).toContain('@min-[860px]:col-start-2')
     expect(week).toContain('row-start-3')
-    expect(week).toContain('@min-[700px]:col-start-3')
+    expect(week).toContain('@min-[860px]:col-start-3')
   })
 
   it('shows a lone weekly window right under the name, in the week column when wide', () => {
@@ -56,6 +56,6 @@ describe('AllowanceStrip', () => {
     const week = cellOf('Week').className
     expect(week).toContain('row-start-2')
     expect(week).not.toContain('row-start-3')
-    expect(week).toContain('@min-[700px]:col-start-3')
+    expect(week).toContain('@min-[860px]:col-start-3')
   })
 })

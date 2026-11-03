@@ -409,7 +409,9 @@ sit at the bottom, out of the way of the work. Above them are **Ask DispatchQ**
 (**⌘J**, the [assistant](#asking-dispatchq)), a **+** that opens the task form
 directly (**⌘N**), and the **command palette** (**⌘K**): type to jump to a view, add or import a task,
 pause or resume all runs, switch the appearance, open a task (or run it now)
-or a recent run's log. **⌘1** to **⌘8** switch views in sidebar order. Tasks
+or a recent run's log. **⌘1** to **⌘8** switch views in sidebar order. In a
+narrow window the sidebar folds to a column of icons, each named in a tooltip;
+its toggle lays the full sidebar over the view until a view is picked. Tasks
 are added and edited in a panel that slides in from the right, so the list stays
 visible. Its sections run What (name, group, job type), When, Prompt or
 Script, Where, How it runs, so the schedule is in view before the long prompt;
@@ -442,7 +444,9 @@ first. The window opens on the Dashboard:
   counted apart as *N waiting*), and the **last 7 days** (runs, success rate,
   tokens and cost). Each entry opens its log or its task. Running now lists five
   runs and its *+N more* unfolds the rest in place; on the other cards it opens
-  the Log filtered to failures, or the Queue.
+  the Log filtered to failures, or the Queue. These four cards sit in two
+  columns where the view is wide enough, and one under the other at full width
+  where it is not.
 - **Queue** — the pending tasks in priority order. Add, edit, delete, enable/pause,
   reorder, or **run now** (a manual test run, independent of the trigger). Each
   row carries its task's name, its schedule in words (*Every day at 03:00*,

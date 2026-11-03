@@ -440,11 +440,13 @@ first. The window opens on the Dashboard:
   runs that **failed in the last 24 hours** (first while there are any), what
   is **up next** (due tasks first, with the reason a task is held; tasks with
   quiet history are left out), what is
-  **running now** (and runs a rate limit paused, with their resume time), and
-  the **last 7 days** (runs, success rate, tokens and cost). Each entry opens
-  its log or its task; *+N more* opens the Log filtered to failures, or the
-  Queue. These four cards sit in two columns where the view is wide enough,
-  and one under the other at full width where it is not.
+  **running now** (and runs a rate limit paused, with their resume time,
+  counted apart as *N waiting*), and the **last 7 days** (runs, success rate,
+  tokens and cost). Each entry opens its log or its task. Running now lists five
+  runs and its *+N more* unfolds the rest in place; on the other cards it opens
+  the Log filtered to failures, or the Queue. These four cards sit in two
+  columns where the view is wide enough, and one under the other at full width
+  where it is not.
 - **Queue** — the pending tasks in priority order. Add, edit, delete, enable/pause,
   reorder, or **run now** (a manual test run, independent of the trigger). Each
   row carries its task's name, its schedule in words (*Every day at 03:00*,

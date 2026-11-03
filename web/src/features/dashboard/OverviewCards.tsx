@@ -10,7 +10,7 @@ import {
   OctagonAlert,
 } from 'lucide-react'
 import {navigate} from '@/app/nav'
-import type {ReactNode} from 'react'
+import {type ReactNode, useState} from 'react'
 import {Badge} from '@/components/ui/badge'
 import {Button} from '@/components/ui/button'
 import {Tooltip} from '@/components/ui/tooltip'
@@ -25,6 +25,8 @@ import {cardOrder, type CardId, holdText, recentFailures, upNext, waitingRuns} f
 import {useNow} from '@/hooks/use-now'
 
 const SHOWN = 3
+// Running now lists more before folding, and its +N more unfolds in place.
+const RUNNING_SHOWN = 5
 
 const cards: Record<CardId, () => ReactNode> = {
   failed: FailuresCard,
@@ -85,6 +87,8 @@ function RunningCard() {
   const running = (runs.data ?? []).filter((r) => r.status === 'running')
   const waiting = waitingRuns(runs.data ?? [])
   const items: Run[] = [...running, ...waiting]
+  const [all, setAll] = useState(false)
+  const shown = all ? items : items.slice(0, RUNNING_SHOWN)
   return (
     <OverviewCard
       icon={<Activity />}
@@ -96,6 +100,7 @@ function RunningCard() {
               {running.length}
             </Badge>
           )}
+          {waiting.length > 0 && <Badge tone="warning">{waiting.length} waiting</Badge>}
           {paused && <Badge tone="warning">Paused</Badge>}
         </>
       }
@@ -105,33 +110,31 @@ function RunningCard() {
     >
       {items.length ? (
         <>
-          {items
-            .slice(0, SHOWN)
-            .map((r) =>
-              r.status === 'running' ? (
-                <OverviewRow
-                  key={r.run_id}
-                  lead={<span className="size-2 animate-pulse-dot rounded-full bg-accent" />}
-                  title={r.task_name}
-                  meta={r.provider?.name ?? r.provider?.kind}
-                  trail={runDuration(r, now)}
-                  onClick={() => openRunLog(r.run_id)}
-                />
-              ) : (
-                <OverviewRow
-                  key={r.run_id}
-                  lead={<Hourglass className={`$"text-warning-text" size-3.5`} />}
-                  title={r.task_name}
-                  meta={
-                    <span className="text-warning-text">
-                      Rate limited, {resumeText(resumeAt(r.resume_at, limitedUntil))}
-                    </span>
-                  }
-                  onClick={() => openRunLog(r.run_id)}
-                />
-              ),
-            )}
-          <More n={items.length - SHOWN} onClick={() => navigate('log')} />
+          {shown.map((r) =>
+            r.status === 'running' ? (
+              <OverviewRow
+                key={r.run_id}
+                lead={<span className="size-2 animate-pulse-dot rounded-full bg-accent" />}
+                title={r.task_name}
+                meta={r.provider?.name ?? r.provider?.kind}
+                trail={runDuration(r, now)}
+                onClick={() => openRunLog(r.run_id)}
+              />
+            ) : (
+              <OverviewRow
+                key={r.run_id}
+                lead={<Hourglass className="size-3.5 text-warning-text" />}
+                title={r.task_name}
+                meta={
+                  <span className="text-warning-text">
+                    Rate limited, {resumeText(resumeAt(r.resume_at, limitedUntil))}
+                  </span>
+                }
+                onClick={() => openRunLog(r.run_id)}
+              />
+            ),
+          )}
+          <More n={items.length - shown.length} onClick={() => setAll(true)} />
         </>
       ) : (
         <OverviewEmpty icon={<Clock />}>

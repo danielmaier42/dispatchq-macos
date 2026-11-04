@@ -441,12 +441,11 @@ first. The window opens on the Dashboard:
   reading is and **Read now** asks again. An account on an API key has no plan
   limits and says so plainly. Right under it, the **Pool** card puts every
   [pool](#provider-pools) on one line, its members in the order a run started
-  now would take them. Below that, cards in the order they need action:
-  runs that **failed in the last 24 hours** (first while there are any), what
-  is **up next** (due tasks first, with the reason a task is held; tasks with
-  quiet history are left out), what is
+  now would take them. Below that, cards in a fixed order: what is
   **running now** (and runs a rate limit paused, with their resume time,
-  counted apart as *N waiting*), and the **last 7 days** (runs, success rate,
+  counted apart as *N waiting*), what is **up next** (due tasks first, with the
+  reason a task is held; tasks with quiet history are left out), runs that
+  **failed in the last 24 hours**, and the **last 7 days** (runs, success rate,
   tokens and cost). Each entry opens its log or its task. Running now lists five
   runs and its *+N more* unfolds the rest in place; on the other cards it opens
   the Log filtered to failures, or the Queue. These four cards sit in two

@@ -35,20 +35,16 @@ const cards: Record<CardId, () => ReactNode> = {
   week: WeekCard,
 }
 
-// OverviewCards answer what someone opening the app wants first, in the order
-// it needs action: what failed, what starts next, what runs now, and how much
-// work went through lately. Each card is as tall as what it lists; an empty
+// OverviewCards answer what someone opening the app wants first: what runs
+// now, what starts next, what failed, and how much work went through lately. Each card is as tall as what it lists; an empty
 // one is a single line rather than a box held open by its neighbour.
 export function OverviewCards() {
-  const runs = useRuns()
-  const now = useNow()
-  const failures = recentFailures(runs.data ?? [], now).length
   return (
     // Two columns only where the content area, not the window, has room for
     // them: the sidebar and the assistant panel take their share first.
     <div className="@container mb-7">
       <div className="grid items-start gap-3 @3xl:grid-cols-2">
-        {cardOrder(failures).map((id) => {
+        {cardOrder.map((id) => {
           const Tile = cards[id]
           return <Tile key={id} />
         })}

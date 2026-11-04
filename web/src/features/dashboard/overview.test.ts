@@ -61,8 +61,7 @@ describe('overview', () => {
     ]
     expect(recentFailures(runs, now).map((r) => r.run_id)).toEqual(['b', 'a'])
   })
-  it('cardOrder leads with failures only while there are any', () => {
-    expect(cardOrder(2)[0]).toBe('failed')
-    expect(cardOrder(0)).toEqual(['next', 'running', 'week', 'failed'])
+  it('cardOrder is running, next, failed, week', () => {
+    expect(cardOrder).toEqual(['running', 'next', 'failed', 'week'])
   })
 })

@@ -1,8 +1,10 @@
 name: CI
 
+# Pull requests run through pull_request; push covers main only, so a PR
+# branch does not start the same macOS job twice per commit.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -43,14 +45,8 @@ jobs:
       - name: Test (race)
         run: go test ./... -race
 
-  lint:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26"
-          check-latest: true
+      # Lint shares the macOS job: the darwin files use cgo, so it cannot move
+      # to Linux, and a second macOS job waits for its own scarce runner.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:

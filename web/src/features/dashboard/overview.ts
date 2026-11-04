@@ -65,9 +65,6 @@ export function holdText(t: QueueTask): string {
 
 export type CardId = 'failed' | 'next' | 'running' | 'week'
 
-// cardOrder puts what needs action first: failures lead while there are any,
-// then what starts next, what runs, and the week's tally. Without failures
-// their card says so last, where a quiet "all clear" belongs.
-export function cardOrder(failures: number): CardId[] {
-  return failures > 0 ? ['failed', 'next', 'running', 'week'] : ['next', 'running', 'week', 'failed']
-}
+// cardOrder is fixed so each card keeps its place: what runs now, what starts
+// next, what failed, and the week's tally.
+export const cardOrder: readonly CardId[] = ['running', 'next', 'failed', 'week']

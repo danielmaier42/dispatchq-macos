@@ -1,12 +1,5 @@
 import {describe, expect, it} from 'vitest'
-import {
-  activeLimit,
-  anyNoCredit,
-  limitCoverage,
-  limitHeading,
-  notificationsBlocked,
-  wakeNeedsSudoers,
-} from './health'
+import {activeLimit, limitCoverage, limitHeading, notificationsBlocked, wakeNeedsSudoers} from './health'
 
 describe('wakeNeedsSudoers', () => {
   it('recognises permission failures', () => {
@@ -52,11 +45,9 @@ describe('limitCoverage and heading', () => {
   })
   it('names a used-up credit balance instead of a rate limit', () => {
     const key = {...b, name: 'API', reason: 'credit_exhausted' as const}
-    expect(limitHeading([key])).toBe('No API credit left on API → Claude')
+    expect(limitHeading([key])).toBe('No credit left')
     expect(limitHeading([a, key])).toBe(
       'Rate limit reached, waiting on Claude, API (no credit left) → Claude',
     )
-    expect(anyNoCredit([a, key])).toBe(true)
-    expect(anyNoCredit([a, b])).toBe(false)
   })
 })

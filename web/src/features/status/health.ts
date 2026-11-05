@@ -52,10 +52,6 @@ export function limitHeading(providers: LimitedProvider[]): string {
       (noCredit(p) && !providers.every(noCredit) ? ' (no credit left)' : '') +
       (p.fallback ? ' → ' + p.fallback : ''),
   )
-  if (providers.every(noCredit)) return 'No API credit left on ' + names.join(', ')
+  if (providers.every(noCredit)) return 'No credit left'
   return 'Rate limit reached, waiting on ' + names.join(', ')
 }
-
-// anyNoCredit says whether the banner must explain that a provider waits for
-// credit, not for a reset.
-export const anyNoCredit = (providers: LimitedProvider[]) => providers.some(noCredit)

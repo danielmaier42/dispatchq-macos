@@ -450,7 +450,8 @@ first. The window opens on the Dashboard:
   [pool](#provider-pools) on one line, its members in the order a run started
   now would take them. Below that, cards in a fixed order: what is
   **running now** (and runs a rate limit paused, with their resume time,
-  counted apart as *N waiting*), what is **up next** (due tasks first, with the
+  counted apart as *N waiting*; a run whose provider has no API credit left
+  says *No API credit left* instead of *Rate limited*), what is **up next** (due tasks first, with the
   reason a task is held; tasks with quiet history are left out), runs that
   **failed in the last 24 hours**, and the **last 7 days** (runs, success rate,
   tokens and cost). Each entry opens its log or its task. Running now lists five

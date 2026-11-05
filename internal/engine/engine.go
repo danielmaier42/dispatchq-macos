@@ -573,12 +573,20 @@ func runNotes(res provider.Resolved, dropped string) []string {
 
 // isDue evaluates one task's trigger. The caller holds e.mu, because whether the
 // task is already running is part of the answer.
+//
+// A one-shot task holding an interrupted session has not completed, whatever
+// its completed-once mark says. The mark can predate the session: a task
+// re-queued under the id of one that already ran, and then started by hand,
+// keeps it. Without this such a run, once a rate limit or a used-up credit
+// balance stopped it, would never be picked up again: neither on another pool
+// member or fallback right away, nor on its own account once that reopens.
 func (e *Engine) isDue(t task.Task, st *store.State, deps dependencyState, now time.Time) (bool, error) {
 	anchor, _ := st.LastStart(t.ID)
+	_, waiting := st.PendingResume(t.ID)
 	ok, err := schedule.Due(t, schedule.Inputs{
 		Now:             now,
 		Running:         e.active[t.ID],
-		CompletedOnce:   st.IsCompletedOnce(t.ID),
+		CompletedOnce:   st.IsCompletedOnce(t.ID) && !waiting,
 		CronAnchor:      anchor,
 		DependenciesMet: deps.met(t.ID),
 	})

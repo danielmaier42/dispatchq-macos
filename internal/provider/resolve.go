@@ -246,8 +246,8 @@ type Availability struct {
 // out of allowance, follows the fallback it was given.
 //
 // The chain is walked until an instance is found that has allowance left and
-// can actually take the work; a hop that is blocked, switched off or unfit is
-// stepped over, and a chain that is broken or blocked end to end resolves to
+// can actually take the work; a hop that is blocked, switched off, unfit or
+// read as used up (see readUsedUp) is stepped over, and a chain that is broken or blocked end to end resolves to
 // the provider the selection named. The caller still sees the account whose
 // allowance ran out rather than an error about a fallback nobody asked about.
 //
@@ -273,7 +273,7 @@ func (s Set) ResolveAvailable(sel Selection, av Availability) (Resolved, error) 
 			break
 		}
 		seen[next.ID] = struct{}{}
-		if av.usable(next) && !av.OutOfAllowance(next.ID) {
+		if av.usable(next) && !av.OutOfAllowance(next.ID) && !av.readUsedUp(next) {
 			return Resolved{Instance: next, Model: fallbackModel(origin, cur, next, sel.Model), FallbackFrom: origin}, nil
 		}
 		cur = next
@@ -316,6 +316,32 @@ func spareNote(sc MemberScore, threshold float64) string {
 		return fmt.Sprintf("%s takes no backfill work (%s)", sc.Name, sc.Note)
 	}
 	return fmt.Sprintf("%s is at urgency %.1f, backfill runs above %.1f", sc.Name, sc.Urgency, threshold)
+}
+
+// readUsedUp reports whether a hop's last allowance reading shows a window
+// that is used up and has not reset yet. Such a hop has no rate-limit block of
+// its own only because nothing has run on it since (a block lives in memory,
+// a reading survives a restart); handing it the work would spend a run on
+// being refused. Without a reading, or with a window whose reset is unknown or
+// already past, the hop is taken: only a reading that says so steps it over.
+func (a Availability) readUsedUp(inst Instance) bool {
+	if a.Limits == nil {
+		return false
+	}
+	l, ok := a.Limits(inst)
+	if !ok {
+		return false
+	}
+	var now time.Time
+	if a.Now != nil {
+		now = a.Now()
+	}
+	for _, w := range l.Windows {
+		if w.UsedPercent >= poolLongWindowFull && w.ResetsAt != nil && w.ResetsAt.After(now) {
+			return true
+		}
+	}
+	return false
 }
 
 // usable answers CanTakeWork for one hop, with the two things every caller

@@ -17,7 +17,7 @@ import {Tooltip} from '@/components/ui/tooltip'
 import {clearLogFilters, setLogFilters} from '@/features/log/filters-store'
 import {openRunLog} from '@/features/log/store'
 import {openAddTask, openTaskEditor} from '@/features/task-editor/store'
-import {compact, fullTime, relTime, resumeAt, resumeText, runDuration, usd} from '@/lib/format'
+import {compact, fullTime, NO_CREDIT, relTime, resumeAt, resumeText, runDuration, usd} from '@/lib/format'
 import {useHealth, useLimits, useRuns, useSettings, useStats, useTasks} from '@/lib/queries'
 import type {QueueTask, Run} from '@/lib/types'
 import {creditGone} from './limits'
@@ -125,8 +125,9 @@ function RunningCard() {
                 title={r.task_name}
                 meta={
                   <span className="text-warning-text">
-                    {r.provider?.id && noCredit.has(r.provider.id) ? 'No API credit left' : 'Rate limited'},{' '}
-                    {resumeText(resumeAt(r.resume_at, limitedUntil))}
+                    {r.provider?.id && noCredit.has(r.provider.id)
+                      ? NO_CREDIT
+                      : `Rate limited, ${resumeText(resumeAt(r.resume_at, limitedUntil))}`}
                   </span>
                 }
                 onClick={() => openRunLog(r.run_id)}

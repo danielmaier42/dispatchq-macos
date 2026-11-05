@@ -42,20 +42,31 @@ export function limitCoverage(providers: LimitedProvider[]): LimitCoverage {
 
 const noCredit = (p: LimitedProvider) => p.reason === 'credit_exhausted'
 
-// A used-up credit balance is named as such: it does not reset on its own like
-// a limit, it lifts once credit is added.
-export function limitHeading(providers: LimitedProvider[]): string {
-  if (!providers.length) return 'Rate limit reached: the queue is waiting, not stuck'
-  const names = providers.map(
-    (p) =>
-      p.name +
-      (noCredit(p) && !providers.every(noCredit) ? ' (no credit left)' : '') +
-      (p.fallback ? ' → ' + p.fallback : ''),
-  )
-  if (providers.every(noCredit)) return 'No API credit left on ' + names.join(', ')
-  return 'Rate limit reached, waiting on ' + names.join(', ')
+export interface LimitSplit {
+  // At least one provider is paused only because its credit is used up.
+  credit: boolean
+  // The providers that wait for an ordinary limit to reset.
+  rateLimited: LimitedProvider[]
+  // When the gate reopens for the rate-limited ones: the latest of their own
+  // times, or the daemon's gate time when it names no provider at all.
+  until: string
 }
 
-// anyNoCredit says whether the banner must explain that a provider waits for
-// credit, not for a reset.
-export const anyNoCredit = (providers: LimitedProvider[]) => providers.some(noCredit)
+// splitLimits keeps a used-up credit balance out of the rate-limit banner: its
+// retries are not news, so neither its provider nor its retry time feed the
+// headline or the reopen time.
+export function splitLimits(providers: LimitedProvider[], until: string): LimitSplit {
+  const credit = providers.some(noCredit)
+  if (!credit) return {credit, rateLimited: providers, until}
+  const rateLimited = providers.filter((p) => !noCredit(p))
+  const times = rateLimited.map((p) => Date.parse(p.until)).filter((t) => !Number.isNaN(t))
+  // A rate-limited provider without a time of its own falls back to the gate's.
+  const latest = times.length ? new Date(Math.max(...times)).toISOString() : rateLimited.length ? until : ''
+  return {credit, rateLimited, until: latest}
+}
+
+export function limitHeading(providers: LimitedProvider[]): string {
+  if (!providers.length) return 'Rate limit reached: the queue is waiting, not stuck'
+  const names = providers.map((p) => p.name + (p.fallback ? ' → ' + p.fallback : ''))
+  return 'Rate limit reached, waiting on ' + names.join(', ')
+}

@@ -131,11 +131,17 @@ func (a *Adapter) checkConfigDir(inst provider.Instance) (provider.Health, bool)
 // configuration directory as a run, so the answer is about the account the jobs
 // would actually use.
 func (a *Adapter) probeCommand(inst provider.Instance, bin string, args ...string) provider.Command {
-	cmd := provider.Command{Path: bin, Args: args}
+	return provider.Command{Path: bin, Args: args, Env: a.env(inst)}
+}
+
+// env is the instance's own environment: its account directory, when it has
+// one, then the variables the operator set for it (an ANTHROPIC_API_KEY, say).
+func (a *Adapter) env(inst provider.Instance) []string {
+	var base []string
 	if inst.ConfigDir != "" {
-		cmd.Env = append(cmd.Env, ConfigDirEnv+"="+inst.ConfigDir)
+		base = append(base, ConfigDirEnv+"="+inst.ConfigDir)
 	}
-	return cmd
+	return inst.Environ(base...)
 }
 
 // executableFile reports why a path cannot be run, or nil when it can.
@@ -280,9 +286,5 @@ func (a *Adapter) InteractiveResumeCommand(inst provider.Instance, req provider.
 	if access == provider.AccessFullAccess {
 		args = append(args, "--dangerously-skip-permissions")
 	}
-	cmd := provider.Command{Path: a.binary(inst), Args: args}
-	if inst.ConfigDir != "" {
-		cmd.Env = append(cmd.Env, ConfigDirEnv+"="+inst.ConfigDir)
-	}
-	return cmd, nil
+	return provider.Command{Path: a.binary(inst), Args: args, Env: a.env(inst)}, nil
 }

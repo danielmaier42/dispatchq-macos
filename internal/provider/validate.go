@@ -75,6 +75,9 @@ func Validate(reg *Registry, inst Instance) error {
 	if d := inst.ConfigDir; d != "" && !filepath.IsAbs(d) {
 		return fmt.Errorf("%w %q: configuration directory %q must be absolute", ErrInvalidProvider, inst.ID, d)
 	}
+	if err := checkEnv(inst.Env); err != nil {
+		return fmt.Errorf("provider %q: %w", inst.ID, err)
+	}
 	return nil
 }
 

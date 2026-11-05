@@ -608,6 +608,11 @@ type Provider struct {
 	// ConfigDir selects the harness's configuration (and therefore account)
 	// directory. Empty uses the CLI's own default.
 	ConfigDir string `toml:"config_dir" json:"config_dir"`
+	// Env is the environment the harness is started with, on top of the
+	// daemon's own: an ANTHROPIC_API_KEY here runs the instance on API billing,
+	// say. It holds secrets, so it never travels as JSON; only the provider's
+	// settings dialog and CLI write it, and neither reads the values back.
+	Env map[string]string `toml:"env,omitempty" json:"-"`
 	// DefaultModel is used when neither the task nor the caller names a model.
 	DefaultModel string `toml:"default_model" json:"default_model"`
 	// FallbackProvider is the id of the instance that takes over this one's

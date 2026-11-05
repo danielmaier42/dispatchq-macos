@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -518,7 +519,7 @@ permissions = 'default'
 		ID: DefaultProviderID, Kind: DefaultProviderKind, Name: DefaultProviderName,
 		BinaryPath: "/opt/claude", DefaultModel: "opus", Enabled: true,
 	}
-	if len(cfg.Providers) != 1 || cfg.Providers[0] != want {
+	if len(cfg.Providers) != 1 || !reflect.DeepEqual(cfg.Providers[0], want) {
 		t.Fatalf("providers = %+v, want exactly %+v", cfg.Providers, want)
 	}
 	if cfg.Settings.DefaultProvider != DefaultProviderID {

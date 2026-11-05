@@ -300,6 +300,9 @@ explains it.
 - **How much is left, at a glance.** The Dashboard shows each account's
   5-hour and weekly window with its reset time, read without spending any of
   it. See [How much is left](#how-much-is-left).
+- **API key instead of a login.** A provider can carry environment variables;
+  an `ANTHROPIC_API_KEY` on a Claude provider runs it on API billing, and its
+  cost shows in Usage. See [Environment variables](#environment-variables).
 - **Checked before the night.** A provider whose CLI is missing or logged out
   blocks its tasks with the reason instead of failing them; they start by
   themselves once it works again. See [Is it ready?](#is-it-ready).
@@ -657,7 +660,7 @@ in the list, and leaving Settings keeps the draft for the session.
 | | ntfy | Send to ntfy | Toggle, server (empty = ntfy.sh), topic, and an optional access token for a protected topic. |
 | | Webhook | Post to a webhook | Toggle, endpoint URL, and a JSON body template using `{{title}}`, `{{message}}`, `{{url}}` (empty = DispatchQ's own body). |
 | **Providers** | Backfill threshold | Slider | Below the providers: the urgency above which [backfill tasks](#backfill-tasks) run, with each provider's urgency next to it. Applies on release. |
-| | One card per provider | Its settings | Name and type, a health dot with **Check**, its current limits (the same bars as the Dashboard, when the harness reports any), the binary and configuration directory in use, the default model, and the provider that takes over when the limit is reached (and the model it uses). The switch turns it on or off at once; **Edit** opens a dialog that saves that provider alone; **Make default** and **Remove** sit in its **…** menu. See [Providers](#providers). |
+| | One card per provider | Its settings | Name and type, a health dot with **Check**, its current limits (the same bars as the Dashboard, when the harness reports any), the binary and configuration directory in use, the names of its environment variables, the default model, and the provider that takes over when the limit is reached (and the model it uses). The switch turns it on or off at once; **Edit** opens a dialog that saves that provider alone; **Make default** and **Remove** sit in its **…** menu. See [Providers](#providers). |
 | | | **Add provider** | Asks for an id, a type, a name and optionally a configuration directory. |
 | **Pools** | One card per pool | Its settings | Name, members and their weights, which member the next run goes to and why. **Edit** opens a dialog with, per provider of the pool's type, a switch for membership and a weight (empty = the plan size the provider reports, e.g. *auto · 20×*). **Remove** is refused while a task uses the pool. **Add pool** asks for an id, a name and the members. See [Provider pools](#provider-pools). |
 | **Assistant** | Prompt review | Check prompts with Claude | Whether Claude reviews a prompt against this Mac before the task is queued (on by default). |
@@ -696,13 +699,44 @@ A provider has:
 | Name | The label shown in the app and in run messages. |
 | Binary | Absolute path to the CLI. The background daemon can't see your shell `PATH`, so a full path is safest; empty auto-detects and the card offers what it found. |
 | Configuration directory | Where that CLI keeps its account and sessions. Empty uses the CLI's own (`~/.claude`, `~/.codex`, `~/.config/opencode`), which the field shows as its placeholder. Two providers with separate directories are two separate accounts. |
-
-Both paths must be absolute; a leading `~` is expanded and stored resolved, so
-the file says what is actually used.
+| Environment variables | Variables the CLI is started with on every run, readiness check and terminal continuation, on top of DispatchQ's own environment (and winning over it). See [Environment variables](#environment-variables). |
 | Default model | Used for tasks on this provider that name no model of their own. |
 | When the limit is reached | Another provider that takes this one's tasks while its allowance is used up. Empty means they wait for the window to reopen, which is what DispatchQ did before. |
 | Model there | The model those substituted runs are given. Empty (*Decided by DispatchQ*) keeps the task's own model between two accounts of the same CLI and takes the substitute's default model otherwise. Only shown once a fallback is chosen, and cleared with it. |
 | Enabled | Off keeps the provider and its tasks, but runs nothing on it. |
+
+Both paths must be absolute; a leading `~` is expanded and stored resolved, so
+the file says what is actually used.
+
+### Environment variables
+
+Each provider can carry environment variables for its CLI. The usual reason is
+an API key: put `ANTHROPIC_API_KEY` on a Claude provider and its runs are billed
+per token through the API instead of drawing on the login's plan.
+
+- **Set** them in **Settings → Providers**, in **Add provider** or a provider's
+  **Edit** dialog (**Add variable**, or the shortcut for the harness's key
+  variable), or with `dispatchq provider edit ID --env NAME=VALUE` (repeatable;
+  `--unset-env NAME` removes one). The list in the dialog is the whole set: a
+  variable you remove there is removed.
+- **Write-only.** The values are secrets. They are kept in `config.toml` (readable
+  by your user only), never sent back to the app or printed by the CLI; the card,
+  `provider show` and `provider list --json` show the names only. In the dialog a
+  stored value reads *Stored · type to replace* and stays as it is unless you type
+  a new one. Prefer the dialog: a value typed on the command line is visible to
+  your shell history.
+- **Where they apply.** Every run, the readiness check, the limit reading, the
+  prompt review and the assistant, and **Continue in terminal**. For the terminal,
+  the values are handed to the shell in a temporary file it deletes at once, not on
+  the visible command line.
+- **Not allowed:** names another field owns (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` — use the configuration
+  directory) and names starting with `DISPATCHQ_` or `CLAUDEQ_`.
+- **Limits and Usage.** A Claude provider with an `ANTHROPIC_API_KEY` (or
+  `ANTHROPIC_AUTH_TOKEN`) shows *No plan limits for API-key accounts*: the plan
+  windows of a login it may also hold are not what it spends. Its runs are
+  counted in Usage like any other, with the cost Claude Code reports, which for a
+  key is what is actually billed. Subscription runs show the API-equivalent cost.
 
 One provider is the **default**: tasks that name none run on it. It cannot be
 switched off or removed while it holds that role — make another one the default
@@ -713,10 +747,11 @@ their harness (Claude, Codex, opencode), each group headed by its logo; the
 default provider always comes first. Each provider gets its own card,
 headed by its name, with an on/off switch that applies at once and
 **Edit**, which opens a dialog for the name, binary, configuration directory,
-default model and fallback and saves that provider alone. *Check*, *Make
+environment variables, default model and fallback and saves that provider alone. *Check*, *Make
 default* and *Remove* are actions and take effect at once. Below them sits **Add provider**, which opens a dialog asking for the two things
 that cannot be changed afterwards — the id and the type — plus an optional
-configuration directory, which is what makes the new one a second account.
+configuration directory, which is what makes the new one a second account, and
+optional [environment variables](#environment-variables).
 
 `dispatchq provider …` does exactly the same things, and both refuse the same
 changes for the same reasons — removing an instance a task still names, for
@@ -1048,10 +1083,12 @@ dispatchq pool rm ID
 dispatchq provider add  ID --kind claude-code|codex [--name N] [--path PATH]
                       [--config-dir PATH] [--default-model MODEL]
                       [--fallback ID] [--fallback-model MODEL]
+                      [--env NAME=VALUE]...     # e.g. ANTHROPIC_API_KEY, see Environment variables
 dispatchq provider edit ID [--name N] [--path PATH]
                       [--config-dir PATH] [--default-model MODEL]
                       [--fallback ID|none]      # who takes over at the limit
                       [--fallback-model M|none] # what they run it with
+                      [--env NAME=VALUE]... [--unset-env NAME]...
 dispatchq provider enable ID | dispatchq provider disable ID
 dispatchq provider default ID                    # run tasks that name none on it
 dispatchq provider rm ID
@@ -1192,6 +1229,9 @@ dispatchq provider disable claude                         # keep it, run nothing
 dispatchq provider add claude-work --kind claude-code --config-dir ~/.claude-work
 dispatchq provider add codex --kind codex --default-model gpt-5.6-sol
 dispatchq provider add local --kind opencode
+
+# a Claude provider on API billing (values are never printed back)
+dispatchq provider add claude-api --kind claude-code --config-dir ~/.claude-api --env ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 `provider list --json` gives each instance's enabled state, readiness, the

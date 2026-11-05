@@ -859,7 +859,7 @@ func (s *server) continueRun(w http.ResponseWriter, r *http.Request) {
 	// offers to continue a session on another account, let alone another harness.
 	// Asked before a take-over too, so a run that could not be reopened by hand
 	// is never stopped for nothing.
-	argv, err := s.resumeCommand(*run, *run.Task)
+	argv, secrets, err := s.resumeCommand(*run, *run.Task)
 	if err != nil {
 		writeErr(w, http.StatusConflict, err)
 		return
@@ -887,12 +887,24 @@ func (s *server) continueRun(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusConflict, errors.New("the run was stopped before it had a session to continue"))
 			return
 		}
-		if argv, err = s.resumeCommand(stopped, *run.Task); err != nil {
+		if argv, secrets, err = s.resumeCommand(stopped, *run.Task); err != nil {
 			writeErr(w, http.StatusConflict, err)
 			return
 		}
 	}
+	// The variables the operator set (an API key, say) must reach the session
+	// too, or it would reopen on the login instead of the key. They are handed
+	// over in a file the shell reads and deletes, never on the command line,
+	// which Terminal prints and the shell keeps in its history. The file is made
+	// only now, right before the terminal opens, and removed again when it does
+	// not.
+	argv, cleanup, err := secretEnvArgv(secrets, argv)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
 	if err := s.d.OpenTerminal(ctx, run.Task.WorkingDir, argv); err != nil {
+		cleanup()
 		writeErr(w, http.StatusBadGateway, err)
 		return
 	}
@@ -931,10 +943,13 @@ func (s *server) takeOver(ctx context.Context, runID string) (store.Run, error) 
 // that never had it would open an empty terminal at best. What the run recorded
 // is therefore what is asked; only a run from before that was recorded falls
 // back to the task's own provider.
-func (s *server) resumeCommand(run store.Run, t task.Task) ([]string, error) {
+//
+// The second result is the instance's own environment as NAME=value entries,
+// which the caller delivers without putting them on the command line.
+func (s *server) resumeCommand(run store.Run, t task.Task) ([]string, []string, error) {
 	set, err := app.Providers(s.d.Store)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	owner := run.Provider.ID
 	if owner == "" {
@@ -942,17 +957,17 @@ func (s *server) resumeCommand(run store.Run, t task.Task) ([]string, error) {
 	}
 	resolved, err := set.Resolve(provider.Selection{ProviderID: owner})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ad, err := s.d.Registry.Lookup(resolved.Instance.Kind)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !ad.Capabilities().InteractiveResume {
-		return nil, fmt.Errorf("%s cannot continue a session in a terminal", resolved.Instance.Label())
+		return nil, nil, fmt.Errorf("%s cannot continue a session in a terminal", resolved.Instance.Label())
 	}
 	if ad.ResolveBinary(resolved.Instance) == "" {
-		return nil, fmt.Errorf("%s is not installed on this Mac", resolved.Instance.Label())
+		return nil, nil, fmt.Errorf("%s is not installed on this Mac", resolved.Instance.Label())
 	}
 	cmd, err := ad.InteractiveResumeCommand(resolved.Instance, provider.Request{
 		SessionID:  run.SessionID,
@@ -960,17 +975,18 @@ func (s *server) resumeCommand(run store.Run, t task.Task) ([]string, error) {
 		AccessMode: resumeAccess(run, t),
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	argv := append([]string{cmd.Path}, cmd.Args...)
 	// The adapter's environment is what picks the account: a Claude Code
 	// instance is its config directory. Terminal starts a fresh login shell
 	// that knows nothing of it, so without `env` the session would reopen
 	// under whichever account the shell's default login belongs to.
-	if len(cmd.Env) > 0 {
-		argv = append(append([]string{"/usr/bin/env"}, cmd.Env...), argv...)
+	secrets := resolved.Instance.EnvPairs()
+	if plain := withoutEntries(cmd.Env, secrets); len(plain) > 0 {
+		argv = append(append([]string{"/usr/bin/env"}, plain...), argv...)
 	}
-	return argv, nil
+	return argv, secrets, nil
 }
 
 // resumeAccess is the authority a continued session gets: the one the run

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -163,7 +164,9 @@ func (c *Checker) ttl() time.Duration {
 
 // fingerprint is everything about an instance that can change its verdict.
 func fingerprint(inst Instance) string {
-	return fmt.Sprintf("%s\x00%s\x00%s\x00%t", inst.Kind, inst.BinaryPath, inst.ConfigDir, inst.Enabled)
+	// The variables hold secrets, so only a digest of them is kept as the key.
+	env := sha256.Sum256([]byte(strings.Join(inst.EnvPairs(), "\x00")))
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%t\x00%x", inst.Kind, inst.BinaryPath, inst.ConfigDir, inst.Enabled, env)
 }
 
 // Check returns the instance's readiness, reusing a recent verdict for the same

@@ -72,6 +72,12 @@ type usageReport struct {
 // ReadLimits implements provider.LimitReader: the account's five-hour and
 // weekly windows, read with the login the CLI stored for this instance.
 func (a *Adapter) ReadLimits(ctx context.Context, inst provider.Instance) (provider.LimitReading, error) {
+	if inst.UsesAPIKey() {
+		// The CLI bills an API key per token and ignores any plan login the
+		// configuration directory also holds, so the plan's windows would
+		// describe an allowance this instance does not spend.
+		return provider.LimitReading{}, provider.ErrNoPlanLimits
+	}
 	login, err := a.login(ctx, inst)
 	if err != nil {
 		return provider.LimitReading{}, err

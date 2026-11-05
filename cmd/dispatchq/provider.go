@@ -4,9 +4,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -26,9 +29,14 @@ Usage:
   dispatchq provider add  ID --kind KIND [--name N] [--path PATH]
                         [--config-dir PATH] [--default-model MODEL]
                         [--fallback ID] [--fallback-model MODEL]
+                        [--env NAME=VALUE]...
   dispatchq provider edit ID [--name N] [--path PATH]
                         [--config-dir PATH] [--default-model MODEL]
                         [--fallback ID|none] [--fallback-model MODEL|none]
+                        [--env NAME=VALUE]... [--unset-env NAME]...
+                        (--env adds or replaces a variable the harness is started with,
+                        an ANTHROPIC_API_KEY to run it on API billing; values are never
+                        printed back, show lists the names only)
   dispatchq provider enable ID | dispatchq provider disable ID
   dispatchq provider default ID          (run tasks that name no provider on it)
   dispatchq provider rm ID`
@@ -88,6 +96,9 @@ func withProviderID(args []string, done string, fn func(string) error) error {
 // running job reads this to find out which providers can take work.
 type providerView struct {
 	provider.Instance
+	// Env names the variables the instance is started with. Their values are
+	// secrets and are never printed.
+	Env     []string        `json:"env"`
 	Default bool            `json:"default"`
 	Health  provider.Health `json:"health"`
 }
@@ -106,7 +117,7 @@ func checkProviders(set provider.Set, only string, fresh bool) ([]providerView, 
 			continue
 		}
 		h := checker.CheckMaybeFresh(ctx, inst, fresh)
-		out = append(out, providerView{Instance: inst, Default: inst.ID == set.DefaultID(), Health: h})
+		out = append(out, providerView{Instance: inst, Env: inst.EnvNames(), Default: inst.ID == set.DefaultID(), Health: h})
 	}
 	if only != "" && len(out) == 0 {
 		return nil, fmt.Errorf("%w %q", provider.ErrUnknownProvider, only)
@@ -182,6 +193,7 @@ func printProvider(v providerView) {
 	fmt.Printf("default:        %t\n", v.Default)
 	fmt.Printf("binary_path:    %s\n", orDefault(v.BinaryPath, "(auto-detect)"))
 	fmt.Printf("config_dir:     %s\n", orDefault(v.ConfigDir, "(the CLI's own)"))
+	fmt.Printf("env:            %s\n", orDefault(strings.Join(v.Env, ", "), "(none)"))
 	fmt.Printf("default_model:  %s\n", orDefault(v.DefaultModel, "(the provider's own default)"))
 	fmt.Printf("fallback:       %s\n", orDefault(v.FallbackProvider, "(none: its tasks wait for the limit)"))
 	if v.FallbackProvider != "" {
@@ -211,6 +223,19 @@ type providerPatch struct {
 	defaultModel  string
 	fallback      string
 	fallbackModel string
+	env           repeatedFlag
+	unsetEnv      repeatedFlag
+}
+
+// repeatedFlag collects every occurrence of a flag that may be given more than
+// once.
+type repeatedFlag []string
+
+func (r *repeatedFlag) String() string { return strings.Join(*r, ",") }
+
+func (r *repeatedFlag) Set(v string) error {
+	*r = append(*r, v)
+	return nil
 }
 
 func (p *providerPatch) register(fs *flag.FlagSet, withKind bool) {
@@ -223,9 +248,13 @@ func (p *providerPatch) register(fs *flag.FlagSet, withKind bool) {
 	fs.StringVar(&p.defaultModel, "default-model", "", "model used when neither the task nor the caller names one")
 	fs.StringVar(&p.fallback, "fallback", "", "provider that takes this one's tasks while its limit is reached (\"none\" clears it)")
 	fs.StringVar(&p.fallbackModel, "fallback-model", "", "model those substituted runs use (\"none\" lets dispatchq choose)")
+	fs.Var(&p.env, "env", "NAME=VALUE environment variable the harness is started with (repeatable), e.g. ANTHROPIC_API_KEY=...")
+	if !withKind {
+		fs.Var(&p.unsetEnv, "unset-env", "NAME of an environment variable to remove (repeatable)")
+	}
 }
 
-func (p providerPatch) apply(inst *provider.Instance) {
+func (p providerPatch) apply(inst *provider.Instance) error {
 	if p.set["name"] {
 		inst.Name = p.name
 	}
@@ -247,6 +276,38 @@ func (p providerPatch) apply(inst *provider.Instance) {
 	if p.set["fallback-model"] {
 		inst.FallbackModel = clearable(p.fallbackModel)
 	}
+	return p.applyEnv(inst)
+}
+
+// applyEnv adds or replaces the --env variables and drops the --unset-env ones.
+// The map is rebuilt rather than edited so an instance read from the store is
+// never changed through a shared map.
+func (p providerPatch) applyEnv(inst *provider.Instance) error {
+	if len(p.env) == 0 && len(p.unsetEnv) == 0 {
+		return nil
+	}
+	env := maps.Clone(inst.Env)
+	if env == nil {
+		env = map[string]string{}
+	}
+	for _, kv := range p.env {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok {
+			return errors.New("--env: expected NAME=VALUE")
+		}
+		env[name] = value
+	}
+	for _, name := range p.unsetEnv {
+		if _, ok := env[name]; !ok {
+			return fmt.Errorf("--unset-env %q: the provider has no such variable", name)
+		}
+		delete(env, name)
+	}
+	if len(env) == 0 {
+		env = nil
+	}
+	inst.Env = env
+	return nil
 }
 
 // clearable reads the literal "none" as "unset this", so a flag can take a
@@ -276,7 +337,9 @@ func cmdProviderAdd(st *store.Store, args []string) error {
 		return fmt.Errorf("--kind is required")
 	}
 	inst := provider.Instance{ID: id, Kind: provider.Kind(p.kind), Name: id, Enabled: true}
-	p.apply(&inst)
+	if err := p.apply(&inst); err != nil {
+		return err
+	}
 	if inst.Name == "" {
 		inst.Name = id
 	}
@@ -305,8 +368,7 @@ func cmdProviderEdit(st *store.Store, args []string) error {
 		return fmt.Errorf("no changes given")
 	}
 	if err := app.EditProvider(st, adapters.Default(), id, func(inst *provider.Instance) error {
-		p.apply(inst)
-		return nil
+		return p.apply(inst)
 	}); err != nil {
 		return err
 	}

@@ -172,6 +172,11 @@ export function ProviderCard({
             </span>
           )}
         </Detail>
+        {p.env?.length > 0 && (
+          <Detail label="Environment">
+            <span className="font-mono">{p.env.join(', ')}</span>
+          </Detail>
+        )}
         <Detail label="Default model">
           {p.default_model ? (
             modelLabel(models, p.default_model)

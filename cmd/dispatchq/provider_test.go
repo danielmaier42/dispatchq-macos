@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -305,4 +306,66 @@ func TestCmdAddFromARunRecordsItsOrigin(t *testing.T) {
 	if got, _ := findTask(st, "by-hand"); got.OriginID != "" {
 		t.Fatalf("hand-added origin = %q, want none", got.OriginID)
 	}
+}
+
+func TestCmdProviderEnvironment(t *testing.T) {
+	st := newTestStore(t)
+	withProviderHealth(t, providerReady)
+
+	if err := cmdProvider(st, []string{"add", "api", "--kind", string(provider.KindClaudeCode),
+		"--env", "ANTHROPIC_API_KEY=sk-ant-x", "--env", "ANTHROPIC_BASE_URL=https://gw.example"}); err != nil {
+		t.Fatalf("provider add: %v", err)
+	}
+	env := func() map[string]string {
+		set, _ := app.Providers(st)
+		inst, _ := set.Lookup("api")
+		return inst.Env
+	}
+	if got := env(); got["ANTHROPIC_API_KEY"] != "sk-ant-x" || len(got) != 2 {
+		t.Fatalf("env = %v, want both variables", got)
+	}
+
+	if err := cmdProvider(st, []string{"edit", "api", "--env", "ANTHROPIC_API_KEY=sk-ant-y", "--unset-env", "ANTHROPIC_BASE_URL"}); err != nil {
+		t.Fatalf("provider edit: %v", err)
+	}
+	if got := env(); len(got) != 1 || got["ANTHROPIC_API_KEY"] != "sk-ant-y" {
+		t.Fatalf("env = %v, want the key replaced and the URL removed", got)
+	}
+
+	// An edit that names no env flag leaves the variables alone.
+	if err := cmdProvider(st, []string{"edit", "api", "--default-model", "sonnet"}); err != nil {
+		t.Fatalf("provider edit: %v", err)
+	}
+	if got := env(); len(got) != 1 {
+		t.Fatalf("env = %v, want it untouched", got)
+	}
+
+	err := cmdProvider(st, []string{"edit", "api", "--env", "sk-ant-forgot-the-name"})
+	if err == nil || strings.Contains(err.Error(), "sk-ant") {
+		t.Fatalf("err = %v, want a refusal that does not echo the value", err)
+	}
+	if err := cmdProvider(st, []string{"edit", "api", "--unset-env", "NOPE"}); err == nil {
+		t.Fatal("removing a variable that is not set must be refused")
+	}
+	if err := cmdProvider(st, []string{"edit", "api", "--env", "CODEX_HOME=/x"}); err == nil {
+		t.Fatal("a variable another field owns must be refused")
+	}
+
+	views, err := checkProviders(mustProviders(t, st), "api", false)
+	if err != nil {
+		t.Fatalf("checkProviders: %v", err)
+	}
+	data, _ := json.Marshal(views[0])
+	if strings.Contains(string(data), "sk-ant-y") || !strings.Contains(string(data), `"env":["ANTHROPIC_API_KEY"]`) {
+		t.Fatalf("json = %s, want the name and not the value", data)
+	}
+}
+
+func mustProviders(t *testing.T, st *store.Store) provider.Set {
+	t.Helper()
+	set, err := app.Providers(st)
+	if err != nil {
+		t.Fatalf("Providers: %v", err)
+	}
+	return set
 }

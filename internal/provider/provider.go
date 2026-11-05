@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/danielmaier42/claudeq/internal/store"
@@ -60,6 +61,11 @@ type Instance struct {
 	// the choice to the CLI and the daemon's environment, which is what a
 	// single-account setup wants; an instance that must be isolated names one.
 	ConfigDir string `json:"config_dir"`
+	// Env is the environment variables the harness is started with, added to
+	// the daemon's own and winning over them. It is how an instance takes an
+	// API key (ANTHROPIC_API_KEY) instead of a login. The values are secrets and
+	// are never serialised.
+	Env map[string]string `json:"-"`
 	// DefaultModel is used when neither the task nor the caller names a model.
 	DefaultModel string `json:"default_model"`
 	// FallbackProvider is the id of the instance that takes this one's tasks
@@ -84,6 +90,7 @@ func InstanceOf(p store.Provider) Instance {
 		Name:             p.Name,
 		BinaryPath:       p.BinaryPath,
 		ConfigDir:        p.ConfigDir,
+		Env:              maps.Clone(p.Env),
 		DefaultModel:     p.DefaultModel,
 		FallbackProvider: p.FallbackProvider,
 		FallbackModel:    p.FallbackModel,
@@ -99,6 +106,7 @@ func (i Instance) Stored() store.Provider {
 		Name:             i.Name,
 		BinaryPath:       i.BinaryPath,
 		ConfigDir:        i.ConfigDir,
+		Env:              maps.Clone(i.Env),
 		DefaultModel:     i.DefaultModel,
 		FallbackProvider: i.FallbackProvider,
 		FallbackModel:    i.FallbackModel,

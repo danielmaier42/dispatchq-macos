@@ -267,3 +267,17 @@ func TestDescribeAndKind(t *testing.T) {
 		t.Errorf("Describe() = %+v, want both fields set", desc)
 	}
 }
+
+// TestOperatorEnvironmentTravelsWithTheCommand: variables set on the instance
+// reach the process, with or without an isolated configuration directory.
+func TestOperatorEnvironmentTravelsWithTheCommand(t *testing.T) {
+	inst := instance("/opt/opencode")
+	inst.Env = map[string]string{"OPENROUTER_API_KEY": "sk-secret"}
+	cmd, err := New().Command(inst, provider.Request{Prompt: "p", SessionID: "s-1"})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+	if want := []string{"OPENROUTER_API_KEY=sk-secret"}; !reflect.DeepEqual(cmd.Env, want) {
+		t.Fatalf("env = %q, want %q", cmd.Env, want)
+	}
+}

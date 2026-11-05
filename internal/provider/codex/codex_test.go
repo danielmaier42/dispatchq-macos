@@ -529,3 +529,19 @@ func TestLoginStatusThatCouldNotBeAskedIsNotALogout(t *testing.T) {
 		t.Fatal("an unanswered probe must not refuse new tasks")
 	}
 }
+
+// TestOperatorEnvironmentTravelsWithTheCommand: variables set on the instance
+// reach the process, after the account directory.
+func TestOperatorEnvironmentTravelsWithTheCommand(t *testing.T) {
+	inst := instance("/opt/codex")
+	inst.ConfigDir = t.TempDir()
+	inst.Env = map[string]string{"OPENAI_API_KEY": "sk-secret"}
+	cmd, err := newAdapter("").Command(inst, provider.Request{Prompt: "p", SessionID: "s-1"})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+	want := []string{ConfigDirEnv + "=" + inst.ConfigDir, "OPENAI_API_KEY=sk-secret"}
+	if !reflect.DeepEqual(cmd.Env, want) {
+		t.Fatalf("env = %q, want %q", cmd.Env, want)
+	}
+}

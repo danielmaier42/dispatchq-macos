@@ -129,11 +129,7 @@ func (a *Adapter) Command(inst provider.Instance, req provider.Request) (provide
 	args = append(args, "--append-system-prompt", req.SystemPrompt)
 	args = append(args, req.Prompt)
 
-	cmd := provider.Command{Path: a.binary(inst), Args: args}
-	if inst.ConfigDir != "" {
-		cmd.Env = append(cmd.Env, ConfigDirEnv+"="+inst.ConfigDir)
-	}
-	return cmd, nil
+	return provider.Command{Path: a.binary(inst), Args: args, Env: a.env(inst)}, nil
 }
 
 // binary resolves the executable for a run: whatever ResolveBinary found, and

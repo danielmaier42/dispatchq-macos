@@ -19,6 +19,8 @@ import {errorMessage} from '@/lib/api'
 import {useProviderList} from '@/lib/providers'
 import type {Provider} from '@/lib/types'
 import {saveProvider} from './actions'
+import {EnvEditor} from './EnvEditor'
+import {envPayload, envProblem, envRowsFor} from './env-logic'
 import {fallbackOptions} from './provider-logic'
 
 export function ProviderEditDialog({
@@ -48,11 +50,17 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
   const [model, setModel] = useState(p.default_model || '')
   const [fallback, setFallback] = useState(p.fallback_provider || '')
   const [fallbackModel, setFallbackModel] = useState(p.fallback_model || '')
+  const [env, setEnv] = useState(() => envRowsFor(p.env ?? []))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    const problem = envProblem(env)
+    if (problem) {
+      setError(problem)
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -64,6 +72,7 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
         default_model: model,
         fallback_provider: fallback,
         fallback_model: fallback ? fallbackModel : '',
+        env: envPayload(env),
       })
       toast.success('Provider saved')
       onDone()
@@ -146,6 +155,23 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
             onChange={(e) => setDir(e.target.value)}
             spellCheck={false}
           />
+        </Field>
+        <Field
+          label="Environment variables"
+          hint={
+            p.kind === 'claude-code' ? (
+              <>
+                Passed to the CLI on every run and check. Set{' '}
+                <span className="font-mono">ANTHROPIC_API_KEY</span> to run this provider on API billing
+                instead of its login; it then shows no plan limits and its runs count in Usage with their real
+                cost. Values are stored on this Mac and are never shown again.
+              </>
+            ) : (
+              'Passed to the CLI on every run and check. Values are stored on this Mac and are never shown again.'
+            )
+          }
+        >
+          <EnvEditor kind={p.kind} rows={env} onChange={setEnv} idPrefix="pe-env" />
         </Field>
         <Field
           label="Default model"

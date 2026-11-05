@@ -165,15 +165,18 @@ func (a *Adapter) InteractiveResumeCommand(inst provider.Instance, req provider.
 // Claude Code and Codex have. Pointing all three at the same directory is
 // safe: each nests its own "opencode" subdirectory underneath, verified by
 // running with all three overridden and inspecting what landed where.
+//
+// The variables the operator set for the instance follow, so they win.
 func (a *Adapter) env(inst provider.Instance) []string {
-	if inst.ConfigDir == "" {
-		return nil
+	var base []string
+	if inst.ConfigDir != "" {
+		base = []string{
+			"XDG_CONFIG_HOME=" + inst.ConfigDir,
+			"XDG_DATA_HOME=" + inst.ConfigDir,
+			"XDG_CACHE_HOME=" + inst.ConfigDir,
+		}
 	}
-	return []string{
-		"XDG_CONFIG_HOME=" + inst.ConfigDir,
-		"XDG_DATA_HOME=" + inst.ConfigDir,
-		"XDG_CACHE_HOME=" + inst.ConfigDir,
-	}
+	return inst.Environ(base...)
 }
 
 // withSystemPrompt prefixes dispatchq's run contract onto the task's prompt,

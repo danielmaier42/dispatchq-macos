@@ -89,6 +89,7 @@ The spike is a feasibility checkpoint. Do not commit to full parity or a release
 - Locked desktop, closed window, process crash, login startup, reboot recovery and documented logout behavior.
 - Idle-sleep prevention and scheduled wakes on actual Windows hardware. A VM is useful for installer tests but does not establish hardware wake reliability.
 - Clean install, upgrade while idle and during work, update failure recovery, asset selection, uninstall with and without retained data.
+- Website download selection on Windows and macOS, manual selection of the other platform, and a usable platform chooser on mobile, unknown systems and with JavaScript disabled. Verify that every button links to the matching available installer and installation guide.
 - Notification clicks during app startup and while running; folder/file opening and `.dispatchq` import/export with incompatible paths reported clearly.
 - Existing macOS build, vet, lint, race tests, app behavior and installer/update verification remain required for implementation changes. Follow the toolchain pinned by CI.
 
@@ -96,7 +97,7 @@ Regression tests added during implementation must fail without the fix and pass 
 
 ## Cross-repository work
 
-- Website: Windows download choice, platform-specific installation and prerequisites, screenshots, release metadata and accurate feature claims. Keep macOS downloads working throughout.
+- Website: Detect the visitor's operating system and show the matching primary download button: the Windows installer on Windows and the macOS installer on macOS. Always provide an explicit choice of both platforms. On mobile, unsupported or unrecognized systems, or when detection is unavailable, show a neutral platform chooser instead of assuming a platform. Use the corresponding release asset and installation guide; never start a download automatically. Include platform-specific prerequisites, screenshots, release metadata and accurate feature claims. Keep macOS downloads working throughout.
 - Wiki: shared platform responsibilities, capability matrix, compatibility policy, repository links and workspace structure. Edit authoritative guidelines, not their symlinks or copied files.
 - Relay/iOS planning: represent the execution host as an environment that may be macOS or Windows. Preserve credential ownership on that host. Do not implement relay/iOS as part of the desktop port.
 - Existing users and automation: keep installed macOS paths and CLI contracts stable; document that job prompts, scripts, working directories and external integrations can require platform adaptation.

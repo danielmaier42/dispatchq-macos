@@ -47,3 +47,41 @@ func providers(reqs []executor.Request) []string {
 	}
 	return out
 }
+
+// TestARunNowThatHitsALimitStaysQueued: a one-shot task that already ran once
+// (it failed earlier) and is started again by hand stays queued when that run
+// hits a limit, so the pool hands it to another member on the next tick
+// instead of leaving it waiting on the blocked one.
+func TestARunNowThatHitsALimitStaysQueued(t *testing.T) {
+	now := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	fc := clock.NewFake(now)
+	r := &stub{result: func(req executor.Request, n int) provider.Result {
+		if n == 1 {
+			return provider.Result{Status: store.StatusRateLimited, SessionID: req.SessionID, RetryAfter: time.Hour, Block: provider.BlockCreditExhausted}
+		}
+		return provider.Result{Status: store.StatusSuccess, SessionID: req.SessionID}
+	}}
+	e, st, _ := newTestEngineWithProvider(t, r, fc)
+	if err := st.SaveConfig(poolConfig(poolTask("a", false))); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	if err := st.UpdateState(func(s *store.State) error {
+		s.MarkCompletedOnce("a")
+		return nil
+	}); err != nil {
+		t.Fatalf("UpdateState: %v", err)
+	}
+	if err := e.RunTaskNow(context.Background(), "a"); err != nil {
+		t.Fatalf("RunTaskNow: %v", err)
+	}
+	e.WaitIdle()
+	fc.Advance(time.Minute)
+	if err := e.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	e.WaitIdle()
+	reqs := r.requests()
+	if len(reqs) != 2 || reqs[0].Provider.ID == reqs[1].Provider.ID {
+		t.Fatalf("runs = %d on %v, want a second run on the other member", len(reqs), providers(reqs))
+	}
+}

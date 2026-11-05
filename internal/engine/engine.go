@@ -1258,6 +1258,10 @@ func (e *Engine) finish(t task.Task, providerID string, rec store.Run, res provi
 		}
 		_ = e.store.UpdateState(func(st *store.State) error {
 			st.SetPendingResume(t.ID, res.SessionID, providerID)
+			// The work is not done. A one-shot task started by hand after an
+			// earlier run had already marked it done would otherwise never be
+			// due again, so it would neither resume nor move to another provider.
+			st.ClearCompletedOnce(t.ID)
 			return nil
 		})
 	default:

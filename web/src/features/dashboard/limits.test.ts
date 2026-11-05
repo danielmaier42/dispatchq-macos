@@ -1,6 +1,9 @@
 import {describe, expect, it} from 'vitest'
 import type {LimitsEntry, ProviderLimits} from '@/lib/types'
 import {
+  blockText,
+  creditGone,
+  creditUnknown,
   leftLevel,
   limitStatusText,
   newestReading,
@@ -41,15 +44,45 @@ describe('limits', () => {
     expect(limitStatusText(l, t)).toBe('Token expired. Showing the reading from 10 min ago.')
     expect(readFailed(l)).toBe(true)
   })
-  it('an API-key account has no plan limits, which is no failure', () => {
+  it('an API-key account has an unknown credit balance, which is no failure', () => {
     const l: ProviderLimits = {
       state: 'unsupported',
-      reason: 'No plan limits for API-key accounts',
+      reason: "Credit balance unknown: an API key's balance cannot be read",
+      api_key: true,
       checked_at: '',
     }
     expect(noLimits(l)).toBe(true)
     expect(readFailed(l)).toBe(false)
-    expect(limitStatusText(l)).toBe('No plan limits for API-key accounts')
+    expect(limitStatusText(l)).toBe("Credit balance unknown: an API key's balance cannot be read")
+    expect(creditUnknown(entry(l))).toBe(true)
+    expect(creditGone(entry(l))).toBe(false)
+    expect(blockText(entry(l))).toBe('')
+  })
+  it('a refused run proves the credit balance used up', () => {
+    const t = Date.parse('2026-11-05T22:00:00Z')
+    const p = {
+      ...entry({state: 'unsupported', api_key: true, checked_at: ''}),
+      blocked: {until: '2026-11-05T23:00:00Z', reason: 'credit_exhausted' as const},
+    }
+    expect(creditGone(p)).toBe(true)
+    expect(creditUnknown(p)).toBe(false)
+    expect(blockText(p, t)).toBe(
+      'No credit left: a run was refused with "Credit balance is too low". Add credit in the Anthropic Console; tried again in 1 h.',
+    )
+  })
+  it('a bare billing refusal does not claim the credit is gone', () => {
+    const t = Date.parse('2026-11-05T22:00:00Z')
+    const p = {
+      ...entry({state: 'unsupported', api_key: true, checked_at: ''}),
+      blocked: {until: '2026-11-05T23:00:00Z', reason: 'billing_refused' as const},
+    }
+    expect(creditGone(p)).toBe(false)
+    expect(blockText(p, t)).toMatch(/^Billing refused: the credit is used up or a spend limit was reached/)
+  })
+  it('an ordinary limit is no account block', () => {
+    const p = {...entry({state: 'ok', checked_at: ''}), blocked: {until: '2026-11-05T23:00:00Z'}}
+    expect(blockText(p)).toBe('')
+    expect(creditGone(p)).toBe(false)
   })
   it('heads the strip with the newest reading and lets only lagging rows name their own', () => {
     const t = Date.parse('2026-10-19T12:00:00Z')

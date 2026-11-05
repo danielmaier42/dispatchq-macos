@@ -77,6 +77,10 @@ type Deps struct {
 	// rate limit, each with the time its own gate reopens, so the dashboard can
 	// name which account it is waiting on. Optional (engine.Engine.BlockedProviders).
 	BlockedProviders func() map[string]time.Time
+	// BlockReasons names, for blocked provider instances whose pause is an
+	// account block (a provider.Block such as a used-up credit balance), which
+	// block it is. Optional (engine.Engine.BlockReasons).
+	BlockReasons func() map[string]string
 	// RunningOn reports how many runs are in flight per provider instance,
 	// which the urgency the Dashboard shows takes into account. Optional
 	// (engine.Engine.RunningOn); nil counts none.
@@ -1458,6 +1462,9 @@ type limitedProvider struct {
 	// meantime, empty when it has none that could. A banner that names it says
 	// the queue is moving; without one the queue really is waiting.
 	Fallback string `json:"fallback,omitempty"`
+	// Reason names an account block behind the pause (a provider.Block), empty
+	// for an allowance limit that resets on its own.
+	Reason string `json:"reason,omitempty"`
 }
 
 // getHealth reports daemon health the UI can warn about: whether scheduled-wake
@@ -1485,6 +1492,7 @@ func (s *server) getHealth(w http.ResponseWriter, r *http.Request) {
 			// Best-effort labels: a config that fails to load still leaves the
 			// generic limited_until banner working, just without provider names.
 			set, _ := app.Providers(s.d.Store)
+			reasons := s.blockReasons()
 			for id, until := range blocked {
 				name, fallback := id, ""
 				if inst, ok := set.Lookup(id); ok {
@@ -1492,7 +1500,7 @@ func (s *server) getHealth(w http.ResponseWriter, r *http.Request) {
 					fallback = s.fallbackLabel(r.Context(), set, inst, blocked)
 				}
 				limitedProviders = append(limitedProviders,
-					limitedProvider{Name: name, Until: until.Format(time.RFC3339), Fallback: fallback})
+					limitedProvider{Name: name, Until: until.Format(time.RFC3339), Fallback: fallback, Reason: reasons[id]})
 			}
 			sort.Slice(limitedProviders, func(i, j int) bool { return limitedProviders[i].Until < limitedProviders[j].Until })
 		}
@@ -1503,6 +1511,15 @@ func (s *server) getHealth(w http.ResponseWriter, r *http.Request) {
 		"limited_until":     limitedUntil,
 		"limited_providers": limitedProviders,
 	})
+}
+
+// blockReasons asks the engine which blocked providers are account blocks;
+// none without one.
+func (s *server) blockReasons() map[string]string {
+	if s.d.BlockReasons == nil {
+		return nil
+	}
+	return s.d.BlockReasons()
 }
 
 // fallbackLabel names the provider that is actually taking inst's tasks while

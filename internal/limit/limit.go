@@ -19,6 +19,9 @@ type Gate struct {
 
 	mu           sync.Mutex
 	blockedUntil time.Time // zero => open
+	// reason names what closed the gate when that was more than a used-up
+	// allowance window (a provider.Block); it is only read while blocked.
+	reason string
 }
 
 // New returns an open Gate using the given clock.
@@ -28,11 +31,23 @@ func New(c clock.Clock) *Gate {
 
 // Block closes the gate until until. A call with an earlier time than the
 // current block is ignored, so the latest/longest known reset always wins.
-func (g *Gate) Block(until time.Time) {
+func (g *Gate) Block(until time.Time) { g.BlockBecause(until, "") }
+
+// BlockBecause closes the gate like Block and remembers why, so the dashboard
+// can tell an account block (a used-up credit balance, say) from a limit that
+// resets on its own. A reason outlives later blocks without one while the gate
+// stays closed, and is forgotten once it reopens.
+func (g *Gate) BlockBecause(until time.Time, reason string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if !g.now().Before(g.blockedUntil) {
+		g.reason = ""
+	}
 	if until.After(g.blockedUntil) {
 		g.blockedUntil = until
+	}
+	if reason != "" {
+		g.reason = reason
 	}
 }
 
@@ -42,6 +57,17 @@ func (g *Gate) Block(until time.Time) {
 // the engine uses Block with that time directly.
 func (g *Gate) BlockFor(delay time.Duration) {
 	g.Block(g.clock.Now().Add(delay))
+}
+
+// Reason returns why the gate is closed, or "" when it is open or was closed
+// by an ordinary limit.
+func (g *Gate) Reason() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.now().Before(g.blockedUntil) {
+		return g.reason
+	}
+	return ""
 }
 
 // Open reports whether a task may start now.
@@ -124,6 +150,20 @@ func (g *Gates) Blocked() map[string]time.Time {
 	for id, gate := range g.by {
 		if until := gate.BlockedUntil(); !until.IsZero() {
 			out[id] = until
+		}
+	}
+	return out
+}
+
+// Reasons returns, for the provider instances currently blocked by more than
+// an ordinary limit, why each one is (see Gate.BlockBecause).
+func (g *Gates) Reasons() map[string]string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := map[string]string{}
+	for id, gate := range g.by {
+		if r := gate.Reason(); r != "" {
+			out[id] = r
 		}
 	}
 	return out

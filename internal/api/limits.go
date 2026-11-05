@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
 )
@@ -21,6 +22,17 @@ type limitsView struct {
 	// Backfill reports that the urgency is above the backfill threshold, so
 	// backfill tasks may run on the provider right now.
 	Backfill bool `json:"backfill"`
+	// Blocked is the provider's rate-limit gate while it is closed: when it
+	// reopens and, for an account block, which one. It is what proves a used-up
+	// credit balance, which no reading can show.
+	Blocked *blockView `json:"blocked,omitempty"`
+}
+
+// blockView is a closed rate-limit gate as the dashboard shows it.
+type blockView struct {
+	Until time.Time `json:"until"`
+	// Reason is a provider.Block, empty for an allowance limit.
+	Reason string `json:"reason,omitempty"`
 }
 
 // listLimits answers with every configured provider's allowance, in
@@ -65,8 +77,16 @@ func (s *server) listLimits(w http.ResponseWriter, r *http.Request) {
 		}
 		return provider.Health{State: provider.HealthReady} // nothing known against it
 	})
+	var blocked map[string]time.Time
+	if s.d.BlockedProviders != nil {
+		blocked = s.d.BlockedProviders()
+	}
+	reasons := s.blockReasons()
 	for i, inst := range insts {
 		v := limitsView{ID: inst.ID, Name: inst.Label(), Default: inst.ID == set.DefaultID(), Limits: limits[i]}
+		if until, ok := blocked[inst.ID]; ok {
+			v.Blocked = &blockView{Until: until, Reason: reasons[inst.ID]}
+		}
 		if ad, err := s.d.Registry.Lookup(inst.Kind); err == nil {
 			v.TypeName = ad.Describe().Name
 		}

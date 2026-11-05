@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
 	"github.com/danielmaier42/claudeq/internal/store"
@@ -67,5 +68,39 @@ func TestListLimitsWithoutAMonitor(t *testing.T) {
 	do(t, srv, http.MethodGet, "/api/limits", nil).into(t, &got)
 	if len(got) != 0 {
 		t.Fatalf("limits = %+v, want none", got)
+	}
+}
+
+func TestListLimitsNamesAUsedUpCreditBalance(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	reg := provider.NewRegistry(limitsStub{stubAdapter: stubAdapter{health: provider.Health{State: provider.HealthReady}}, reads: &atomic.Int32{}})
+	until := time.Date(2026, 11, 5, 23, 0, 0, 0, time.UTC)
+	srv := httptest.NewServer(Handler(Deps{
+		Store: st, Registry: reg, Providers: provider.NewChecker(reg), Limits: provider.NewLimitMonitor(reg, nil),
+		BlockedProviders: func() map[string]time.Time { return map[string]time.Time{provider.DefaultInstanceID: until} },
+		BlockReasons: func() map[string]string {
+			return map[string]string{provider.DefaultInstanceID: string(provider.BlockCreditExhausted)}
+		},
+	}))
+	t.Cleanup(srv.Close)
+
+	var got []limitsView
+	do(t, srv, http.MethodGet, "/api/limits", nil).into(t, &got)
+	if len(got) != 1 || got[0].Blocked == nil {
+		t.Fatalf("limits = %+v, want the closed gate", got)
+	}
+	if b := got[0].Blocked; !b.Until.Equal(until) || b.Reason != string(provider.BlockCreditExhausted) {
+		t.Fatalf("blocked = %+v, want the credit block until %v", b, until)
+	}
+
+	var health struct {
+		Limited []limitedProvider `json:"limited_providers"`
+	}
+	do(t, srv, http.MethodGet, "/api/health", nil).into(t, &health)
+	if len(health.Limited) != 1 || health.Limited[0].Reason != string(provider.BlockCreditExhausted) {
+		t.Fatalf("health = %+v, want the credit block named", health.Limited)
 	}
 }

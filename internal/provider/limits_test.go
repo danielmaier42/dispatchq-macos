@@ -125,8 +125,8 @@ func TestLimitMonitorKeepsLastWindowsWhenAReadFails(t *testing.T) {
 func TestLimitMonitorReportsAnAccountWithoutAPlanAsUnsupported(t *testing.T) {
 	m, _, inst, _ := newLimitMonitor(limitAnswer{err: fmt.Errorf("claude: %w", ErrNoPlanLimits)})
 	got := m.Get(context.Background(), []Instance{inst}, true)[0]
-	if got.State != LimitsUnsupported || got.Reason != "No plan limits for API-key accounts" {
-		t.Fatalf("limits = %+v, want unsupported with the no-plan reason", got)
+	if got.State != LimitsUnsupported || got.Reason != NoCreditReading || !got.APIKey {
+		t.Fatalf("limits = %+v, want unsupported with the unknown credit balance", got)
 	}
 }
 

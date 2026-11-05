@@ -52,6 +52,12 @@ type LimitReading struct {
 // plan (an API-key login): there are no plan windows to read.
 var ErrNoPlanLimits = errors.New("this account is not logged in with a Claude plan, so it has no plan limits to show")
 
+// NoCreditReading is what an API-key account shows instead of windows. Its
+// prepaid credit balance cannot be read without an admin key and a model call,
+// so dispatchq does not know it until a run is refused with "Credit balance is
+// too low" — and must not suggest that the account has no limit at all.
+const NoCreditReading = "Credit balance unknown: an API key's balance cannot be read"
+
 // LimitsState says what the latest attempt to read an instance's limits found.
 type LimitsState string
 
@@ -81,6 +87,10 @@ type Limits struct {
 	// account's plan (see LimitReading).
 	Plan     string  `json:"plan,omitempty"`
 	Capacity float64 `json:"capacity,omitempty"`
+	// APIKey marks an account that spends a prepaid API credit balance rather
+	// than a plan's windows (ErrNoPlanLimits). Nothing can read that balance
+	// without spending it, so it is unknown until a run is refused for it.
+	APIKey bool `json:"api_key,omitempty"`
 	// UpdatedAt is when Windows were read. Zero when they never were.
 	UpdatedAt time.Time `json:"updated_at,omitzero"`
 	// CheckedAt is when the latest attempt was made, successful or not.
@@ -299,7 +309,7 @@ func (m *LimitMonitor) read(ctx context.Context, inst Instance, prev Limits) Lim
 	if errors.Is(err, ErrNoPlanLimits) {
 		// Nothing failed and the next read will find the same: an account on an
 		// API key has no plan, so there is no allowance to show, not a broken one.
-		return Limits{State: LimitsUnsupported, Reason: "No plan limits for API-key accounts", CheckedAt: now}
+		return Limits{State: LimitsUnsupported, Reason: NoCreditReading, APIKey: true, CheckedAt: now}
 	}
 	if err != nil {
 		reason := sentence(err.Error())

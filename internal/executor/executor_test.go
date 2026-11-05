@@ -488,6 +488,56 @@ func TestRunOrgBlockedPausesLikeALimit(t *testing.T) {
 	}
 }
 
+func TestRunCreditExhaustedPausesLikeALimit(t *testing.T) {
+	// The output of a Claude Code run on an API key whose prepaid credit is
+	// used up: a successful subtype with is_error set, a 400, and exit 1. It
+	// must pause the provider so its fallback takes the work, not fail the task.
+	out := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"real-sid","model":"claude-opus-5-5"}`,
+		`{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"Credit balance is too low"}]},"session_id":"real-sid","error":"billing_error","is_api_error_message":true}`,
+		`{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"terminal_reason":"api_error","result":"Credit balance is too low","session_id":"real-sid","num_turns":1,"duration_ms":512}`,
+	}, "\n")
+	res := runFake(t, out, 1)
+	if res.Status != store.StatusRateLimited {
+		t.Fatalf("status = %q, want rate_limited_waiting", res.Status)
+	}
+	if res.RetryAfter != time.Hour || !res.ResetAt.IsZero() {
+		t.Fatalf("retry after = %v, reset at = %v, want an hour and no reset time", res.RetryAfter, res.ResetAt)
+	}
+	if !strings.Contains(res.Message, "credit balance") {
+		t.Fatalf("message = %q, want it to name the credit balance", res.Message)
+	}
+	if res.Block != provider.BlockCreditExhausted {
+		t.Fatalf("block = %q, want the used-up credit balance named", res.Block)
+	}
+}
+
+func TestRunCreditExhaustedResultAlonePausesLikeALimit(t *testing.T) {
+	// The result envelope by itself is enough: older CLIs do not name the
+	// billing error on the assistant line.
+	out := `{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"terminal_reason":"api_error","result":"Credit balance is too low","session_id":"real-sid"}`
+	res := runFake(t, out, 1)
+	if res.Status != store.StatusRateLimited {
+		t.Fatalf("status = %q, want rate_limited_waiting", res.Status)
+	}
+}
+
+func TestRunBillingErrorWithoutCreditMessageIsNotCalledUsedUpCredit(t *testing.T) {
+	// A spend limit is refused with the same billing error, but its message does
+	// not say the credit balance is too low: the pause stands, the label does not.
+	out := strings.Join([]string{
+		`{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"You have reached your specified API usage limits"}]},"session_id":"real-sid","error":"billing_error","is_api_error_message":true}`,
+		`{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"result":"You have reached your specified API usage limits","session_id":"real-sid"}`,
+	}, "\n")
+	res := runFake(t, out, 1)
+	if res.Status != store.StatusRateLimited || res.RetryAfter != time.Hour {
+		t.Fatalf("status = %q, retry after %v, want an hour's pause", res.Status, res.RetryAfter)
+	}
+	if res.Block != provider.BlockBillingRefused {
+		t.Fatalf("block = %q, want the bare billing block", res.Block)
+	}
+}
+
 func TestRunAuthError(t *testing.T) {
 	out := `{"type":"result","subtype":"error","is_error":true,"error":"authentication_failed"}`
 	res := runFake(t, out, 1)

@@ -51,15 +51,21 @@ describe('limitCoverage and heading', () => {
     expect(limitHeading([])).toMatch(/waiting, not stuck/)
   })
   it('keeps a used-up credit balance out of the rate-limit banner', () => {
-    const key = {...b, name: 'API', until: '2026-10-19T14:00:00Z', reason: 'credit_exhausted' as const}
-    const late = {...a, until: '2026-10-19T13:00:00Z'}
-    expect(splitLimits([key], key.until)).toEqual({credit: true, rateLimited: [], until: ''})
-    expect(splitLimits([late, key], key.until)).toEqual({
-      credit: true,
-      rateLimited: [late],
+    const key = {...b, name: 'API', until: '2026-10-19T12:05:00Z', reason: 'credit_exhausted' as const}
+    const one = {...a, until: '2026-10-19T13:00:00Z'}
+    const two = {...b, until: '2026-10-19T14:00:00Z'}
+    expect(splitLimits([key], key.until)).toEqual({
+      creditUntil: '2026-10-19T12:05:00.000Z',
+      rateLimited: [],
+      until: '',
+    })
+    // The rate limit keeps its own, earliest reopen time and outlives the credit retry.
+    expect(splitLimits([two, key, one], key.until)).toEqual({
+      creditUntil: '2026-10-19T12:05:00.000Z',
+      rateLimited: [two, one],
       until: '2026-10-19T13:00:00.000Z',
     })
     expect(splitLimits([a, key], key.until).until).toBe(key.until)
-    expect(splitLimits([late, b], 'x')).toEqual({credit: false, rateLimited: [late, b], until: 'x'})
+    expect(splitLimits([one, b], 'x')).toEqual({creditUntil: '', rateLimited: [one, b], until: 'x'})
   })
 })

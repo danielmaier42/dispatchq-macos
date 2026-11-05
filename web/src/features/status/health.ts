@@ -43,26 +43,34 @@ export function limitCoverage(providers: LimitedProvider[]): LimitCoverage {
 const noCredit = (p: LimitedProvider) => p.reason === 'credit_exhausted'
 
 export interface LimitSplit {
-  // At least one provider is paused only because its credit is used up.
-  credit: boolean
+  // When the last used-up credit balance is tried again; '' when no provider
+  // is paused for credit.
+  creditUntil: string
   // The providers that wait for an ordinary limit to reset.
   rateLimited: LimitedProvider[]
-  // When the gate reopens for the rate-limited ones: the latest of their own
-  // times, or the daemon's gate time when it names no provider at all.
+  // When the queue reopens for the rate-limited ones: the earliest of their
+  // own times, as the daemon's gate does; '' when none waits for a limit.
   until: string
 }
 
+const times = (providers: LimitedProvider[]) =>
+  providers.map((p) => Date.parse(p.until)).filter((t) => !Number.isNaN(t))
+
 // splitLimits keeps a used-up credit balance out of the rate-limit banner: its
 // retries are not news, so neither its provider nor its retry time feed the
-// headline or the reopen time.
+// headline or the reopen time. A provider without a time of its own falls back
+// to the daemon's gate time.
 export function splitLimits(providers: LimitedProvider[], until: string): LimitSplit {
-  const credit = providers.some(noCredit)
-  if (!credit) return {credit, rateLimited: providers, until}
+  const credit = providers.filter(noCredit)
+  if (!credit.length) return {creditUntil: '', rateLimited: providers, until}
   const rateLimited = providers.filter((p) => !noCredit(p))
-  const times = rateLimited.map((p) => Date.parse(p.until)).filter((t) => !Number.isNaN(t))
-  // A rate-limited provider without a time of its own falls back to the gate's.
-  const latest = times.length ? new Date(Math.max(...times)).toISOString() : rateLimited.length ? until : ''
-  return {credit, rateLimited, until: latest}
+  const c = times(credit)
+  const r = times(rateLimited)
+  return {
+    creditUntil: c.length ? new Date(Math.max(...c)).toISOString() : until,
+    rateLimited,
+    until: r.length ? new Date(Math.min(...r)).toISOString() : rateLimited.length ? until : '',
+  }
 }
 
 export function limitHeading(providers: LimitedProvider[]): string {

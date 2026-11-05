@@ -177,11 +177,12 @@ function LimitBars({until, providers}: {until: string; providers: LimitedProvide
     return () => clearTimeout(t)
   }, [until])
 
-  if (!activeLimit(until, now)) return null
+  // Each bar keeps to its own clock: the credit retry passing does not hide a
+  // rate limit that still holds, nor the other way round.
   const split = splitLimits(providers, until)
   return (
     <>
-      {split.credit && <StatusBar tone="danger" icon={<Ban />} title={NO_CREDIT} />}
+      {activeLimit(split.creditUntil, now) && <StatusBar tone="danger" icon={<Ban />} title={NO_CREDIT} />}
       {split.until && <LimitBar until={split.until} providers={split.rateLimited} now={now} />}
     </>
   )

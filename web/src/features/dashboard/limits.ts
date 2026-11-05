@@ -1,4 +1,4 @@
-import {relTime} from '@/lib/format'
+import {NO_CREDIT, relTime} from '@/lib/format'
 import type {LimitWindow, LimitsEntry, ProviderLimits} from '@/lib/types'
 
 // A window shows what is left of it, so the bar empties as it is used. It is
@@ -68,14 +68,13 @@ export const creditUnknownHint =
   'DispatchQ only learns it is used up when a run is refused with "Credit balance is too low"; then this line says so.'
 
 // blockText says what an account block means and when the provider is tried
-// again; empty for a provider that is not blocked by one.
+// again; empty for a provider that is not blocked by one. A used-up credit
+// balance reads NO_CREDIT and nothing else: its retries stay silent.
 export function blockText(p: LimitsEntry, now = Date.now()): string {
   const b = p.blocked
   if (!b?.reason) return ''
+  if (b.reason === 'credit_exhausted') return NO_CREDIT
   const retry = Date.parse(b.until) > now ? `tried again ${relTime(b.until, now)}` : 'tried again now'
-  if (b.reason === 'credit_exhausted') {
-    return `No credit left: a run was refused with "Credit balance is too low". Add credit in the Anthropic Console; ${retry}.`
-  }
   if (b.reason === 'billing_refused') {
     return `Billing refused: the credit is used up or a spend limit was reached. Check the Anthropic Console; ${retry}.`
   }

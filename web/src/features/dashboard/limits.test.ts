@@ -67,9 +67,7 @@ describe('limits', () => {
     }
     expect(creditGone(p)).toBe(true)
     expect(creditUnknown(p)).toBe(false)
-    expect(blockText(p, t)).toBe(
-      'No credit left: a run was refused with "Credit balance is too low". Add credit in the Anthropic Console; tried again in 1 h.',
-    )
+    expect(blockText(p, t)).toBe('No credit left')
   })
   it('a bare billing refusal does not claim the credit is gone', () => {
     const t = Date.parse('2026-11-05T22:00:00Z')

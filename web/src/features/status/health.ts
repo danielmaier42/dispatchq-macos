@@ -42,16 +42,39 @@ export function limitCoverage(providers: LimitedProvider[]): LimitCoverage {
 
 const noCredit = (p: LimitedProvider) => p.reason === 'credit_exhausted'
 
-// A used-up credit balance is named as such: it does not reset on its own like
-// a limit, it lifts once credit is added.
+export interface LimitSplit {
+  // When the last used-up credit balance is tried again; '' when no provider
+  // is paused for credit.
+  creditUntil: string
+  // The providers that wait for an ordinary limit to reset.
+  rateLimited: LimitedProvider[]
+  // When the queue reopens for the rate-limited ones: the earliest of their
+  // own times, as the daemon's gate does; '' when none waits for a limit.
+  until: string
+}
+
+const times = (providers: LimitedProvider[]) =>
+  providers.map((p) => Date.parse(p.until)).filter((t) => !Number.isNaN(t))
+
+// splitLimits keeps a used-up credit balance out of the rate-limit banner: its
+// retries are not news, so neither its provider nor its retry time feed the
+// headline or the reopen time. A provider without a time of its own falls back
+// to the daemon's gate time.
+export function splitLimits(providers: LimitedProvider[], until: string): LimitSplit {
+  const credit = providers.filter(noCredit)
+  if (!credit.length) return {creditUntil: '', rateLimited: providers, until}
+  const rateLimited = providers.filter((p) => !noCredit(p))
+  const c = times(credit)
+  const r = times(rateLimited)
+  return {
+    creditUntil: c.length ? new Date(Math.max(...c)).toISOString() : until,
+    rateLimited,
+    until: r.length ? new Date(Math.min(...r)).toISOString() : rateLimited.length ? until : '',
+  }
+}
+
 export function limitHeading(providers: LimitedProvider[]): string {
   if (!providers.length) return 'Rate limit reached: the queue is waiting, not stuck'
-  const names = providers.map(
-    (p) =>
-      p.name +
-      (noCredit(p) && !providers.every(noCredit) ? ' (no credit left)' : '') +
-      (p.fallback ? ' → ' + p.fallback : ''),
-  )
-  if (providers.every(noCredit)) return 'No credit left'
+  const names = providers.map((p) => p.name + (p.fallback ? ' → ' + p.fallback : ''))
   return 'Rate limit reached, waiting on ' + names.join(', ')
 }

@@ -257,6 +257,9 @@ func (s *State) LastStart(taskID string) (time.Time, bool) {
 // MarkCompletedOnce records that a one-shot task has run.
 func (s *State) MarkCompletedOnce(taskID string) { s.CompletedOnce[taskID] = true }
 
+// ClearCompletedOnce puts a one-shot task back in the queue.
+func (s *State) ClearCompletedOnce(taskID string) { delete(s.CompletedOnce, taskID) }
+
 // IsCompletedOnce reports whether a one-shot task has already run.
 func (s *State) IsCompletedOnce(taskID string) bool { return s.CompletedOnce[taskID] }
 

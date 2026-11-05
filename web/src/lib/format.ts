@@ -110,6 +110,11 @@ export function usd(n: number): string {
   }).format(n)
 }
 
+// NO_CREDIT is the whole wording for a used-up API credit balance, wherever the
+// app shows it. Retries go on quietly behind it: no reset time, no explanation,
+// since the provider's own row already says which account it is.
+export const NO_CREDIT = 'No credit left'
+
 // resumeAt is when a rate-limited run continues: the gate's live reopen time
 // wins over the one the run recorded, since another task's later limit can push
 // the resume back after this run was paused.

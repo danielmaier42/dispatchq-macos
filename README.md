@@ -446,8 +446,10 @@ first. The window opens on the Dashboard:
   *Credit balance unknown*: its prepaid credit cannot be read, so DispatchQ
   claims neither that it has no limit nor that it has credit left. Once a run on
   it is refused with *Credit balance is too low*, the line turns red and says
-  *No credit left*, with the time the provider is tried again, and the waiting
-  banner reads *No API credit left on …* instead of *Rate limit reached*. A
+  *No credit left* and nothing more. DispatchQ keeps trying the provider
+  quietly in the background, so no retry time is shown; the banner on top
+  reads only *No credit left*, and a rate limit on another provider keeps its
+  own banner beside it. A
   billing refusal that does not name the credit balance (a spend limit set on
   the account, say) pauses the provider the same way and reads *Billing
   refused*. Settings and `dispatchq provider limits` keep showing *Credit
@@ -457,7 +459,7 @@ first. The window opens on the Dashboard:
   now would take them. Below that, cards in a fixed order: what is
   **running now** (and runs a rate limit paused, with their resume time,
   counted apart as *N waiting*; a run whose provider has no API credit left
-  says *No API credit left* instead of *Rate limited*), what is **up next** (due tasks first, with the
+  says only *No credit left*, without a resume time), what is **up next** (due tasks first, with the
   reason a task is held; tasks with quiet history are left out), runs that
   **failed in the last 24 hours**, and the **last 7 days** (runs, success rate,
   tokens and cost). Each entry opens its log or its task. Running now lists five

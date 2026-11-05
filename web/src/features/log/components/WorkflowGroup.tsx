@@ -9,10 +9,12 @@ export function WorkflowGroup({
   runs,
   showProvider,
   limitedUntil,
+  noCredit,
 }: {
   runs: WorkflowRun[]
   showProvider: boolean
   limitedUntil?: string
+  noCredit?: Set<string>
 }) {
   const last = runs[runs.length - 1].run
   return (
@@ -32,6 +34,7 @@ export function WorkflowGroup({
           depth={w.depth}
           showProvider={showProvider}
           limitedUntil={limitedUntil}
+          noCredit={noCredit}
         />
       ))}
     </div>

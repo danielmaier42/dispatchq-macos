@@ -323,14 +323,14 @@ func TestParseTranslatesStreamJSON(t *testing.T) {
 			line: `{"type":"assistant","session_id":"sid","error":"oauth_org_not_allowed","is_api_error_message":true,"api_error_code":"oauth_not_allowed_for_organization"}`,
 			want: []provider.Event{
 				{Type: provider.EventSessionStarted, SessionID: "sid"},
-				{Type: provider.EventRateLimited, RetryAfter: OrgBlockedRetryAfter, Detail: orgBlockedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: orgBlockedDetail},
 			},
 		},
 		{
 			name: "the result envelope of an organisation block pauses the provider too",
 			line: `{"type":"result","is_error":true,"api_error_status":403,"api_error_code":"oauth_not_allowed_for_organization","result":"Your organization has disabled Claude subscription access for Claude Code"}`,
 			want: []provider.Event{
-				{Type: provider.EventRateLimited, RetryAfter: OrgBlockedRetryAfter, Detail: orgBlockedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: orgBlockedDetail},
 				{Type: provider.EventCompleted, IsError: true, FinalOutput: "Your organization has disabled Claude subscription access for Claude Code", Metrics: &provider.Metrics{}},
 			},
 		},
@@ -338,8 +338,38 @@ func TestParseTranslatesStreamJSON(t *testing.T) {
 			name: "an organisation block refused as a 401 is still a limit, not a login problem",
 			line: `{"type":"result","is_error":true,"api_error_status":401,"api_error_code":"oauth_not_allowed_for_organization"}`,
 			want: []provider.Event{
-				{Type: provider.EventRateLimited, RetryAfter: OrgBlockedRetryAfter, Detail: orgBlockedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: orgBlockedDetail},
 				{Type: provider.EventCompleted, IsError: true, Metrics: &provider.Metrics{}},
+			},
+		},
+		{
+			name: "a used-up credit balance is a limit, not a plain failure",
+			line: `{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"terminal_reason":"api_error","result":"Credit balance is too low"}`,
+			want: []provider.Event{
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: creditExhaustedDetail},
+				{Type: provider.EventCompleted, IsError: true, FinalOutput: "Credit balance is too low", Metrics: &provider.Metrics{}},
+			},
+		},
+		{
+			name: "the billing error on the assistant line pauses the provider too",
+			line: `{"type":"assistant","session_id":"sid","error":"billing_error","is_api_error_message":true}`,
+			want: []provider.Event{
+				{Type: provider.EventSessionStarted, SessionID: "sid"},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: creditExhaustedDetail},
+			},
+		},
+		{
+			name: "a successful answer that quotes the credit message is still a success",
+			line: `{"type":"result","subtype":"success","is_error":false,"result":"The API said: Credit balance is too low"}`,
+			want: []provider.Event{
+				{Type: provider.EventCompleted, FinalOutput: "The API said: Credit balance is too low", Metrics: &provider.Metrics{}},
+			},
+		},
+		{
+			name: "any other 400 stays a plain failure",
+			line: `{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"result":"invalid_request_error: prompt is too long"}`,
+			want: []provider.Event{
+				{Type: provider.EventCompleted, IsError: true, FinalOutput: "invalid_request_error: prompt is too long", Metrics: &provider.Metrics{}},
 			},
 		},
 		{
@@ -460,8 +490,8 @@ func TestParserDoesNotShortenTheOrgBlockWithAnUnrelatedBackoff(t *testing.T) {
 	if len(got) != 2 || got[0].Type != provider.EventRateLimited {
 		t.Fatalf("got %+v, want a pause and the result", got)
 	}
-	if got[0].RetryAfter != OrgBlockedRetryAfter || !got[0].ResetAt.IsZero() {
-		t.Fatalf("pause = %+v, want the full %v and no window", got[0], OrgBlockedRetryAfter)
+	if got[0].RetryAfter != AccountBlockedRetryAfter || !got[0].ResetAt.IsZero() {
+		t.Fatalf("pause = %+v, want the full %v and no window", got[0], AccountBlockedRetryAfter)
 	}
 }
 
@@ -475,7 +505,21 @@ func TestParserIgnoresAnApproachingWindowForAnOrgBlock(t *testing.T) {
 	if len(got) != 1 || got[0].Type != provider.EventRateLimited {
 		t.Fatalf("got %+v, want the organisation block as a pause", got)
 	}
-	if !got[0].ResetAt.IsZero() || got[0].RetryAfter != OrgBlockedRetryAfter {
+	if !got[0].ResetAt.IsZero() || got[0].RetryAfter != AccountBlockedRetryAfter {
 		t.Fatalf("pause = %+v, want the fixed hour and no window", got[0])
+	}
+}
+
+func TestParserDoesNotShortenACreditPauseWithAnUnrelatedBackoff(t *testing.T) {
+	// Credit runs out without any allowance window, so a transient retry delay
+	// seen earlier must not turn the hour into a one-second retry loop.
+	p := New().NewParser()
+	p.Parse([]byte(`{"type":"system","subtype":"api_retry","error_status":529,"retry_delay_ms":1000}`))
+	got := p.Parse([]byte(`{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"result":"Credit balance is too low"}`))
+	if len(got) != 2 || got[0].Type != provider.EventRateLimited {
+		t.Fatalf("got %+v, want a pause and the result", got)
+	}
+	if got[0].RetryAfter != AccountBlockedRetryAfter || !got[0].ResetAt.IsZero() {
+		t.Fatalf("pause = %+v, want the full %v and no window", got[0], AccountBlockedRetryAfter)
 	}
 }

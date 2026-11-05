@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,7 +157,9 @@ type parser struct {
 	resetAt    time.Time
 	sawPause   bool // a pause of some kind was reported, so refined timing is news
 	sawLimit   bool // the CLI reported a limit of its own, so its timing is about one
-	orgBlocked bool
+	// blockDetail names an account block — an organisation that disallows the
+	// subscription, or a credit balance that is used up — once one was seen.
+	blockDetail string
 }
 
 // The CLI's own names for the organisation block: the account is logged in, but
@@ -168,16 +171,31 @@ const (
 	orgBlockedCode  = "oauth_not_allowed_for_organization"
 )
 
-// OrgBlockedRetryAfter is how long an organisation block pauses the instance.
-// The refusal names no window of its own, and the block lifts when an admin or
-// a billing change lifts it — never on its own in the next few minutes — so the
-// usual blind backoff would only burn a run every quarter of an hour.
-const OrgBlockedRetryAfter = time.Hour
+// The CLI's signs of a used-up API credit balance: an account running on an API
+// key that has no prepaid credit left is refused with a 400 before any work
+// happens. The assistant line carries the error name; the result envelope only
+// the API's own message, as a successful subtype with is_error set.
+const (
+	creditExhaustedError = "billing_error"
+	creditExhaustedText  = "credit balance is too low"
+)
+
+// AccountBlockedRetryAfter is how long an account block pauses the instance:
+// an organisation block or a used-up credit balance. Neither refusal names a
+// window of its own, and both lift when an admin or a billing change lifts them
+// — never on their own in the next few minutes — so the usual blind backoff
+// would only burn a run every quarter of an hour.
+const AccountBlockedRetryAfter = time.Hour
 
 // orgBlockedDetail is what the run says happened, in place of the generic rate
 // limit message: the account is not out of allowance, it has none.
 const orgBlockedDetail = "this organisation has disabled Claude subscription access for Claude Code; " +
 	"the provider is paused like a rate limit until an admin enables it"
+
+// creditExhaustedDetail is what the run says happened when the API credit
+// balance is used up: no allowance window will reset it, only adding credit.
+const creditExhaustedDetail = "the API credit balance of this account is too low; " +
+	"the provider is paused like a rate limit until credit is added"
 
 // streamEvent covers the fields dispatchq reads from the CLI's stream-json lines:
 // the opening `init` system event, the final `result` envelope, intermediate
@@ -242,8 +260,11 @@ func (p *parser) Parse(line []byte) []provider.Event {
 	if limited {
 		p.sawLimit = true
 	}
-	if p.isOrgBlocked(ev) {
-		limited, p.orgBlocked = true, true
+	if detail := p.accountBlock(ev); detail != "" {
+		limited = true
+		if p.blockDetail == "" {
+			p.blockDetail = detail
+		}
 	}
 	if limited {
 		p.sawPause = true
@@ -272,15 +293,15 @@ func (p *parser) Parse(line []byte) []provider.Event {
 			RetryAfter: p.retryAfter,
 			ResetAt:    p.resetAt,
 		}
-		if p.orgBlocked {
-			pause.Detail = orgBlockedDetail
+		if p.blockDetail != "" {
+			pause.Detail = p.blockDetail
 			// The block names no window of its own, and the timing the CLI
 			// mentions describes the allowance window — the right thing to wait
 			// for only when it actually reported a limit. Otherwise the fixed
 			// hour stands, so a one-second backoff from some transient API error
 			// cannot turn this pause into a retry loop.
 			if !p.sawLimit {
-				pause.RetryAfter, pause.ResetAt = OrgBlockedRetryAfter, time.Time{}
+				pause.RetryAfter, pause.ResetAt = AccountBlockedRetryAfter, time.Time{}
 			}
 		}
 		out = append(out, pause)
@@ -320,6 +341,30 @@ func (p *parser) isRateLimited(ev streamEvent) bool {
 // hands its work to the fallback, which is exactly the right answer.
 func (p *parser) isOrgBlocked(ev streamEvent) bool {
 	return ev.APIErrorCode == orgBlockedCode || ev.Error == orgBlockedError
+}
+
+// isCreditExhausted reports a used-up API credit balance. Like the organisation
+// block it is a limit rather than a failure: the task is fine, the account has
+// nothing to spend, so the provider pauses and its fallback takes the work. The
+// message is only read from an error result, so a run that merely quotes it in
+// its successful answer is not mistaken for one.
+func (p *parser) isCreditExhausted(ev streamEvent) bool {
+	if ev.Error == creditExhaustedError {
+		return true
+	}
+	return ev.Type == "result" && ev.IsError &&
+		strings.Contains(strings.ToLower(ev.ResultText), creditExhaustedText)
+}
+
+// accountBlock names the account block this line reports, or "" for none.
+func (p *parser) accountBlock(ev streamEvent) string {
+	switch {
+	case p.isOrgBlocked(ev):
+		return orgBlockedDetail
+	case p.isCreditExhausted(ev):
+		return creditExhaustedDetail
+	}
+	return ""
 }
 
 func (p *parser) isAuthFailure(ev streamEvent) bool {

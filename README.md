@@ -821,7 +821,9 @@ A provider can name a **fallback**: the provider its tasks run on while its own
 allowance is used up. Without one — the default — those tasks simply wait, as
 before.
 
-- It applies to the rate limit and to nothing else. A provider that is missing,
+- It applies to the rate limit, and to the account blocks that count as one (a
+  Claude organisation that disallows subscription access, a used-up API credit
+  balance), and to nothing else. A provider that is missing,
   logged out or switched off is still never answered by running the work
   somewhere else; those tasks stay queued and say why.
 - The chain is followed as far as it reaches. A provider in it that cannot take
@@ -1946,11 +1948,13 @@ that.
   At reset the gate reopens and the blocked task **resumes its session** rather
   than starting over.
 - **An account that may not run at all counts as a limit.** When Claude Code
-  answers that the organisation has disabled Claude subscription access, the
-  account has no allowance rather than a used-up one, so the provider pauses
-  exactly as it does on a limit — and its fallback takes the work. The pause is
-  an hour, because that block lifts through an admin or a billing change, never
-  by waiting a few minutes. The run says so instead of reading as a plain
+  answers that the organisation has disabled Claude subscription access, or
+  that the API credit balance is too low (an instance running on an
+  `ANTHROPIC_API_KEY` whose prepaid credit is used up), the account has nothing
+  to spend, so the provider pauses exactly as it does on a limit — and its
+  fallback takes the work. The pause is an hour, because such a block lifts
+  through an admin or a billing change, never by waiting a few minutes; no reset
+  time is invented for it. The run says so instead of reading as a plain
   failure.
 - **A fallback provider skips the wait.** If the blocked provider names one (see
   [When the limit is reached](#when-the-limit-is-reached)), its tasks run there

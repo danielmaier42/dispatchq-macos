@@ -431,7 +431,7 @@ also the first preset. **⌘↵** saves, and closing with unsaved changes asks
 first. The window opens on the Dashboard:
 
 - **Dashboard** — what needs attention at a glance. On top, the **allowance
-  strip**: one line per enabled provider with its logo, what is left of each
+  strip**: one line per enabled provider, sorted alphabetically by name, with its logo, what is left of each
   window (for Claude the 5-hour and the weekly window, for Codex the windows its
   account has) and when each resets; a bar turns orange at 25% left and red at
   10%. At the right end of each line sits the provider's urgency on a small

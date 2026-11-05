@@ -14,6 +14,7 @@ import type {LimitWindow, LimitsEntry} from '@/lib/types'
 import {cn} from '@/lib/utils'
 import {
   blockText,
+  byName,
   creditUnknown,
   creditUnknownHint,
   leftLevel,
@@ -69,7 +70,7 @@ export function AllowanceStrip({
   const limits = useLimits()
   const providers = useProviders().data ?? []
   const kindOf = (id: string) => providers.find((p) => p.id === id)?.kind ?? ''
-  const shown = (limits.data ?? []).filter((p) => p.limits.state !== 'disabled')
+  const shown = byName((limits.data ?? []).filter((p) => p.limits.state !== 'disabled'))
   const newest = newestReading(shown)
   const threshold = backfillThreshold(useSettings().data)
 

@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest'
 import type {LimitsEntry, ProviderLimits} from '@/lib/types'
 import {
   blockText,
+  byName,
   creditGone,
   creditUnknown,
   leftLevel,
@@ -95,5 +96,24 @@ describe('limits', () => {
     expect(readText('2026-10-19T12:00:20Z', t)).toBe('Read just now · refreshes every 15 min')
     expect(rowAge(fresh, newest)).toBeUndefined()
     expect(rowAge(old, newest)).toBe(old.updated_at)
+  })
+})
+
+describe('byName', () => {
+  const p = (id: string, name: string) => ({id, name})
+
+  it('ignores case and accents and reads digits as numbers', () => {
+    const sorted = byName([p('1', 'codex'), p('2', 'Claude 10'), p('3', 'claude 2'), p('4', 'Ärger')])
+    expect(sorted.map((e) => e.name)).toEqual(['Ärger', 'claude 2', 'Claude 10', 'codex'])
+  })
+
+  it('breaks a tie by id so equal names never swap, and falls back to the id without a name', () => {
+    expect(byName([p('b', 'Same'), p('a', 'same'), p('zed', '')]).map((e) => e.id)).toEqual(['a', 'b', 'zed'])
+  })
+
+  it('leaves the input untouched', () => {
+    const input = [p('b', 'B'), p('a', 'A')]
+    byName(input)
+    expect(input.map((e) => e.id)).toEqual(['b', 'a'])
   })
 })

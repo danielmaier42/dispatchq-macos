@@ -23,6 +23,20 @@ export function resetText(w: LimitWindow, now = Date.now()): string {
   return `Resets ${relTime(at, now)} · ${day} ${time}`
 }
 
+// byName orders the allowance strip alphabetically by the name it shows,
+// ignoring case and accents and reading digits as numbers ("Claude 2" before
+// "Claude 10"). Equal names keep a fixed order by id, so lines never swap
+// between polls. Only the display order changes: which provider a task or
+// pool picks does not depend on it.
+const nameCollator = new Intl.Collator(undefined, {sensitivity: 'base', numeric: true})
+const shownName = (p: Pick<LimitsEntry, 'id' | 'name'>) => p.name || p.id
+
+export function byName<T extends Pick<LimitsEntry, 'id' | 'name'>>(entries: T[]): T[] {
+  return [...entries].sort(
+    (a, b) => nameCollator.compare(shownName(a), shownName(b)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  )
+}
+
 // The week sits in the same column on every provider, also where an account has
 // no five-hour window, so the rows can be read down a column.
 export function windowSlots(windows: LimitWindow[] = []): (LimitWindow | null)[] {

@@ -294,9 +294,26 @@ type Event struct {
 	// ResetAt is the absolute time the allowance window reopens, reported with
 	// EventRateLimited.
 	ResetAt time.Time
+	// Block names an account block behind an EventRateLimited, when the pause
+	// is one rather than a used-up allowance window.
+	Block Block
 	// Metrics are the run's usage figures, reported with EventCompleted.
 	Metrics *Metrics
 }
+
+// Block names why an account refuses all work although no allowance window is
+// used up. Such a block pauses the provider like a limit, but it lifts only
+// through an admin or a billing change, so the operator needs to know which.
+type Block string
+
+const (
+	// BlockOrgDisallowed is an organisation that does not allow its Claude
+	// subscription to drive Claude Code.
+	BlockOrgDisallowed Block = "org_disallowed"
+	// BlockCreditExhausted is an API key whose prepaid credit balance is used
+	// up: the API refused a run with "Credit balance is too low".
+	BlockCreditExhausted Block = "credit_exhausted"
+)
 
 // Metrics are the usage figures a harness reports for a run. Values it does not
 // report stay zero — dispatchq never infers a missing cost from a price table.
@@ -322,6 +339,9 @@ type Result struct {
 	RetryAfter time.Duration
 	// ResetAt is the absolute rate-limit reset time, when reported.
 	ResetAt time.Time
+	// Block names the account block behind a rate-limited outcome, empty for an
+	// ordinary allowance limit.
+	Block Block
 	// Message is a short human-readable detail for a non-success outcome.
 	Message string
 	// FinalOutput is the harness's final response — the answer, as opposed to

@@ -441,8 +441,12 @@ first. The window opens on the Dashboard:
   only the urgency value, without a running-task count; it turns
   green while the provider is above it. It is read without spending any usage
   (see [How much is left](#how-much-is-left)); the strip says how old the
-  reading is and **Read now** asks again. An account on an API key has no plan
-  limits and says so plainly. Right under it, the **Pool** card puts every
+  reading is and **Read now** asks again. An account on an API key shows
+  *Credit balance unknown*: its prepaid credit cannot be read, so DispatchQ
+  claims neither that it has no limit nor that it has credit left. Once a run on
+  it is refused with *Credit balance is too low*, the line turns red and says
+  *No credit left*, with the time the provider is tried again, and the waiting
+  banner reads *No API credit left on …* instead of *Rate limit reached*. Right under it, the **Pool** card puts every
   [pool](#provider-pools) on one line, its members in the order a run started
   now would take them. Below that, cards in a fixed order: what is
   **running now** (and runs a rate limit paused, with their resume time,
@@ -733,8 +737,11 @@ per token through the API instead of drawing on the login's plan.
   `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` — use the configuration
   directory) and names starting with `DISPATCHQ_` or `CLAUDEQ_`.
 - **Limits and Usage.** A Claude provider with an `ANTHROPIC_API_KEY` (or
-  `ANTHROPIC_AUTH_TOKEN`) shows *No plan limits for API-key accounts*: the plan
-  windows of a login it may also hold are not what it spends. Its runs are
+  `ANTHROPIC_AUTH_TOKEN`) shows *Credit balance unknown* instead of plan
+  windows: the windows of a login it may also hold are not what it spends, and
+  the key's prepaid credit balance cannot be read. A used-up balance only shows
+  once a run is refused for it; then the provider pauses for an hour (see
+  [When the limit is reached](#when-the-limit-is-reached)). Its runs are
   counted in Usage like any other, with the cost Claude Code reports, which for a
   key is what is actually billed. Subscription runs show the API-equivalent cost.
 
@@ -863,6 +870,7 @@ Reading them costs no tokens and none of the allowance.
 |---------|-----------------------------|---------------|
 | Claude | The usage endpoint Claude Code's own `/usage` screen reads, called with the login the CLI stored for that provider's configuration directory | 5 hours, week |
 | Codex | The CLI's own `codex app-server`, asked `account/rateLimits/read` with the provider's `CODEX_HOME` | whichever windows the account reports, one or two (5 hours, week) |
+| Claude on an API key | nothing: the prepaid credit balance of an `ANTHROPIC_API_KEY` cannot be read without an admin key | none, shown as *Credit balance unknown*; *No credit left* once a run was refused for it |
 | opencode | nothing; it runs whatever backend it is pointed at | none, shown as *No limit* |
 
 The daemon reads them **when the Dashboard opens**, on **View → Refresh**

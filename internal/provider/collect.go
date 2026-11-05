@@ -27,6 +27,7 @@ type Collector struct {
 	failed       bool
 	detail       string
 	limitDetail  string // why the pause happened, when it was more than "limit reached"
+	block        Block
 	retryAfter   time.Duration
 	resetAt      time.Time
 }
@@ -61,6 +62,9 @@ func (c *Collector) Add(ev Event) {
 		c.rateLimited = true
 		if ev.Detail != "" && c.limitDetail == "" {
 			c.limitDetail = ev.Detail
+		}
+		if ev.Block != "" && c.block == "" {
+			c.block = ev.Block
 		}
 		if ev.RetryAfter > 0 {
 			c.retryAfter = ev.RetryAfter
@@ -131,6 +135,7 @@ func (c *Collector) Result(exitCode int) Result {
 		res.Message = c.detailOr(fmt.Sprintf("%s rejected the selected model", c.label()))
 	case c.rateLimited && (!c.completed || c.completedErr):
 		res.Status = store.StatusRateLimited
+		res.Block = c.block
 		res.Message = c.limitDetailOr("rate limit hit; waiting for reset")
 	case c.completed && !c.completedErr && exitCode == 0:
 		res.Status = store.StatusSuccess

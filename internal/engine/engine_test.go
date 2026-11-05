@@ -314,6 +314,32 @@ func TestRateLimitStaleResetFallsBackToBackoff(t *testing.T) {
 	}
 }
 
+func TestCreditBlockIsNamedWhileTheProviderWaits(t *testing.T) {
+	// A used-up credit balance pauses the provider for the fixed hour and is
+	// named as such, so the dashboard does not read it as a limit that resets.
+	start := time.Date(2026, 11, 5, 22, 0, 0, 0, time.UTC)
+	fc := clock.NewFake(start)
+	r := &stub{result: func(req executor.Request, _ int) provider.Result {
+		return provider.Result{Status: store.StatusRateLimited, SessionID: req.SessionID, RetryAfter: time.Hour, Block: provider.BlockCreditExhausted}
+	}}
+	e, st := newTestEngine(t, r, fc)
+	saveTasks(t, st, asapTask("a", false))
+	if err := e.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	e.WaitIdle()
+	if got := e.BlockReasons(); got[store.DefaultProviderID] != string(provider.BlockCreditExhausted) {
+		t.Fatalf("block reasons = %v, want the credit block on the default provider", got)
+	}
+	if got, want := e.BlockedProviders()[store.DefaultProviderID], start.Add(time.Hour); !got.Equal(want) {
+		t.Fatalf("blocked until %v, want %v", got, want)
+	}
+	fc.Advance(time.Hour)
+	if got := e.BlockReasons(); len(got) != 0 {
+		t.Fatalf("block reasons = %v after the hour, want none", got)
+	}
+}
+
 func TestRateLimitThenResumeAfterReset(t *testing.T) {
 	start := time.Date(2026, 7, 17, 22, 0, 0, 0, time.UTC)
 	fc := clock.NewFake(start)

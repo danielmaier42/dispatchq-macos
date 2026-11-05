@@ -40,6 +40,31 @@ export const noLimits = (l: ProviderLimits) => l.state === 'unsupported'
 // readFailed is a reading that should have worked and did not.
 export const readFailed = (l: ProviderLimits) => l.state === 'unavailable'
 
+// creditGone is a provider whose API credit balance is proven used up: a run
+// was refused with "Credit balance is too low" and its gate is still closed.
+// That is the only way the balance becomes known (see creditUnknown).
+export const creditGone = (p: LimitsEntry) => p.blocked?.reason === 'credit_exhausted'
+
+// creditUnknown is an API-key account whose balance nobody has proven empty:
+// the balance cannot be read, so it may be ample or nearly gone.
+export const creditUnknown = (p: LimitsEntry) => !!p.limits.api_key && !creditGone(p)
+
+export const creditUnknownHint =
+  'An API key spends prepaid credit, and Anthropic offers no way to read that balance without an admin key. ' +
+  'DispatchQ only learns it is used up when a run is refused with "Credit balance is too low"; then this line says so.'
+
+// blockText says what an account block means and when the provider is tried
+// again; empty for a provider that is not blocked by one.
+export function blockText(p: LimitsEntry, now = Date.now()): string {
+  const b = p.blocked
+  if (!b?.reason) return ''
+  const retry = Date.parse(b.until) > now ? `tried again ${relTime(b.until, now)}` : 'tried again now'
+  if (b.reason === 'credit_exhausted') {
+    return `No credit left: a run was refused with "Credit balance is too low". Add credit in the Anthropic Console; ${retry}.`
+  }
+  return `Claude subscription access is disabled by the organisation; ${retry}.`
+}
+
 // limitStatusText says when the figures are from, or why there are none.
 export function limitStatusText(l: ProviderLimits, now = Date.now()): string {
   switch (l.state) {

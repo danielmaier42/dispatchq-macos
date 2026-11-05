@@ -1,4 +1,4 @@
-import {AlertTriangle, RefreshCw} from 'lucide-react'
+import {AlertTriangle, Ban, RefreshCw} from 'lucide-react'
 import {openSettings} from '@/app/nav'
 import {ProviderLogo} from '@/components/domain/provider-logo'
 import {Button} from '@/components/ui/button'
@@ -13,6 +13,9 @@ import {useLimits, useProviders, useSettings} from '@/lib/queries'
 import type {LimitWindow, LimitsEntry} from '@/lib/types'
 import {cn} from '@/lib/utils'
 import {
+  blockText,
+  creditUnknown,
+  creditUnknownHint,
   leftLevel,
   limitStatusText,
   newestReading,
@@ -140,6 +143,9 @@ function ProviderLine({
   const hasWindows = !!(five || week)
   const weekSlot = five ? slot.second[3] : slot.first[3]
   const age = rowAge(l, newest)
+  // An account block outranks the windows: whatever they say, the provider
+  // takes no work until the block lifts.
+  const blocked = blockText(p, now)
   return (
     <div className={cn(row, 'min-h-10 px-4 py-2')}>
       <div className={cn(head, 'flex min-w-0 items-center gap-2')}>
@@ -168,7 +174,17 @@ function ProviderLine({
           )}
         </div>
       </div>
-      {hasWindows ? (
+      {blocked ? (
+        <Tooltip content={blocked}>
+          <p
+            className={cn(bothWindows, 'flex min-w-0 items-center gap-1.5 text-[12.5px] text-danger')}
+            tabIndex={0}
+          >
+            <Ban className="size-3.5 shrink-0" />
+            <span className="truncate">{blocked}</span>
+          </p>
+        </Tooltip>
+      ) : hasWindows ? (
         <>
           <WindowCell w={five} now={now} dim={failed} className={slot.first[2]} />
           <WindowCell w={week} now={now} dim={failed} className={weekSlot} />
@@ -176,15 +192,18 @@ function ProviderLine({
       ) : (
         // Without windows the reason takes their place: muted where there is
         // simply nothing to show, in warning colour only for a failed read.
-        <p
-          className={cn(
-            bothWindows,
-            'truncate text-[12.5px]',
-            failed ? 'text-warning-text' : 'text-muted-foreground',
-          )}
-        >
-          {limitStatusText(l, now)}
-        </p>
+        <Tooltip content={creditUnknown(p) ? creditUnknownHint : undefined}>
+          <p
+            className={cn(
+              bothWindows,
+              'truncate text-[12.5px]',
+              failed ? 'text-warning-text' : 'text-muted-foreground',
+            )}
+            tabIndex={creditUnknown(p) ? 0 : undefined}
+          >
+            {limitStatusText(l, now)}
+          </p>
+        </Tooltip>
       )}
       <div className={cn(gauge, 'flex min-w-0 justify-end')}>
         {p.urgency && hasWindows && (

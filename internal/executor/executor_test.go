@@ -507,6 +507,9 @@ func TestRunCreditExhaustedPausesLikeALimit(t *testing.T) {
 	if !strings.Contains(res.Message, "credit balance") {
 		t.Fatalf("message = %q, want it to name the credit balance", res.Message)
 	}
+	if res.Block != provider.BlockCreditExhausted {
+		t.Fatalf("block = %q, want the used-up credit balance named", res.Block)
+	}
 }
 
 func TestRunCreditExhaustedResultAlonePausesLikeALimit(t *testing.T) {

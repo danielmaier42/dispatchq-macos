@@ -347,6 +347,8 @@ export interface ProviderLimits {
   reason?: string
   plan?: string
   capacity?: number
+  // The account spends a prepaid API credit balance, which cannot be read.
+  api_key?: boolean
   // When the reading was taken.
   updated_at?: ISOTime
   checked_at: ISOTime
@@ -381,6 +383,17 @@ export interface LimitsEntry {
   urgency?: PoolRanking
   // Urgency is above the backfill threshold.
   backfill: boolean
+  // The provider's rate-limit gate while it is closed.
+  blocked?: ProviderBlock
+}
+
+// provider.Block: an account block behind a pause, as opposed to a used-up
+// allowance window that resets on its own.
+export type BlockReason = 'credit_exhausted' | 'org_disallowed'
+
+export interface ProviderBlock {
+  until: ISOTime
+  reason?: BlockReason
 }
 
 export type LimitsResponse = LimitsEntry[]
@@ -519,6 +532,8 @@ export interface LimitedProvider {
   until: ISOTime
   // Label of the provider taking this one's tasks meanwhile.
   fallback?: string
+  // Absent for an ordinary rate limit.
+  reason?: BlockReason
 }
 
 // GET /api/health response.

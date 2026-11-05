@@ -40,8 +40,22 @@ export function limitCoverage(providers: LimitedProvider[]): LimitCoverage {
   return covered === providers.length ? 'all' : 'some'
 }
 
+const noCredit = (p: LimitedProvider) => p.reason === 'credit_exhausted'
+
+// A used-up credit balance is named as such: it does not reset on its own like
+// a limit, it lifts once credit is added.
 export function limitHeading(providers: LimitedProvider[]): string {
   if (!providers.length) return 'Rate limit reached: the queue is waiting, not stuck'
-  const names = providers.map((p) => p.name + (p.fallback ? ' → ' + p.fallback : ''))
+  const names = providers.map(
+    (p) =>
+      p.name +
+      (noCredit(p) && !providers.every(noCredit) ? ' (no credit left)' : '') +
+      (p.fallback ? ' → ' + p.fallback : ''),
+  )
+  if (providers.every(noCredit)) return 'No API credit left on ' + names.join(', ')
   return 'Rate limit reached, waiting on ' + names.join(', ')
 }
+
+// anyNoCredit says whether the banner must explain that a provider waits for
+// credit, not for a reset.
+export const anyNoCredit = (providers: LimitedProvider[]) => providers.some(noCredit)

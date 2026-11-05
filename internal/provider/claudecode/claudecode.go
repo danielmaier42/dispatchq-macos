@@ -157,9 +157,9 @@ type parser struct {
 	resetAt    time.Time
 	sawPause   bool // a pause of some kind was reported, so refined timing is news
 	sawLimit   bool // the CLI reported a limit of its own, so its timing is about one
-	// blockDetail names an account block — an organisation that disallows the
+	// block names an account block — an organisation that disallows the
 	// subscription, or a credit balance that is used up — once one was seen.
-	blockDetail string
+	block provider.Block
 }
 
 // The CLI's own names for the organisation block: the account is logged in, but
@@ -260,10 +260,10 @@ func (p *parser) Parse(line []byte) []provider.Event {
 	if limited {
 		p.sawLimit = true
 	}
-	if detail := p.accountBlock(ev); detail != "" {
+	if block := p.accountBlock(ev); block != "" {
 		limited = true
-		if p.blockDetail == "" {
-			p.blockDetail = detail
+		if p.block == "" {
+			p.block = block
 		}
 	}
 	if limited {
@@ -293,8 +293,8 @@ func (p *parser) Parse(line []byte) []provider.Event {
 			RetryAfter: p.retryAfter,
 			ResetAt:    p.resetAt,
 		}
-		if p.blockDetail != "" {
-			pause.Detail = p.blockDetail
+		if p.block != "" {
+			pause.Block, pause.Detail = p.block, blockDetails[p.block]
 			// The block names no window of its own, and the timing the CLI
 			// mentions describes the allowance window — the right thing to wait
 			// for only when it actually reported a limit. Otherwise the fixed
@@ -357,14 +357,21 @@ func (p *parser) isCreditExhausted(ev streamEvent) bool {
 }
 
 // accountBlock names the account block this line reports, or "" for none.
-func (p *parser) accountBlock(ev streamEvent) string {
+func (p *parser) accountBlock(ev streamEvent) provider.Block {
 	switch {
 	case p.isOrgBlocked(ev):
-		return orgBlockedDetail
+		return provider.BlockOrgDisallowed
 	case p.isCreditExhausted(ev):
-		return creditExhaustedDetail
+		return provider.BlockCreditExhausted
 	}
 	return ""
+}
+
+// blockDetails is what the run says happened for each account block, in place
+// of the generic rate limit message.
+var blockDetails = map[provider.Block]string{
+	provider.BlockOrgDisallowed:   orgBlockedDetail,
+	provider.BlockCreditExhausted: creditExhaustedDetail,
 }
 
 func (p *parser) isAuthFailure(ev streamEvent) bool {

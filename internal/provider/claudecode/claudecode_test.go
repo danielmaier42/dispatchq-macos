@@ -323,14 +323,14 @@ func TestParseTranslatesStreamJSON(t *testing.T) {
 			line: `{"type":"assistant","session_id":"sid","error":"oauth_org_not_allowed","is_api_error_message":true,"api_error_code":"oauth_not_allowed_for_organization"}`,
 			want: []provider.Event{
 				{Type: provider.EventSessionStarted, SessionID: "sid"},
-				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: orgBlockedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Block: provider.BlockOrgDisallowed, Detail: orgBlockedDetail},
 			},
 		},
 		{
 			name: "the result envelope of an organisation block pauses the provider too",
 			line: `{"type":"result","is_error":true,"api_error_status":403,"api_error_code":"oauth_not_allowed_for_organization","result":"Your organization has disabled Claude subscription access for Claude Code"}`,
 			want: []provider.Event{
-				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: orgBlockedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Block: provider.BlockOrgDisallowed, Detail: orgBlockedDetail},
 				{Type: provider.EventCompleted, IsError: true, FinalOutput: "Your organization has disabled Claude subscription access for Claude Code", Metrics: &provider.Metrics{}},
 			},
 		},
@@ -338,7 +338,7 @@ func TestParseTranslatesStreamJSON(t *testing.T) {
 			name: "an organisation block refused as a 401 is still a limit, not a login problem",
 			line: `{"type":"result","is_error":true,"api_error_status":401,"api_error_code":"oauth_not_allowed_for_organization"}`,
 			want: []provider.Event{
-				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: orgBlockedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Block: provider.BlockOrgDisallowed, Detail: orgBlockedDetail},
 				{Type: provider.EventCompleted, IsError: true, Metrics: &provider.Metrics{}},
 			},
 		},
@@ -346,7 +346,7 @@ func TestParseTranslatesStreamJSON(t *testing.T) {
 			name: "a used-up credit balance is a limit, not a plain failure",
 			line: `{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"terminal_reason":"api_error","result":"Credit balance is too low"}`,
 			want: []provider.Event{
-				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: creditExhaustedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Block: provider.BlockCreditExhausted, Detail: creditExhaustedDetail},
 				{Type: provider.EventCompleted, IsError: true, FinalOutput: "Credit balance is too low", Metrics: &provider.Metrics{}},
 			},
 		},
@@ -355,7 +355,7 @@ func TestParseTranslatesStreamJSON(t *testing.T) {
 			line: `{"type":"assistant","session_id":"sid","error":"billing_error","is_api_error_message":true}`,
 			want: []provider.Event{
 				{Type: provider.EventSessionStarted, SessionID: "sid"},
-				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Detail: creditExhaustedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Block: provider.BlockCreditExhausted, Detail: creditExhaustedDetail},
 			},
 		},
 		{

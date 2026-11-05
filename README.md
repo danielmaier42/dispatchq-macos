@@ -269,7 +269,8 @@ colour are stored by the daemon and do carry over.
    the allowance resets).
 3. Check the **Log** for the outcome, open a run to read the full log, or replay
    it. A finished one-shot task leaves the queue but stays in history; recurring
-   tasks remain queued for their next occurrence.
+   tasks remain queued for their next occurrence. Its id is free again: a task
+   added later under the same id is a new task and runs.
 4. The **Dashboard** shows how much of each provider's allowance is left;
    **Usage** shows what DispatchQ consumed over the last 14 days.
 

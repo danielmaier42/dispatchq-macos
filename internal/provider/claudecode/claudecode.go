@@ -199,8 +199,7 @@ const billingRefusedDetail = "the API refused this account for billing (credit u
 
 // creditExhaustedDetail is what the run says happened when the API credit
 // balance is used up: no allowance window will reset it, only adding credit.
-const creditExhaustedDetail = "the API credit balance of this account is too low; " +
-	"the provider is paused like a rate limit until credit is added"
+const creditExhaustedDetail = "No credit left"
 
 // streamEvent covers the fields dispatchq reads from the CLI's stream-json lines:
 // the opening `init` system event, the final `result` envelope, intermediate

@@ -57,11 +57,7 @@ func (a *Adapter) AsideCommand(inst provider.Instance, req provider.AsideRequest
 	}
 	args = append(args, req.Text)
 
-	cmd := provider.Command{Path: a.binary(inst), Args: args}
-	if inst.ConfigDir != "" {
-		cmd.Env = append(cmd.Env, ConfigDirEnv+"="+inst.ConfigDir)
-	}
-	return cmd, nil
+	return provider.Command{Path: a.binary(inst), Args: args, Env: a.env(inst)}, nil
 }
 
 // asideEnvelope is the part of `claude -p --output-format json` an aside reads.

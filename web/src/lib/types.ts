@@ -283,6 +283,15 @@ export interface Provider extends ProviderInstance {
   // Display name of the harness, e.g. "Claude".
   type_name: string
   default_config_dir?: string
+  // Names of the environment variables the harness is started with. The values are
+  // secrets and never come back from the daemon.
+  env: string[]
+}
+
+// One variable in ProviderInput.env. A missing value keeps the one stored under the name.
+export interface ProviderEnvInput {
+  name: string
+  value?: string
 }
 
 // POST /api/providers and PUT /api/providers/{id} request (providerInput). On PUT the id comes from the URL and kind cannot change.
@@ -298,6 +307,8 @@ export interface ProviderInput {
   fallback_model?: string
   // Omit to keep (PUT) or default to true (POST).
   enabled?: boolean | null
+  // The complete list; a name left out is removed. Omit to leave the variables alone.
+  env?: ProviderEnvInput[]
 }
 
 // GET /api/providers/kinds -> ProviderKindInfo[].

@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -784,6 +786,66 @@ func TestContinueRunUsesTheProvidersAccount(t *testing.T) {
 	want := []string{"/usr/bin/env", "CLAUDE_CONFIG_DIR=/Users/x/.claude-max", "/opt/claude", "--resume", "sess-1"}
 	if strings.Join(got.argv, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", got.argv, want)
+	}
+}
+
+// TestContinueRunKeepsTheKeyOffTheCommandLine: an instance that runs on an API
+// key must reopen on that key, but Terminal prints the command and the shell
+// keeps it in its history, so the key travels in a file the shell deletes.
+func TestContinueRunKeepsTheKeyOffTheCommandLine(t *testing.T) {
+	stubSrv, srvStore, got := continueFixture(t, func(r *store.Run) {
+		r.Provider = store.RunProvider{ID: "claude-api", Kind: store.DefaultProviderKind, Name: "Claude API"}
+	}, nil)
+	stubSrv.Close()
+	reg := provider.NewRegistry(claudecode.New())
+	srv := httptest.NewServer(Handler(Deps{Store: srvStore, Registry: reg, Providers: provider.NewChecker(reg),
+		OpenTerminal: func(_ context.Context, dir string, argv []string) error {
+			got.dir, got.argv = dir, argv
+			return nil
+		}}))
+	t.Cleanup(srv.Close)
+	if err := srvStore.UpdateConfig(func(cfg *store.Config) error {
+		cfg.Providers = append(cfg.Providers, store.Provider{
+			ID: "claude-api", Kind: store.DefaultProviderKind, Name: "Claude API",
+			BinaryPath: "/opt/claude", ConfigDir: "/Users/x/.claude-api", Enabled: true,
+			Env: map[string]string{"ANTHROPIC_API_KEY": "sk-ant-it's-secret"},
+		})
+		return nil
+	}); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+
+	if r := do(t, srv, "POST", "/api/runs/r1/continue", nil); r.Status != http.StatusNoContent {
+		t.Fatalf("continue status = %d (%s)", r.Status, r.Body)
+	}
+	if strings.Contains(strings.Join(got.argv, " "), "sk-ant") {
+		t.Fatalf("argv = %v, want the key kept out of the command line", got.argv)
+	}
+	if len(got.argv) < 5 || got.argv[0] != "/bin/sh" {
+		t.Fatalf("argv = %v, want the shell wrapper", got.argv)
+	}
+	file := got.argv[3]
+	t.Cleanup(func() { _ = os.Remove(file) })
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read the env file: %v", err)
+	}
+	if want := "export ANTHROPIC_API_KEY='sk-ant-it'\\''s-secret'\n"; string(data) != want {
+		t.Fatalf("env file = %q, want %q", data, want)
+	}
+	if want := "/usr/bin/env CLAUDE_CONFIG_DIR=/Users/x/.claude-api /opt/claude --resume sess-1"; strings.Join(got.argv[4:], " ") != want {
+		t.Fatalf("command = %q, want %q", strings.Join(got.argv[4:], " "), want)
+	}
+	// What the wrapper does with the file: export, delete, exec.
+	out, err := exec.Command(got.argv[0], append(got.argv[1:4], "/usr/bin/env")...).Output() // #nosec G204 — the argv built above, with env as the command
+	if err != nil {
+		t.Fatalf("run the wrapper: %v", err)
+	}
+	if !strings.Contains(string(out), "ANTHROPIC_API_KEY=sk-ant-it's-secret\n") {
+		t.Fatalf("the wrapped process did not receive the key")
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatalf("the env file still exists after the wrapper ran: %v", err)
 	}
 }
 

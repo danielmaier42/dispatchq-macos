@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/danielmaier42/claudeq/internal/store"
@@ -184,7 +185,7 @@ func TestFromConfigReadsTheStoredInstances(t *testing.T) {
 		ID: DefaultInstanceID, Kind: KindClaudeCode, Name: DefaultInstanceName,
 		BinaryPath: "/opt/claude", DefaultModel: "opus", Enabled: true,
 	}
-	if all[0] != want {
+	if !reflect.DeepEqual(all[0], want) {
 		t.Fatalf("instance = %+v, want %+v", all[0], want)
 	}
 
@@ -230,7 +231,7 @@ func TestStoredRoundTripsAnInstance(t *testing.T) {
 		ID: "claude-secondary", Kind: KindClaudeCode, Name: "Second account",
 		BinaryPath: "/opt/claude", ConfigDir: "/tmp/other", DefaultModel: "haiku", Enabled: true,
 	}
-	if got := InstanceOf(inst.Stored()); got != inst {
+	if got := InstanceOf(inst.Stored()); !reflect.DeepEqual(got, inst) {
 		t.Fatalf("round trip = %+v, want %+v", got, inst)
 	}
 }

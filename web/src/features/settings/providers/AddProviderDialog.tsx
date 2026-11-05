@@ -18,6 +18,8 @@ import {errorMessage} from '@/lib/api'
 import {useProviderKinds} from '@/lib/queries'
 import type {ProviderKind} from '@/lib/types'
 import {addProvider} from './actions'
+import {EnvEditor} from './EnvEditor'
+import {envPayload, envProblem, type EnvRow} from './env-logic'
 
 // AddProviderDialog asks for the things that cannot be changed afterwards (the
 // id and the kind) plus the two that decide what the new provider is. The rest
@@ -42,6 +44,7 @@ function AddForm({onDone}: {onDone: () => void}) {
   const [kind, setKind] = useState<ProviderKind | ''>('')
   const [name, setName] = useState('')
   const [dir, setDir] = useState('')
+  const [env, setEnv] = useState<EnvRow[]>([])
   const [idError, setIdError] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -55,6 +58,11 @@ function AddForm({onDone}: {onDone: () => void}) {
       return
     }
     if (!chosen) return
+    const problem = envProblem(env)
+    if (problem) {
+      setError(problem)
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -63,6 +71,7 @@ function AddForm({onDone}: {onDone: () => void}) {
         kind: chosen.kind,
         name: name.trim() || trimmed,
         config_dir: dir.trim(),
+        env: envPayload(env),
       })
       toast.success('Provider added')
       onDone()
@@ -133,6 +142,12 @@ function AddForm({onDone}: {onDone: () => void}) {
             onChange={(e) => setDir(e.target.value)}
             spellCheck={false}
           />
+        </Field>
+        <Field
+          label="Environment variables"
+          hint="Passed to the CLI on every run and check, e.g. an API key to run this provider on API billing. Optional; values are never shown again."
+        >
+          <EnvEditor kind={chosen?.kind ?? ''} rows={env} onChange={setEnv} idPrefix="np-env" />
         </Field>
         <p className="text-[12px] text-muted-foreground">
           Binary, default model and the fallback for a used-up limit are set on its card afterwards.

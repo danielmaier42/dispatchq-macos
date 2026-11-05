@@ -14,9 +14,14 @@ import (
 // providerView is one configured instance plus what dispatchq currently knows
 // about it: whether it can run a job, and whether it is the default. It carries
 // no credentials — the provider CLIs own those, and a readiness check never
-// reads them into dispatchq.
+// reads them into dispatchq. The environment variables an operator set are the
+// one exception that lives in dispatchq's file, so only their names go out.
 type providerView struct {
 	provider.Instance
+	// Env names the variables the harness is started with. The values are
+	// secrets and are write-only: the app shows the names and keeps the stored
+	// value unless a new one is typed.
+	Env     []string        `json:"env"`
 	Health  provider.Health `json:"health"`
 	Default bool            `json:"default"`
 	// Detected is the binary dispatchq would use when no path is configured, so
@@ -88,7 +93,7 @@ func (s *server) views(ctx context.Context, set provider.Set, only string, fresh
 			continue
 		}
 		h := s.d.Providers.CheckMaybeFresh(ctx, inst, fresh)
-		v := providerView{Instance: inst, Health: h, Default: inst.ID == set.DefaultID()}
+		v := providerView{Instance: inst, Env: inst.EnvNames(), Health: h, Default: inst.ID == set.DefaultID()}
 		if ad, err := s.d.Registry.Lookup(inst.Kind); err == nil {
 			caps, desc := ad.Capabilities(), ad.Describe()
 			v.ReasoningEffort, v.Asides = caps.ReasoningEffort, caps.Asides
@@ -148,6 +153,43 @@ type providerInput struct {
 	// choice to dispatchq.
 	FallbackModel string `json:"fallback_model"`
 	Enabled       *bool  `json:"enabled"`
+	// Env is the complete list of variables the harness is started with. Absent
+	// leaves the stored ones alone; a list replaces them, so a variable left out
+	// is removed.
+	Env *[]envInput `json:"env"`
+}
+
+// envInput is one variable of that list. A missing value keeps the one already
+// stored under the name, which is how an edit leaves a secret it cannot see
+// untouched.
+type envInput struct {
+	Name  string  `json:"name"`
+	Value *string `json:"value"`
+}
+
+// envFrom builds the stored variables from the submitted list, taking the
+// value of any entry without one from current.
+func envFrom(list []envInput, current map[string]string) (map[string]string, error) {
+	if len(list) == 0 {
+		return nil, nil
+	}
+	env := make(map[string]string, len(list))
+	for _, e := range list {
+		if _, dup := env[e.Name]; dup {
+			return nil, fmt.Errorf("environment variable %s is listed twice", e.Name)
+		}
+		switch {
+		case e.Value != nil:
+			env[e.Name] = *e.Value
+		default:
+			old, ok := current[e.Name]
+			if !ok {
+				return nil, fmt.Errorf("environment variable %s has no value yet", e.Name)
+			}
+			env[e.Name] = old
+		}
+	}
+	return env, nil
 }
 
 func (s *server) addProvider(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +211,14 @@ func (s *server) addProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	if inst.Name == "" {
 		inst.Name = inst.ID
+	}
+	if in.Env != nil {
+		env, err := envFrom(*in.Env, nil)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		inst.Env = env
 	}
 	if err := app.AddProvider(s.d.Store, s.d.Registry, inst); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -200,6 +250,13 @@ func (s *server) updateProvider(w http.ResponseWriter, r *http.Request) {
 		inst.DefaultModel = in.DefaultModel
 		inst.FallbackProvider = in.FallbackProvider
 		inst.FallbackModel = in.FallbackModel
+		if in.Env != nil {
+			env, err := envFrom(*in.Env, inst.Env)
+			if err != nil {
+				return err
+			}
+			inst.Env = env
+		}
 		if in.Enabled != nil {
 			inst.Enabled = *in.Enabled
 		}

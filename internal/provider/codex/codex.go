@@ -205,12 +205,14 @@ func (a *Adapter) InteractiveResumeCommand(inst provider.Instance, req provider.
 	return provider.Command{Path: a.binaryOr(inst), Args: args, Env: a.env(inst)}, nil
 }
 
-// env is the instance's own environment: its account directory, when it has one.
+// env is the instance's own environment: its account directory, when it has
+// one, then the variables the operator set for it.
 func (a *Adapter) env(inst provider.Instance) []string {
-	if inst.ConfigDir == "" {
-		return nil
+	var base []string
+	if inst.ConfigDir != "" {
+		base = append(base, ConfigDirEnv+"="+inst.ConfigDir)
 	}
-	return []string{ConfigDirEnv + "=" + inst.ConfigDir}
+	return inst.Environ(base...)
 }
 
 // tomlString quotes a value for a `-c key=value` override, which Codex parses as

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -455,5 +457,91 @@ func TestBlockedReasonsAsksEachHarnessOnce(t *testing.T) {
 	}
 	if got[""] != "not logged in" || got["claude"] != "not logged in" {
 		t.Fatalf("blocked = %+v, want both ways of naming the provider marked", got)
+	}
+}
+
+// TestProviderEnvironmentIsWriteOnly: the app can set a variable and see that
+// it exists, but never reads its value back, and an edit that leaves a variable
+// without a value keeps the stored one.
+func TestProviderEnvironmentIsWriteOnly(t *testing.T) {
+	srv, st := newProviderServer(t, provider.Health{State: provider.HealthReady})
+
+	put := func(env []map[string]any) resp {
+		return do(t, srv, http.MethodPut, "/api/providers/claude", map[string]any{
+			"name": "Claude Code", "enabled": true, "env": env,
+		})
+	}
+	r := put([]map[string]any{{"name": "ANTHROPIC_API_KEY", "value": "sk-ant-secret"}, {"name": "ANTHROPIC_BASE_URL", "value": "https://gw.example"}})
+	if r.Status != http.StatusOK {
+		t.Fatalf("update = %d (%s)", r.Status, r.Body)
+	}
+	if strings.Contains(string(r.Body), "sk-ant-secret") || strings.Contains(string(r.Body), "gw.example") {
+		t.Fatalf("response %s carries a value", r.Body)
+	}
+	var v providerView
+	r.into(t, &v)
+	if want := []string{"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"}; !reflect.DeepEqual(v.Env, want) {
+		t.Fatalf("env names = %v, want %v", v.Env, want)
+	}
+	list := do(t, srv, http.MethodGet, "/api/providers", nil)
+	if strings.Contains(string(list.Body), "sk-ant-secret") {
+		t.Fatalf("list %s carries a value", list.Body)
+	}
+
+	// Keep the key (no value), replace the URL, drop nothing.
+	r = put([]map[string]any{{"name": "ANTHROPIC_API_KEY"}, {"name": "ANTHROPIC_BASE_URL", "value": "https://other.example"}})
+	if r.Status != http.StatusOK {
+		t.Fatalf("keeping update = %d (%s)", r.Status, r.Body)
+	}
+	cfg, _ := st.LoadConfig()
+	want := map[string]string{"ANTHROPIC_API_KEY": "sk-ant-secret", "ANTHROPIC_BASE_URL": "https://other.example"}
+	if !reflect.DeepEqual(cfg.Providers[0].Env, want) {
+		t.Fatalf("stored env = %v, want %v", cfg.Providers[0].Env, want)
+	}
+
+	// An update that does not mention env leaves it alone.
+	if r := do(t, srv, http.MethodPut, "/api/providers/claude", map[string]any{"name": "Renamed", "enabled": true}); r.Status != http.StatusOK {
+		t.Fatalf("plain update = %d (%s)", r.Status, r.Body)
+	}
+	if cfg, _ = st.LoadConfig(); !reflect.DeepEqual(cfg.Providers[0].Env, want) {
+		t.Fatalf("env after a plain update = %v, want it untouched", cfg.Providers[0].Env)
+	}
+
+	// An empty list removes every variable; a name left out is removed.
+	if r := put([]map[string]any{}); r.Status != http.StatusOK {
+		t.Fatalf("clearing update = %d (%s)", r.Status, r.Body)
+	}
+	if cfg, _ = st.LoadConfig(); len(cfg.Providers[0].Env) != 0 {
+		t.Fatalf("env = %v, want it cleared", cfg.Providers[0].Env)
+	}
+}
+
+func TestProviderEnvironmentIsValidated(t *testing.T) {
+	srv, _ := newProviderServer(t, provider.Health{State: provider.HealthReady})
+	for name, env := range map[string][]map[string]any{
+		"bad name":         {{"name": "NOT-VALID", "value": "x"}},
+		"owned by a field": {{"name": "CLAUDE_CONFIG_DIR", "value": "/x"}},
+		"no value yet":     {{"name": "ANTHROPIC_API_KEY"}},
+		"duplicate":        {{"name": "A", "value": "1"}, {"name": "A", "value": "2"}},
+	} {
+		r := do(t, srv, http.MethodPut, "/api/providers/claude", map[string]any{"name": "C", "enabled": true, "env": env})
+		if r.Status != http.StatusBadRequest {
+			t.Errorf("%s: status = %d (%s), want 400", name, r.Status, r.Body)
+		}
+	}
+}
+
+func TestAddProviderWithEnvironment(t *testing.T) {
+	srv, st := newProviderServer(t, provider.Health{State: provider.HealthReady})
+	r := do(t, srv, http.MethodPost, "/api/providers", map[string]any{
+		"id": "api", "kind": "claude-code", "name": "API",
+		"env": []map[string]any{{"name": "ANTHROPIC_API_KEY", "value": "sk-ant-x"}},
+	})
+	if r.Status != http.StatusCreated {
+		t.Fatalf("add = %d (%s)", r.Status, r.Body)
+	}
+	cfg, _ := st.LoadConfig()
+	if got := cfg.Providers[len(cfg.Providers)-1].Env["ANTHROPIC_API_KEY"]; got != "sk-ant-x" {
+		t.Fatalf("stored key = %q", got)
 	}
 }

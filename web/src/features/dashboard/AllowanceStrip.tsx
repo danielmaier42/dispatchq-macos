@@ -180,8 +180,8 @@ function ProviderLine({
             className={cn(bothWindows, 'flex min-w-0 items-center gap-1.5 text-[12.5px] text-danger')}
             tabIndex={0}
           >
-            <Ban className="size-3.5 shrink-0" />
-            <span className="truncate">{blocked}</span>
+            <Ban className="mt-0.5 size-3.5 shrink-0" />
+            <span className="line-clamp-2">{blocked}</span>
           </p>
         </Tooltip>
       ) : hasWindows ? (

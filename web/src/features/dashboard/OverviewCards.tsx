@@ -18,8 +18,9 @@ import {clearLogFilters, setLogFilters} from '@/features/log/filters-store'
 import {openRunLog} from '@/features/log/store'
 import {openAddTask, openTaskEditor} from '@/features/task-editor/store'
 import {compact, fullTime, relTime, resumeAt, resumeText, runDuration, usd} from '@/lib/format'
-import {useHealth, useRuns, useSettings, useStats, useTasks} from '@/lib/queries'
+import {useHealth, useLimits, useRuns, useSettings, useStats, useTasks} from '@/lib/queries'
 import type {QueueTask, Run} from '@/lib/types'
+import {creditGone} from './limits'
 import {OverviewCard, OverviewEmpty, OverviewRow} from './OverviewCard'
 import {cardOrder, type CardId, holdText, recentFailures, upNext, waitingRuns} from './overview'
 import {useNow} from '@/hooks/use-now'
@@ -79,6 +80,7 @@ function RunningCard() {
   const runs = useRuns()
   const paused = !!useSettings().data?.paused
   const limitedUntil = useHealth().data?.limited_until || undefined
+  const noCredit = new Set((useLimits().data ?? []).filter(creditGone).map((p) => p.id))
   const now = useNow(15_000)
   const running = (runs.data ?? []).filter((r) => r.status === 'running')
   const waiting = waitingRuns(runs.data ?? [])
@@ -123,7 +125,8 @@ function RunningCard() {
                 title={r.task_name}
                 meta={
                   <span className="text-warning-text">
-                    Rate limited, {resumeText(resumeAt(r.resume_at, limitedUntil))}
+                    {r.provider?.id && noCredit.has(r.provider.id) ? 'No API credit left' : 'Rate limited'},{' '}
+                    {resumeText(resumeAt(r.resume_at, limitedUntil))}
                   </span>
                 }
                 onClick={() => openRunLog(r.run_id)}

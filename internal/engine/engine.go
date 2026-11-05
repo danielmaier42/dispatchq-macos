@@ -582,11 +582,10 @@ func runNotes(res provider.Resolved, dropped string) []string {
 // member or fallback right away, nor on its own account once that reopens.
 func (e *Engine) isDue(t task.Task, st *store.State, deps dependencyState, now time.Time) (bool, error) {
 	anchor, _ := st.LastStart(t.ID)
-	_, waiting := st.PendingResume(t.ID)
 	ok, err := schedule.Due(t, schedule.Inputs{
 		Now:             now,
 		Running:         e.active[t.ID],
-		CompletedOnce:   st.IsCompletedOnce(t.ID) && !waiting,
+		CompletedOnce:   completedOnce(t.ID, st),
 		CronAnchor:      anchor,
 		DependenciesMet: deps.met(t.ID),
 	})
@@ -594,6 +593,13 @@ func (e *Engine) isDue(t task.Task, st *store.State, deps dependencyState, now t
 		return false, fmt.Errorf("evaluate task %q: %w", t.ID, err)
 	}
 	return ok, nil
+}
+
+// completedOnce reports whether a one-shot task has finished: it carries the
+// mark and holds no interrupted session (see isDue).
+func completedOnce(taskID string, st *store.State) bool {
+	_, waiting := st.PendingResume(taskID)
+	return st.IsCompletedOnce(taskID) && !waiting
 }
 
 // dependencyState is one tick's answer to "may this dependent job go yet", and
@@ -1559,7 +1565,7 @@ func (e *Engine) wakeCandidates(cfg store.Config, st *store.State, now time.Time
 		}
 		switch t.Trigger {
 		case task.TriggerFixed:
-			if !st.IsCompletedOnce(t.ID) && t.FixedAt.After(now) {
+			if !completedOnce(t.ID, st) && t.FixedAt.After(now) {
 				out = append(out, t.FixedAt)
 			}
 		case task.TriggerCron:

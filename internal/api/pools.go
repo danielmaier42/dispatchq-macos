@@ -95,16 +95,21 @@ func (s *server) poolView(set provider.Set, p provider.Pool, health map[string]p
 // displayInputs is what the Dashboard ranks and scores providers by: the last
 // limit readings (never read here), the readiness verdicts health answers, the
 // rate-limit gates and the runs in flight — what the scheduler would see.
+// cachedLimits is each provider's last allowance reading, as the scheduler sees
+// it; without a monitor every provider reads as unread.
+func (s *server) cachedLimits() func(provider.Instance) (provider.Limits, bool) {
+	if s.d.Limits == nil {
+		return func(provider.Instance) (provider.Limits, bool) { return provider.Limits{}, false }
+	}
+	return s.d.Limits.Cached
+}
+
 func (s *server) displayInputs(health func(provider.Instance) provider.Health) provider.RankInputs {
 	var blocked map[string]time.Time
 	if s.d.BlockedProviders != nil {
 		blocked = s.d.BlockedProviders()
 	}
-	limits := func(provider.Instance) (provider.Limits, bool) { return provider.Limits{}, false }
-	if s.d.Limits != nil {
-		limits = s.d.Limits.Cached
-	}
-	in := provider.DisplayInputs(time.Now(), limits, health,
+	in := provider.DisplayInputs(time.Now(), s.cachedLimits(), health,
 		func(id string) bool { _, limited := blocked[id]; return limited })
 	if s.d.RunningOn != nil {
 		running := s.d.RunningOn()

@@ -322,20 +322,18 @@ func spareNote(sc MemberScore, threshold float64) string {
 // that is used up and has not reset yet. Such a hop has no rate-limit block of
 // its own only because nothing has run on it since (a block lives in memory,
 // a reading survives a restart); handing it the work would spend a run on
-// being refused. Without a reading, or with a window whose reset is unknown or
-// already past, the hop is taken: only a reading that says so steps it over.
+// being refused. Without a reading or a clock to judge it by, or with a window
+// whose reset is unknown or already past, the hop is taken: only a reading that
+// says so steps it over.
 func (a Availability) readUsedUp(inst Instance) bool {
-	if a.Limits == nil {
+	if a.Limits == nil || a.Now == nil {
 		return false
 	}
 	l, ok := a.Limits(inst)
 	if !ok {
 		return false
 	}
-	var now time.Time
-	if a.Now != nil {
-		now = a.Now()
-	}
+	now := a.Now()
 	for _, w := range l.Windows {
 		if w.UsedPercent >= poolLongWindowFull && w.ResetsAt != nil && w.ResetsAt.After(now) {
 			return true

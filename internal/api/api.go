@@ -1531,6 +1531,8 @@ func (s *server) fallbackLabel(ctx context.Context, set provider.Set, inst provi
 	res, err := set.ResolveAvailable(provider.Selection{ProviderID: inst.ID}, provider.Availability{
 		OutOfAllowance: func(id string) bool { _, limited := blocked[id]; return limited },
 		CanTakeWork:    func(i provider.Instance) bool { return !s.d.Providers.Check(ctx, i).KnownUnready() },
+		Limits:         s.cachedLimits(),
+		Now:            time.Now,
 	})
 	if err != nil || !res.Substituted() {
 		return ""

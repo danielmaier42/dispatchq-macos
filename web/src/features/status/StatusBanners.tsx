@@ -13,6 +13,7 @@ import {useWhatsNewStatus} from '@/features/whats-new/store'
 import type {LimitedProvider, NotifyStatus} from '@/lib/types'
 import {
   activeLimit,
+  anyNoCredit,
   limitCoverage,
   limitHeading,
   NOTIFICATION_SETTINGS_URL,
@@ -179,10 +180,6 @@ function LimitBar({until, providers}: {until: string; providers: LimitedProvider
   }, [until])
 
   if (!at) return null
-  // A used-up credit balance needs no explanation and no time: the daemon
-  // retries on its own.
-  if (providers.length && providers.every((p) => p.reason === 'credit_exhausted'))
-    return <StatusBar tone="info" icon={<PauseCircle />} title={limitHeading(providers)} />
   const coverage = limitCoverage(providers)
   const when = (
     <>
@@ -201,6 +198,12 @@ function LimitBar({until, providers}: {until: string; providers: LimitedProvider
         <>Tasks keep running on the fallback provider. The blocked one takes them back from {when}. </>
       )}
       {coverage === 'some' && <>Tasks with a fallback keep running; the rest start again from {when}. </>}
+      {anyNoCredit(providers) && (
+        <>
+          A used-up API credit balance does not reset on its own: add credit in the Anthropic Console before
+          then, or the next try is refused again.{' '}
+        </>
+      )}
       {/* A run a fallback took over is not continued afterwards: it was
           started again from the beginning over there. */}
       {coverage === 'all' ? (

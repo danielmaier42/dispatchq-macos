@@ -24,7 +24,6 @@ import {runMetrics, runTimeTip} from './metrics'
 import {chatTranscript, parseLog} from './parse-log'
 import {runFolder} from './runs'
 import {closeRunLog, useRunLog} from './store'
-import {NO_CREDIT, useNoCredit} from '@/features/dashboard/use-no-credit'
 
 type Mode = 'chat' | 'raw'
 
@@ -176,9 +175,6 @@ function RunSummary({run}: {run: Run}) {
 // says why, when the daemon recorded it.
 function RunAlerts({run}: {run: Run}) {
   const limitedUntil = useHealth().data?.limited_until || undefined
-  const noCredit = useNoCredit()
-  if (run.resume_pending && run.provider?.id && noCredit.has(run.provider.id))
-    return <Alert tone="warning" title={NO_CREDIT} className="mt-3" />
   if (run.resume_pending)
     return (
       <Alert tone="warning" title="Rescheduled after a rate limit" className="mt-3">

@@ -91,19 +91,10 @@ If any gate fails, it is fixed before the work is reported — never reported wi
   cannot be produced, say why in that message. If the preview tool hangs, headless Chrome works:
   run `npm run dev` in `web/` against the daemon and take
   `"Google Chrome" --headless=new --window-size=1300,1650 --virtual-time-budget=8000 --screenshot=<file> <url>`.
-- **Ship an installable dev build with the PR.** When reporting a change via a PR, also
-  rebuild the installer package locally (`scripts/build-pkg.sh`, output in `dist/`) so the
-  maintainer can install that dev version and confirm the change is correctly implemented in
-  the real app. Say where the built `.pkg` is and which commit it was built from; if the
-  build can't be produced (e.g. missing macOS tooling), state that explicitly rather than
-  omitting it.
-- **Update and reinstall after a merge.** Once the maintainer merges a PR, pull `origin/main`
-  into the local `/Users/dm/Documents/Private/dispatchq` checkout (fast-forward only), rebuild
-  the installer package, and install it so the locally running app matches what is now on
-  `main`. Installing needs the maintainer's password (`sudo installer -pkg … -target /`
-  cannot run unattended) — open the built `.pkg` with `open` and hand the install dialog to
-  the maintainer rather than leaving it unbuilt. Do this without being asked, the same way a
-  PR follows finished branch work.
+- **No dev builds for the maintainer.** Do not build, offer or open a dev installer package
+  (`scripts/build-pkg.sh`) for a PR or after a merge. The maintainer installs only released
+  versions (see the `dispatchq-release` skill). After a merge, fast-forward the local
+  `/Users/dm/Documents/Private/dispatchq` checkout to `origin/main`; nothing else.
 
 ## 6. Keep the plan's phase status current
 

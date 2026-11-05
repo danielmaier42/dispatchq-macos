@@ -11,6 +11,7 @@ import {runMetrics, runTimeTip} from '../metrics'
 import {errorLine, runFolder} from '../runs'
 import {openRunLog} from '../store'
 import {StatusPill} from './StatusPill'
+import {NO_CREDIT} from '@/features/dashboard/use-no-credit'
 
 // RunRow is one run in the Log. A click anywhere opens its log (which marks it
 // read); the title is the keyboard target. The figures on the right give way
@@ -20,6 +21,7 @@ export function RunRow({
   run,
   showProvider,
   limitedUntil,
+  noCredit,
   depth = 0,
 }: {
   run: Run
@@ -27,6 +29,8 @@ export function RunRow({
   // it could have been; a script run always says so.
   showProvider: boolean
   limitedUntil?: string
+  // The providers whose API credit balance is used up.
+  noCredit?: Set<string>
   depth?: number
 }) {
   const running = run.status === 'running'
@@ -93,7 +97,9 @@ export function RunRow({
               {run.resume_pending && (
                 <Meta>
                   <span className="font-medium text-[color-mix(in_oklab,var(--warning)_80%,var(--foreground))]">
-                    {resumeText(resumeAt(run.resume_at, limitedUntil))}
+                    {run.provider?.id && noCredit?.has(run.provider.id)
+                      ? NO_CREDIT
+                      : resumeText(resumeAt(run.resume_at, limitedUntil))}
                   </span>
                 </Meta>
               )}

@@ -504,8 +504,8 @@ func TestRunCreditExhaustedPausesLikeALimit(t *testing.T) {
 	if res.RetryAfter != time.Hour || !res.ResetAt.IsZero() {
 		t.Fatalf("retry after = %v, reset at = %v, want an hour and no reset time", res.RetryAfter, res.ResetAt)
 	}
-	if !strings.Contains(res.Message, "credit balance") {
-		t.Fatalf("message = %q, want it to name the credit balance", res.Message)
+	if res.Message != "No credit left" {
+		t.Fatalf("message = %q, want just \"No credit left\"", res.Message)
 	}
 	if res.Block != provider.BlockCreditExhausted {
 		t.Fatalf("block = %q, want the used-up credit balance named", res.Block)

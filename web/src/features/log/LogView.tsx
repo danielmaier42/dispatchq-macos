@@ -6,6 +6,7 @@ import {EmptyState} from '@/components/ui/empty-state'
 import {Skeleton} from '@/components/ui/skeleton'
 import {groupByDay} from '@/lib/format'
 import {useHealth, useProviders, useRuns} from '@/lib/queries'
+import {useNoCredit} from '@/features/dashboard/use-no-credit'
 import {LogToolbar} from './components/LogToolbar'
 import {RunRow} from './components/RunRow'
 import {WorkflowGroup} from './components/WorkflowGroup'
@@ -27,6 +28,7 @@ export function LogView() {
   const runs = runsQuery.data
   const state = useLogFilters()
   const limitedUntil = useHealth().data?.limited_until || undefined
+  const noCredit = useNoCredit()
   const showProvider = (useProviders().data?.length ?? 0) > 1
 
   const {f, menus} = useMemo(() => {
@@ -93,6 +95,7 @@ export function LogView() {
                       run={e.run}
                       showProvider={showProvider}
                       limitedUntil={limitedUntil}
+                      noCredit={noCredit}
                     />
                   ) : (
                     <WorkflowGroup
@@ -100,6 +103,7 @@ export function LogView() {
                       runs={e.runs}
                       showProvider={showProvider}
                       limitedUntil={limitedUntil}
+                      noCredit={noCredit}
                     />
                   ),
                 )}

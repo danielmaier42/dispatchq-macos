@@ -30,7 +30,7 @@ export function EnvEditor({
           <Input
             id={`${idPrefix}-name-${i}`}
             aria-label="Variable name"
-            className="w-[54%] font-mono text-[12.5px]"
+            className="w-52 shrink-0 font-mono text-[12.5px]"
             value={r.name}
             placeholder="NAME"
             readOnly={r.stored}

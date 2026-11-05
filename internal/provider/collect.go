@@ -60,11 +60,13 @@ func (c *Collector) Add(ev Event) {
 		}
 	case EventRateLimited:
 		c.rateLimited = true
-		if ev.Detail != "" && c.limitDetail == "" {
+		// A block arrives with the detail that names it, and a later line may
+		// name it more precisely (a billing error, then the credit balance), so
+		// the latest block wins. Other details keep the first reason given.
+		if ev.Block != "" {
+			c.block, c.limitDetail = ev.Block, ev.Detail
+		} else if ev.Detail != "" && c.limitDetail == "" {
 			c.limitDetail = ev.Detail
-		}
-		if ev.Block != "" && c.block == "" {
-			c.block = ev.Block
 		}
 		if ev.RetryAfter > 0 {
 			c.retryAfter = ev.RetryAfter

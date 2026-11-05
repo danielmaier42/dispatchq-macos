@@ -389,7 +389,7 @@ export interface LimitsEntry {
 
 // provider.Block: an account block behind a pause, as opposed to a used-up
 // allowance window that resets on its own.
-export type BlockReason = 'credit_exhausted' | 'org_disallowed'
+export type BlockReason = 'credit_exhausted' | 'billing_refused' | 'org_disallowed'
 
 export interface ProviderBlock {
   until: ISOTime

@@ -313,6 +313,10 @@ const (
 	// BlockCreditExhausted is an API key whose prepaid credit balance is used
 	// up: the API refused a run with "Credit balance is too low".
 	BlockCreditExhausted Block = "credit_exhausted"
+	// BlockBillingRefused is an API key the API refused with a billing error
+	// that did not say why: the credit may be used up, or a spend limit set on
+	// the account reached.
+	BlockBillingRefused Block = "billing_refused"
 )
 
 // Metrics are the usage figures a harness reports for a run. Values it does not

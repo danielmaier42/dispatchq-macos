@@ -200,8 +200,8 @@ function LimitBar({until, providers}: {until: string; providers: LimitedProvider
       {coverage === 'some' && <>Tasks with a fallback keep running; the rest start again from {when}. </>}
       {anyNoCredit(providers) && (
         <>
-          A used-up API credit balance does not reset on its own: add credit in the Anthropic Console, and the
-          provider is tried again then.{' '}
+          A used-up API credit balance does not reset on its own: add credit in the Anthropic Console before
+          then, or the next try is refused again.{' '}
         </>
       )}
       {/* A run a fallback took over is not continued afterwards: it was

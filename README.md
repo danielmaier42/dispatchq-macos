@@ -446,7 +446,12 @@ first. The window opens on the Dashboard:
   claims neither that it has no limit nor that it has credit left. Once a run on
   it is refused with *Credit balance is too low*, the line turns red and says
   *No credit left*, with the time the provider is tried again, and the waiting
-  banner reads *No API credit left on …* instead of *Rate limit reached*. Right under it, the **Pool** card puts every
+  banner reads *No API credit left on …* instead of *Rate limit reached*. A
+  billing refusal that does not name the credit balance (a spend limit set on
+  the account, say) pauses the provider the same way and reads *Billing
+  refused*. Settings and `dispatchq provider limits` keep showing *Credit
+  balance unknown*: only the running daemon knows that a run was refused.
+  Right under it, the **Pool** card puts every
   [pool](#provider-pools) on one line, its members in the order a run started
   now would take them. Below that, cards in a fixed order: what is
   **running now** (and runs a rate limit paused, with their resume time,
@@ -831,7 +836,7 @@ before.
 
 - It applies to the rate limit, and to the account blocks that count as one (a
   Claude organisation that disallows subscription access, a used-up API credit
-  balance), and to nothing else. A provider that is missing,
+  balance or another billing refusal), and to nothing else. A provider that is missing,
   logged out or switched off is still never answered by running the work
   somewhere else; those tasks stay queued and say why.
 - The chain is followed as far as it reaches. A provider in it that cannot take
@@ -871,7 +876,7 @@ Reading them costs no tokens and none of the allowance.
 |---------|-----------------------------|---------------|
 | Claude | The usage endpoint Claude Code's own `/usage` screen reads, called with the login the CLI stored for that provider's configuration directory | 5 hours, week |
 | Codex | The CLI's own `codex app-server`, asked `account/rateLimits/read` with the provider's `CODEX_HOME` | whichever windows the account reports, one or two (5 hours, week) |
-| Claude on an API key | nothing: the prepaid credit balance of an `ANTHROPIC_API_KEY` cannot be read without an admin key | none, shown as *Credit balance unknown*; *No credit left* once a run was refused for it |
+| Claude on an API key | nothing: the prepaid credit balance of an `ANTHROPIC_API_KEY` cannot be read without an admin key | none, shown as *Credit balance unknown*; on the Dashboard *No credit left* once a run was refused for it |
 | opencode | nothing; it runs whatever backend it is pointed at | none, shown as *No limit* |
 
 The daemon reads them **when the Dashboard opens**, on **View → Refresh**
@@ -1959,7 +1964,8 @@ that.
 - **An account that may not run at all counts as a limit.** When Claude Code
   answers that the organisation has disabled Claude subscription access, or
   that the API credit balance is too low (an instance running on an
-  `ANTHROPIC_API_KEY` whose prepaid credit is used up), the account has nothing
+  `ANTHROPIC_API_KEY` whose prepaid credit is used up), or refuses it with any
+  other billing error (a spend limit set on the account), the account has nothing
   to spend, so the provider pauses exactly as it does on a limit — and its
   fallback takes the work. The pause is an hour, because such a block lifts
   through an admin or a billing change, never by waiting a few minutes; no reset

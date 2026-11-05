@@ -192,6 +192,11 @@ const AccountBlockedRetryAfter = time.Hour
 const orgBlockedDetail = "this organisation has disabled Claude subscription access for Claude Code; " +
 	"the provider is paused like a rate limit until an admin enables it"
 
+// billingRefusedDetail is what the run says happened when the API refused it
+// with a billing error that named no cause.
+const billingRefusedDetail = "the API refused this account for billing (credit used up or a spend limit reached); " +
+	"the provider is paused like a rate limit until billing is fixed"
+
 // creditExhaustedDetail is what the run says happened when the API credit
 // balance is used up: no allowance window will reset it, only adding credit.
 const creditExhaustedDetail = "the API credit balance of this account is too low; " +
@@ -262,7 +267,9 @@ func (p *parser) Parse(line []byte) []provider.Event {
 	}
 	if block := p.accountBlock(ev); block != "" {
 		limited = true
-		if p.block == "" {
+		// The result line can name what a bare billing error on an earlier
+		// line meant: then the more precise block replaces it.
+		if p.block == "" || (p.block == provider.BlockBillingRefused && block == provider.BlockCreditExhausted) {
 			p.block = block
 		}
 	}
@@ -349,11 +356,16 @@ func (p *parser) isOrgBlocked(ev streamEvent) bool {
 // message is only read from an error result, so a run that merely quotes it in
 // its successful answer is not mistaken for one.
 func (p *parser) isCreditExhausted(ev streamEvent) bool {
-	if ev.Error == creditExhaustedError {
-		return true
-	}
 	return ev.Type == "result" && ev.IsError &&
 		strings.Contains(strings.ToLower(ev.ResultText), creditExhaustedText)
+}
+
+// isBillingRefused reports the CLI's billing error name. It pauses the provider
+// just the same, but by itself it does not say whether the credit is used up or
+// a spend limit was reached, so it is only named a used-up balance when the
+// result says so (isCreditExhausted).
+func (p *parser) isBillingRefused(ev streamEvent) bool {
+	return ev.Error == creditExhaustedError
 }
 
 // accountBlock names the account block this line reports, or "" for none.
@@ -363,6 +375,8 @@ func (p *parser) accountBlock(ev streamEvent) provider.Block {
 		return provider.BlockOrgDisallowed
 	case p.isCreditExhausted(ev):
 		return provider.BlockCreditExhausted
+	case p.isBillingRefused(ev):
+		return provider.BlockBillingRefused
 	}
 	return ""
 }
@@ -372,6 +386,7 @@ func (p *parser) accountBlock(ev streamEvent) provider.Block {
 var blockDetails = map[provider.Block]string{
 	provider.BlockOrgDisallowed:   orgBlockedDetail,
 	provider.BlockCreditExhausted: creditExhaustedDetail,
+	provider.BlockBillingRefused:  billingRefusedDetail,
 }
 
 func (p *parser) isAuthFailure(ev streamEvent) bool {

@@ -62,6 +62,9 @@ export function blockText(p: LimitsEntry, now = Date.now()): string {
   if (b.reason === 'credit_exhausted') {
     return `No credit left: a run was refused with "Credit balance is too low". Add credit in the Anthropic Console; ${retry}.`
   }
+  if (b.reason === 'billing_refused') {
+    return `Billing refused: the credit is used up or a spend limit was reached. Check the Anthropic Console; ${retry}.`
+  }
   return `Claude subscription access is disabled by the organisation; ${retry}.`
 }
 

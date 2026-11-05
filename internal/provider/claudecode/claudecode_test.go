@@ -351,11 +351,11 @@ func TestParseTranslatesStreamJSON(t *testing.T) {
 			},
 		},
 		{
-			name: "the billing error on the assistant line pauses the provider too",
+			name: "a billing error that names no cause pauses the provider without claiming the credit is gone",
 			line: `{"type":"assistant","session_id":"sid","error":"billing_error","is_api_error_message":true}`,
 			want: []provider.Event{
 				{Type: provider.EventSessionStarted, SessionID: "sid"},
-				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Block: provider.BlockCreditExhausted, Detail: creditExhaustedDetail},
+				{Type: provider.EventRateLimited, RetryAfter: AccountBlockedRetryAfter, Block: provider.BlockBillingRefused, Detail: billingRefusedDetail},
 			},
 		},
 		{
@@ -521,5 +521,24 @@ func TestParserDoesNotShortenACreditPauseWithAnUnrelatedBackoff(t *testing.T) {
 	}
 	if got[0].RetryAfter != AccountBlockedRetryAfter || !got[0].ResetAt.IsZero() {
 		t.Fatalf("pause = %+v, want the full %v and no window", got[0], AccountBlockedRetryAfter)
+	}
+}
+
+func TestParserNamesTheCreditBalanceOnceTheResultSaysSo(t *testing.T) {
+	// The assistant line carries only the billing error; the result names the
+	// used-up balance, and that more precise block replaces the first.
+	p := New().NewParser()
+	first := p.Parse([]byte(`{"type":"assistant","session_id":"sid","error":"billing_error","is_api_error_message":true}`))
+	if first[1].Block != provider.BlockBillingRefused {
+		t.Fatalf("first pause = %+v, want the bare billing block", first[1])
+	}
+	got := p.Parse([]byte(`{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"result":"Credit balance is too low"}`))
+	if got[0].Type != provider.EventRateLimited || got[0].Block != provider.BlockCreditExhausted || got[0].Detail != creditExhaustedDetail {
+		t.Fatalf("result pause = %+v, want the used-up credit balance", got[0])
+	}
+	// Another refusal on a later line does not turn it back.
+	again := p.Parse([]byte(`{"type":"assistant","session_id":"sid","error":"billing_error","is_api_error_message":true}`))
+	if again[1].Block != provider.BlockCreditExhausted {
+		t.Fatalf("later pause = %+v, want the credit block kept", again[1])
 	}
 }

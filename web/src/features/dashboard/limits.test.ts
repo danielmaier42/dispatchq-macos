@@ -70,6 +70,15 @@ describe('limits', () => {
       'No credit left: a run was refused with "Credit balance is too low". Add credit in the Anthropic Console; tried again in 1 h.',
     )
   })
+  it('a bare billing refusal does not claim the credit is gone', () => {
+    const t = Date.parse('2026-11-05T22:00:00Z')
+    const p = {
+      ...entry({state: 'unsupported', api_key: true, checked_at: ''}),
+      blocked: {until: '2026-11-05T23:00:00Z', reason: 'billing_refused' as const},
+    }
+    expect(creditGone(p)).toBe(false)
+    expect(blockText(p, t)).toMatch(/^Billing refused: the credit is used up or a spend limit was reached/)
+  })
   it('an ordinary limit is no account block', () => {
     const p = {...entry({state: 'ok', checked_at: ''}), blocked: {until: '2026-11-05T23:00:00Z'}}
     expect(blockText(p)).toBe('')

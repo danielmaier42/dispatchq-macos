@@ -20,8 +20,9 @@ import (
 // variable so tests can put a harness with a scripted allowance in its place.
 var newProviderRegistry = adapters.Default
 
-// limitsView is what `provider limits --json` prints per provider: the same
-// shape the dashboard's /api/limits answers with.
+// limitsView is what `provider limits --json` prints per provider: the shape
+// the dashboard's /api/limits answers with, minus the daemon's rate-limit gate
+// (`blocked`), which only the running daemon knows.
 type limitsView struct {
 	ID       string          `json:"id"`
 	Name     string          `json:"name"`

@@ -522,6 +522,22 @@ func TestRunCreditExhaustedResultAlonePausesLikeALimit(t *testing.T) {
 	}
 }
 
+func TestRunBillingErrorWithoutCreditMessageIsNotCalledUsedUpCredit(t *testing.T) {
+	// A spend limit is refused with the same billing error, but its message does
+	// not say the credit balance is too low: the pause stands, the label does not.
+	out := strings.Join([]string{
+		`{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"You have reached your specified API usage limits"}]},"session_id":"real-sid","error":"billing_error","is_api_error_message":true}`,
+		`{"type":"result","subtype":"success","is_error":true,"api_error_status":400,"result":"You have reached your specified API usage limits","session_id":"real-sid"}`,
+	}, "\n")
+	res := runFake(t, out, 1)
+	if res.Status != store.StatusRateLimited || res.RetryAfter != time.Hour {
+		t.Fatalf("status = %q, retry after %v, want an hour's pause", res.Status, res.RetryAfter)
+	}
+	if res.Block != provider.BlockBillingRefused {
+		t.Fatalf("block = %q, want the bare billing block", res.Block)
+	}
+}
+
 func TestRunAuthError(t *testing.T) {
 	out := `{"type":"result","subtype":"error","is_error":true,"error":"authentication_failed"}`
 	res := runFake(t, out, 1)

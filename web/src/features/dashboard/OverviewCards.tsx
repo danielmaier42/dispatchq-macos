@@ -16,6 +16,7 @@ import {Button} from '@/components/ui/button'
 import {Tooltip} from '@/components/ui/tooltip'
 import {clearLogFilters, setLogFilters} from '@/features/log/filters-store'
 import {openRunLog} from '@/features/log/store'
+import {splitLimits} from '@/features/status/health'
 import {openAddTask, openTaskEditor} from '@/features/task-editor/store'
 import {compact, fullTime, NO_CREDIT, relTime, resumeAt, resumeText, runDuration, usd} from '@/lib/format'
 import {useHealth, useLimits, useRuns, useSettings, useStats, useTasks} from '@/lib/queries'
@@ -79,7 +80,10 @@ function showFailedRuns() {
 function RunningCard() {
   const runs = useRuns()
   const paused = !!useSettings().data?.paused
-  const limitedUntil = useHealth().data?.limited_until || undefined
+  // A used-up credit balance's retry time is not a reset another provider's
+  // run waits for, so the resume time leaves it out.
+  const h = useHealth().data
+  const limitedUntil = splitLimits(h?.limited_providers ?? [], h?.limited_until ?? '').until || undefined
   const noCredit = new Set((useLimits().data ?? []).filter(creditGone).map((p) => p.id))
   const now = useNow(15_000)
   const running = (runs.data ?? []).filter((r) => r.status === 'running')

@@ -7,13 +7,14 @@ import {OverviewCards} from './OverviewCards'
 
 const runs = vi.hoisted(() => ({data: [] as Run[]}))
 const limits = vi.hoisted(() => ({data: [] as LimitsEntry[]}))
+const health = vi.hoisted(() => ({data: {limited_until: '2099-01-01T00:00:00Z'} as object}))
 
 vi.mock('@/lib/queries', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useRuns: () => ({isPending: false, data: runs.data}),
   useTasks: () => ({isPending: false, data: []}),
   useSettings: () => ({data: undefined}),
-  useHealth: () => ({data: {limited_until: '2099-01-01T00:00:00Z'}}),
+  useHealth: () => ({data: health.data}),
   useLimits: () => ({data: limits.data}),
   useStats: () => ({isPending: true, data: undefined}),
 }))
@@ -68,5 +69,23 @@ describe('Running now', () => {
       'No credit left',
       expect.stringMatching(/^Rate limited, resumes /),
     ])
+  })
+
+  it("does not hold another provider's waiting run to the credit provider's retry time", () => {
+    const resume = '2098-01-01T00:00:00Z'
+    health.data = {
+      limited_until: '2099-01-01T00:00:00Z',
+      limited_providers: [{name: 'API', until: '2099-01-01T00:00:00Z', reason: 'credit_exhausted'}],
+    }
+    const paused = {
+      ...run(1, 'rate_limited_waiting'),
+      resume_at: resume,
+      provider: {id: 'team', kind: 'claude-code'},
+    }
+    show([paused as Run])
+    health.data = {limited_until: '2099-01-01T00:00:00Z'}
+    expect(screen.getByText(/^Rate limited, resumes /).textContent).toContain(
+      new Date(resume).toLocaleString(),
+    )
   })
 })

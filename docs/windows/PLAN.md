@@ -1,0 +1,124 @@
+# DispatchQ Windows port and shared application repository
+
+Status: planning only. Implementation is deferred until Claude subscription usage is available again and the maintainer resumes the work. Do not start implementation, schedule jobs, rename repositories, or publish binaries from this planning task.
+
+Created: 2026-11-05.
+
+## Goal
+
+Publish a native Windows edition of DispatchQ while retaining the existing macOS application. Reuse the queue, scheduling, provider adapters, dashboard and data formats. Preserve reliable unattended execution, cancellation and recovery on both platforms.
+
+The preferred repository direction is to rename the existing `dispatchq-macos` repository to `dispatchq-app` and build both editions there. Confirm this tentative direction before performing the external rename. A separate base repository is the alternative, not an additional extraction step.
+
+## Scope and boundaries
+
+- This branch contains documentation only. The existing root `PLAN.md` remains the macOS implementation history.
+- Future implementation covers the daemon, CLI, native window, operating-system integrations, installer, updater, CI and user documentation.
+- Reuse the current WebView dashboard. Do not replace the UI framework merely to support Windows.
+- Preserve existing macOS install locations, binary names, LaunchAgent identity, data and backward compatibility unless a separate migration is explicitly required.
+- Native Windows and WSL are different execution environments. A native application does not imply that WSL providers, Unix scripts or macOS MCP configurations work automatically.
+- Proposed initial baseline: Windows 11 x64, native providers, background execution in the signed-in user's session. Windows ARM64, Windows 10, WSL execution and execution after logout need explicit scope decisions.
+- Relay and iOS remain separate projects and are not prerequisites for this port.
+
+## Feasibility evidence
+
+Assessment against `origin/main` at `6cb461b`, on 2026-11-05:
+
+- Most product logic is Go; the dashboard is a separate web frontend.
+- `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...` was attempted with local Go 1.27.1. It failed at `syscall.Flock` and Unix lock constants in `internal/store/lock.go` and `internal/store/daemonlock.go`. This establishes a build blocker, not a complete inventory of compiler failures. CI currently selects Go 1.26.
+- `cmd/dispatchqapp/main_other.go` is a stub that exits with a macOS-only message. It is not a Windows UI.
+- Process cancellation and update-process detachment have Unix-only implementations. Replacing compiler errors alone cannot establish correct Windows execution.
+- The current WebView dependency supports Windows, but the pinned version, C/C++ build requirements and WebView2 runtime still need a Windows build and runtime check.
+- Claude Code and Codex support native Windows. OpenCode supports native Windows but recommends WSL for the best compatibility. These upstream capabilities do not verify DispatchQ's adapters.
+
+## Repository direction
+
+Prefer one application repository because macOS and Windows share product behavior, dashboard, provider interfaces and releases. Keep shared logic and platform implementations in that repository, using build constraints and small interfaces around operating-system operations. Use the existing code structure where possible rather than creating a second framework.
+
+A separate base repository would add versioning and coordinated dependency updates for changes that often affect both apps. Reconsider extraction only if independently released consumers establish a concrete need.
+
+For a future rename:
+
+1. Inventory repository URLs in update checks, feedback links, module paths, CI, release scripts, website, wiki, agent instructions and external automation.
+2. Rename the existing GitHub repository so history, issues and stars remain attached to it. Do not replace it with a newly initialized repository or reuse the old name afterward.
+3. Update remotes and explicit URLs. Test an already-installed macOS release's update lookup and download through the old URLs before relying on GitHub redirects.
+4. Keep the current Go module path change separate from the repository rename unless required. It still uses the historical `claudeq` name; changing it is not needed merely to build Windows.
+5. Update workspace paths and authoritative instructions deliberately, preserving worktrees and concurrent sessions. Never assume that a GitHub rename renames local directories.
+
+## Platform work
+
+| Area | Existing dependency | Required outcome |
+| --- | --- | --- |
+| Store ownership and writes | Unix `flock` in store and daemon locks | Windows cross-process locks; exactly one daemon per store; safe concurrent CLI and daemon writes; tested replace/rename semantics. |
+| Process lifecycle | Unix process groups, `ps`, signals | Windows process-tree ownership and termination, initially investigate Job Objects; cancellation, watchdog, shutdown and limit teardown leave no tools running. Verify interaction with each provider's sandbox. |
+| Background process | LaunchAgent, `launchctl`, macOS user detection | Start and recover under the intended Windows user identity, independently of the app window; define login, lock, logout and reboot behavior. Avoid a system account that loses provider logins or user files. |
+| Native window | WKWebView plus Cocoa menu, appearance, file picker and notification handlers | Windows WebView2 shell, external links, file/folder dialogs, appearance, app activation and notification navigation. Verify the existing dependency before considering a replacement. |
+| Providers and accounts | Homebrew paths, login-shell discovery, Unix executable bits | Discover native `.exe` binaries and installation shims safely; handle paths with spaces, environment names and account-specific config directories. Verify health checks, model discovery, headless output, limits and resume. |
+| Credentials | Claude Keychain lookup with credentials-file fallback; provider-owned logins | Inspect actual Windows storage for supported CLI versions. Verify account isolation and credential renewal without printing secrets. Use Windows access controls for temporary secrets, not Unix mode assumptions. |
+| Scripts and terminal resume | `/bin/sh`, shebang execution, AppleScript, shell exports | Define explicit interpreters and PowerShell behavior; construct arguments safely; preserve secret handling and interactive session resume. Never silently translate existing Bash scripts. |
+| Power management | `pmset`, `caffeinate`, sudoers | Prevent idle sleep during work and schedule wake events through Windows mechanisms; handle unsupported power states and disabled wake policies visibly. |
+| Notifications and artifacts | Native macOS notification helper and click handler | Windows notifications with correct app identity and click-to-open behavior. Retain HTTP-based Pushover, ntfy and webhooks; verify links and file opening. |
+| Local API and persistence | Loopback HTTP plus shared file store | Preserve local-only binding and existing request protection; platform-specific opening/dialog behavior must not broaden network exposure. |
+| Machine-aware prompt review | Unix path recognition, shell command inspection and Mac wording | Recognize Windows paths and interpreters; check the actual execution environment; replace platform-specific instructions where appropriate. |
+| Distribution | `.app`, `.pkg`, bundle-version inspection, `.pkg` asset selection | Windows installer, uninstall, autostart, version detection and update handover; select assets by OS and architecture; preserve macOS updates. |
+| CI and tests | macOS Go job, Unix shell stubs, macOS release scripts | Windows builds and real Windows tests alongside macOS checks; portable fake providers and platform-specific tests; native runner builds for the UI. |
+
+## Work sequence and exit criteria
+
+All implementation phases are not started.
+
+| Phase | Work | Exit criteria |
+| --- | --- | --- |
+| 0 | Revalidate baseline and settle initial support scope | Read current instructions and provider/model availability; confirm Windows baseline, native versus WSL scope and user-session behavior. Recheck code because implementation may start later. |
+| 1 | End-to-end Windows feasibility spike in the existing repo | Build daemon/CLI and a minimal window; run a real native provider; cancel a job with tool descendants; verify account access and restart recovery. Use disposable fixtures. Record failures before broad refactoring. |
+| 2 | Shared core and platform separation | Both platforms build; portable persistence and lifecycle implementations pass meaningful tests. No macOS behavior is lost while moving platform code. |
+| 3 | Provider and desktop integration | Verify supported providers/accounts, limit handling, resume, scripts, dialogs, terminal continuation, notifications and artifact opening. Publish an explicit capability matrix. |
+| 4 | Background operation and power management | Login startup and crash recovery work; closing UI leaves scheduling active; sleep/wake is exercised on Windows hardware; unsupported cases are accurately documented. |
+| 5 | Installer, updater and release matrix | Clean install, upgrade, interrupted handover and uninstall are tested on Windows; macOS update regression passes; CI publishes correctly identified artifacts without partial-release confusion. |
+| 6 | Repository rename, documentation and launch | Confirm rename timing, verify old update URLs, update website and wiki, provide installable builds and complete cross-platform acceptance checks before advertising Windows availability. |
+
+The spike is a feasibility checkpoint. Do not commit to full parity or a release date from a successful crosscompile alone. A repository rename can be coordinated earlier if explicitly decided, but is not required for the spike.
+
+## Verification matrix
+
+- Fresh Windows user profile without developer-specific PATH customizations; installation directories and repositories containing spaces and non-ASCII characters.
+- Supported native provider versions, separate accounts/config directories, missing login, expired login, malformed output and unavailable CLI.
+- Real headless execution, structured output, session resume, rate-limit waiting, provider fallback and cancellation while a tool is running.
+- Parallel tasks, concurrent CLI/UI writes and a second daemon attempting to own the same store.
+- Script interpreters, CRLF input, stdin dependencies, exit codes, terminal continuation and prompt path checks.
+- Locked desktop, closed window, process crash, login startup, reboot recovery and documented logout behavior.
+- Idle-sleep prevention and scheduled wakes on actual Windows hardware. A VM is useful for installer tests but does not establish hardware wake reliability.
+- Clean install, upgrade while idle and during work, update failure recovery, asset selection, uninstall with and without retained data.
+- Notification clicks during app startup and while running; folder/file opening and `.dispatchq` import/export with incompatible paths reported clearly.
+- Existing macOS build, vet, lint, race tests, app behavior and installer/update verification remain required for implementation changes. Follow the toolchain pinned by CI.
+
+Regression tests added during implementation must fail without the fix and pass with it. A successful provider version check is not a successful agent run.
+
+## Cross-repository work
+
+- Website: Windows download choice, platform-specific installation and prerequisites, screenshots, release metadata and accurate feature claims. Keep macOS downloads working throughout.
+- Wiki: shared platform responsibilities, capability matrix, compatibility policy, repository links and workspace structure. Edit authoritative guidelines, not their symlinks or copied files.
+- Relay/iOS planning: represent the execution host as an environment that may be macOS or Windows. Preserve credential ownership on that host. Do not implement relay/iOS as part of the desktop port.
+- Existing users and automation: keep installed macOS paths and CLI contracts stable; document that job prompts, scripts, working directories and external integrations can require platform adaptation.
+
+## Decisions to settle when implementation resumes
+
+1. Confirm the preferred single `dispatchq-app` repository and rename timing.
+2. Confirm Windows 11 x64 as the first target and whether WSL or ARM64 belongs in the first release.
+3. Confirm whether the daemon only needs to run while the user remains signed in. Running after logout is a separate service and credential requirement.
+4. Select the installer/update format and signing route after a Windows prototype. Check current provider eligibility and distribution requirements before recommending a signing service.
+5. Identify available Windows test hardware for native providers and sleep/wake validation; define any first-release capability differences explicitly.
+
+These are future implementation decisions, not requests to start work now. Follow the current project model-selection and worktree rules when resuming; resolve live provider availability rather than pinning today's model or account.
+
+## References
+
+Upstream documentation consulted during the feasibility assessment; recheck it when implementation starts:
+
+- [Claude Code Windows setup](https://code.claude.com/docs/en/setup)
+- [Codex Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox)
+- [OpenCode on Windows and WSL](https://opencode.ai/docs/windows-wsl)
+- [Go WebView bindings](https://github.com/webview/webview_go)
+- [Windows wake-up events](https://learn.microsoft.com/en-us/windows/win32/power/system-wake-up-events)
+- [Windows SmartScreen distribution considerations](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)
+- [GitHub repository renaming](https://docs.github.com/en/repositories/creating-and-managing-repositories/renaming-a-repository)

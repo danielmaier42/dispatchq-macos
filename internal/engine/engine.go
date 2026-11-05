@@ -573,12 +573,19 @@ func runNotes(res provider.Resolved, dropped string) []string {
 
 // isDue evaluates one task's trigger. The caller holds e.mu, because whether the
 // task is already running is part of the answer.
+//
+// A one-shot task holding an interrupted session has not completed, whatever
+// its completed-once mark says. The mark can predate the session: a task
+// re-queued under the id of one that already ran, and then started by hand,
+// keeps it. Without this such a run, once a rate limit or a used-up credit
+// balance stopped it, would never be picked up again: neither on another pool
+// member or fallback right away, nor on its own account once that reopens.
 func (e *Engine) isDue(t task.Task, st *store.State, deps dependencyState, now time.Time) (bool, error) {
 	anchor, _ := st.LastStart(t.ID)
 	ok, err := schedule.Due(t, schedule.Inputs{
 		Now:             now,
 		Running:         e.active[t.ID],
-		CompletedOnce:   st.IsCompletedOnce(t.ID),
+		CompletedOnce:   completedOnce(t.ID, st),
 		CronAnchor:      anchor,
 		DependenciesMet: deps.met(t.ID),
 	})
@@ -586,6 +593,13 @@ func (e *Engine) isDue(t task.Task, st *store.State, deps dependencyState, now t
 		return false, fmt.Errorf("evaluate task %q: %w", t.ID, err)
 	}
 	return ok, nil
+}
+
+// completedOnce reports whether a one-shot task has finished: it carries the
+// mark and holds no interrupted session (see isDue).
+func completedOnce(taskID string, st *store.State) bool {
+	_, waiting := st.PendingResume(taskID)
+	return st.IsCompletedOnce(taskID) && !waiting
 }
 
 // dependencyState is one tick's answer to "may this dependent job go yet", and
@@ -1555,7 +1569,7 @@ func (e *Engine) wakeCandidates(cfg store.Config, st *store.State, now time.Time
 		}
 		switch t.Trigger {
 		case task.TriggerFixed:
-			if !st.IsCompletedOnce(t.ID) && t.FixedAt.After(now) {
+			if !completedOnce(t.ID, st) && t.FixedAt.After(now) {
 				out = append(out, t.FixedAt)
 			}
 		case task.TriggerCron:

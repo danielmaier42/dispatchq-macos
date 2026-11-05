@@ -388,6 +388,37 @@ func TestFallbackLabelNamesWhoIsActuallyWorking(t *testing.T) {
 	}
 }
 
+// usedUpStub reads every account's week as used up until tomorrow.
+type usedUpStub struct{ stubAdapter }
+
+func (usedUpStub) ReadLimits(context.Context, provider.Instance) (provider.LimitReading, error) {
+	reset := time.Now().Add(24 * time.Hour)
+	return provider.LimitReading{Windows: []provider.LimitWindow{{ID: "week", Label: "Week", UsedPercent: 100, ResetsAt: &reset}}}, nil
+}
+
+// TestFallbackLabelSkipsAHopReadAsUsedUp: the banner names the account the
+// scheduler actually hands the work to, which steps over a hop whose reading
+// shows its week used up.
+func TestFallbackLabelSkipsAHopReadAsUsedUp(t *testing.T) {
+	reg := provider.NewRegistry(usedUpStub{stubAdapter{health: provider.Health{State: provider.HealthReady}}})
+	mon := provider.NewLimitMonitor(reg, nil)
+	srv := &server{d: Deps{Registry: reg, Providers: provider.NewChecker(reg), Limits: mon}}
+	set, err := provider.NewSet("claude", []provider.Instance{
+		{ID: "claude", Kind: provider.KindClaudeCode, Name: "Claude", FallbackProvider: "spare", Enabled: true},
+		{ID: "spare", Kind: provider.KindClaudeCode, Name: "Spare", FallbackProvider: "third", Enabled: true},
+		{ID: "third", Kind: provider.KindClaudeCode, Name: "Third", Enabled: true},
+	})
+	if err != nil {
+		t.Fatalf("NewSet: %v", err)
+	}
+	spare, _ := set.Lookup("spare")
+	mon.Get(context.Background(), []provider.Instance{spare}, true)
+	inst, _ := set.Lookup("claude")
+	if got := srv.fallbackLabel(context.Background(), set, inst, map[string]time.Time{"claude": time.Now()}); got != "Third" {
+		t.Fatalf("fallbackLabel = %q, want Third: Spare's week is used up", got)
+	}
+}
+
 // TestFallbackLabelSkipsAProviderThatCannotRun: naming a substitute that is
 // logged out would tell the operator the queue keeps moving while nothing
 // starts.

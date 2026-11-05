@@ -242,3 +242,46 @@ func TestRemoveTaskForgetsSchedulingState(t *testing.T) {
 		t.Error("removing a missing task succeeded")
 	}
 }
+
+// TestAddTaskUnderAUsedIdStartsClean: a one-shot task leaves the queue when it
+// finishes and its state stays behind. A task queued again under that id must
+// run, not count as done; a rejected duplicate leaves the queued task's state
+// alone.
+func TestAddTaskUnderAUsedIdStartsClean(t *testing.T) {
+	s := openStore(t)
+	if err := s.UpdateState(func(st *store.State) error {
+		st.MarkCompletedOnce("again")
+		st.RecordStart("again", time.Now())
+		st.SetPendingResume("again", "old-session", "claude")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddTask(s, mk("again")); err != nil {
+		t.Fatalf("AddTask: %v", err)
+	}
+	st, err := s.LoadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, pending := st.PendingResume("again")
+	if _, started := st.LastStart("again"); started || pending || st.IsCompletedOnce("again") {
+		t.Fatalf("the new task inherited the old one's state: %+v", st)
+	}
+
+	if err := s.UpdateState(func(st *store.State) error {
+		st.MarkCompletedOnce("again")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddTask(s, mk("again")); err == nil {
+		t.Fatal("expected duplicate id error")
+	}
+	if st, err = s.LoadState(); err != nil {
+		t.Fatal(err)
+	}
+	if !st.IsCompletedOnce("again") {
+		t.Fatal("a rejected duplicate wiped the queued task's state")
+	}
+}

@@ -15,8 +15,26 @@ import (
 )
 
 // AddTask appends a task and persists the config. IDs must be unique.
+//
+// The id may have been used before: a one-shot task leaves the queue when it
+// finishes, and its scheduling state stays behind. The new task does not
+// inherit it, so one queued again under the id of a task that already ran
+// runs instead of counting as done.
 func AddTask(s *store.Store, t task.Task) error {
 	if err := checkDependencies(s, t); err != nil {
+		return err
+	}
+	// Forgotten before the task enters the queue, never after: once it is in,
+	// the scheduler may start it, and its new state must not be wiped. Only an
+	// id no queued task holds is cleared, because that state is a dead task's.
+	cfg, err := s.LoadConfig()
+	if err != nil {
+		return err
+	}
+	if indexOf(cfg.Tasks, t.ID) >= 0 {
+		return fmt.Errorf("task %q already exists", t.ID)
+	}
+	if err := forgetTaskState(s, t.ID); err != nil {
 		return err
 	}
 	return s.UpdateConfig(func(cfg *store.Config) error {

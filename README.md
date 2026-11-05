@@ -841,7 +841,8 @@ before.
   somewhere else; those tasks stay queued and say why.
 - The chain is followed as far as it reaches. A provider in it that cannot take
   the work right now — rate-limited itself, switched off, not installed, not
-  logged in — is stepped over and its own fallback is asked. When nothing in the
+  logged in, or with a last allowance reading that shows a window used up
+  until a reset still ahead — is stepped over and its own fallback is asked. When nothing in the
   chain can work, the tasks wait: the queue is honest about being stuck.
 - **The interrupted session does not travel.** A session belongs to the account
   that issued it, so the substitute starts the task again from the beginning and
@@ -1975,7 +1976,10 @@ that.
   [When the limit is reached](#when-the-limit-is-reached)), its tasks run there
   meanwhile — from the start, since a session belongs to the account that issued
   it. The interrupted session is then dropped instead of being resumed after the
-  reset, so the task does not run twice.
+  reset, so the task does not run twice. A pool task moves the same way: on the
+  next tick the pool ranks it onto a member that can work. This holds however
+  the paused run was started, by the scheduler or with **Run now**, also for a
+  task queued again under the id of one that had already run once.
 - **A blocked queue says so.** While the gate is closed a banner names the time
   it reopens, the paused run is marked *rescheduled* in the Log with that time,
   and the task carries a *rescheduled* badge in the Queue — a waiting queue is

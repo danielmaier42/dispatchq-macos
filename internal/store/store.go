@@ -46,15 +46,15 @@ type Store struct {
 }
 
 // DefaultHome resolves the data directory: the [HomeOverride] if set, otherwise
-// ~/Library/Application Support/dispatchq. A data directory left behind by
+// ~/Library/Application Support/dispatchq (on Linux ~/.local/share/dispatchq). A data directory left behind by
 // ClaudeQ is moved there first, so the first DispatchQ start finds every task.
 func DefaultHome() (string, error) {
 	if h := HomeOverride(); h != "" {
 		return h, nil
 	}
-	base, err := os.UserConfigDir() // ~/Library/Application Support on macOS
+	base, err := dataBaseDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve config dir: %w", err)
+		return "", err
 	}
 	home := filepath.Join(base, homeDirName)
 	if err := migrateLegacyHome(filepath.Join(base, legacyHomeDirName), home); err != nil {

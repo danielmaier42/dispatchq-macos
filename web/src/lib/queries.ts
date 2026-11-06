@@ -108,6 +108,10 @@ export const useStats = (range: StatsRange = DEFAULT_STATS_RANGE) =>
     placeholderData: keepPreviousData,
   })
 export const useHealth = () => useQuery(poll<Health>(keys.health, '/api/health', 30_000))
+// The daemon's platform alone: a component re-renders when it changes, not on
+// every health poll.
+export const useHealthPlatform = () =>
+  useQuery({...poll<Health>(keys.health, '/api/health', 30_000), select: (h: Health) => h.platform}).data
 export const useUpdate = () => useQuery(poll<UpdateStatus>(keys.update, '/api/update', 60_000))
 export const useAssistantInfo = () =>
   useQuery({...poll<AssistantInfo>(keys.assistant, '/api/assistant', false), staleTime: 60_000})

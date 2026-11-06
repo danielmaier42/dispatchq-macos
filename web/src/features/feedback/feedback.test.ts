@@ -7,6 +7,9 @@ describe('envLine', () => {
     expect(envLine({app_version: '1.4.0'})).toBe('DispatchQ 1.4.0')
     expect(envLine({app_version: ''})).toBe('')
     expect(envLine(undefined)).toBe('')
+    expect(envLine({app_version: '1.4.0', os_version: 'Ubuntu 26.04 LTS'}, false)).toBe(
+      'DispatchQ 1.4.0 · Ubuntu 26.04 LTS',
+    )
   })
 })
 

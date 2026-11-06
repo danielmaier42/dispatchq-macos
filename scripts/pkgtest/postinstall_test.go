@@ -1,3 +1,7 @@
+//go:build darwin
+
+// Package pkgtest runs the macOS installer's postinstall script against a
+// simulated Mac. The script uses macOS tools, so the test runs on macOS only.
 package pkgtest
 
 import (

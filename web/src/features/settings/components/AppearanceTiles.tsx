@@ -2,6 +2,7 @@ import {Check} from 'lucide-react'
 import type {CSSProperties, KeyboardEvent} from 'react'
 import {APPEARANCES, type Appearance} from '@/lib/theme'
 import {cn} from '@/lib/utils'
+import {usePlatform} from '@/lib/platform'
 
 // Each tile depicts a scheme whatever the window shows right now, so a mockup
 // carries its own copy of that scheme's surface tokens (mirroring styles.css)
@@ -25,10 +26,16 @@ const SCHEME: Record<'light' | 'dark', CSSProperties> = {
   } as CSSProperties,
 }
 
-const TIPS: Record<string, string> = {
+const MAC_TIPS: Record<string, string> = {
   '': 'Follows the Mac: light by day, dark at night if macOS switches',
   light: 'Always light, whatever the Mac does',
   dark: 'Always dark, whatever the Mac does',
+}
+
+const OTHER_TIPS: Record<string, string> = {
+  '': 'Follows the system: light or dark as the desktop is set',
+  light: 'Always light, whatever the system does',
+  dark: 'Always dark, whatever the system does',
 }
 
 function WindowMock({scheme, className}: {scheme: 'light' | 'dark'; className?: string}) {
@@ -65,6 +72,7 @@ function WindowMock({scheme, className}: {scheme: 'light' | 'dark'; className?: 
 // AppearanceTiles picks System, Light or Dark from three window previews. It
 // is a radio group: ←/→ move the choice, and the choice applies at once.
 export function AppearanceTiles({value, onChange}: {value: Appearance; onChange: (v: Appearance) => void}) {
+  const TIPS = usePlatform().isMac ? MAC_TIPS : OTHER_TIPS
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const step =
       e.key === 'ArrowRight' || e.key === 'ArrowDown'

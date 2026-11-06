@@ -3,6 +3,7 @@ import {useEffect, useRef, useState} from 'react'
 import {cn} from '@/lib/utils'
 import {inputClass} from './input'
 import {Kbd} from './kbd'
+import {usePlatform} from '@/lib/platform'
 
 // SearchInput filters as you type, after a short pause so a fast typist does not
 // rebuild a long list on every key. Escape clears it; a second Escape leaves it.
@@ -22,6 +23,7 @@ export function SearchInput({
   className?: string
   delay?: number
 }) {
+  const {mod} = usePlatform()
   const [text, setText] = useState(value)
   const ref = useRef<HTMLInputElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -85,7 +87,7 @@ export function SearchInput({
       ) : (
         hotkey && (
           <Kbd className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 peer-focus:hidden">
-            ⌘F
+            {mod}F
           </Kbd>
         )
       )}

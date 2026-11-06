@@ -30,6 +30,7 @@ import {HowSection} from './HowSection'
 import {PromptSection, WhatSection} from './WhatSection'
 import {WhenSection} from './WhenSection'
 import {WhereSection} from './WhereSection'
+import {usePlatform} from '@/lib/platform'
 
 // The order the fields appear in, so the first complaint is the one in view.
 const FIELD_ORDER: FieldKey[] = ['name', 'group', 'fixedAt', 'cron', 'prompt', 'workingDir', 'target']
@@ -43,6 +44,7 @@ function focusField(k: FieldKey) {
 }
 
 export function EditorForm({session, onDirty}: {session: EditorSession; onDirty: (dirty: boolean) => void}) {
+  const {modKey} = usePlatform()
   const [form, setForm] = useState(session.initial)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState('')
@@ -200,7 +202,7 @@ export function EditorForm({session, onDirty}: {session: EditorSession; onDirty:
             {summary}
           </p>
           <span className="flex items-center gap-1 text-[12px] text-subtle-foreground">
-            <Kbd>⌘</Kbd>
+            <Kbd>{modKey}</Kbd>
             <Kbd>↵</Kbd>
             <span className="ml-1">to {session.submitLabel.toLowerCase()}</span>
           </span>

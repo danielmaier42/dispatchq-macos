@@ -92,7 +92,7 @@ The new task inherits this task's provider, model, permissions, parallelism and 
 
 Only queue a task when the work genuinely belongs in a separate run; if something should simply be done now, just do it yourself.
 
-dispatchq stores its data in the directory named by the DISPATCHQ_HOME environment variable (falling back to ~/Library/Application Support/dispatchq when unset). If a task needs to inspect previous runs, that directory contains:
+dispatchq stores its data in the directory named by the DISPATCHQ_HOME environment variable, which is always set for a run. If a task needs to inspect previous runs, that directory contains:
   runs/<id>.log   per-run output logs (stdout/stderr of each run)
   history.jsonl   append-only log of run events (one JSON object per line)
   config.toml     global settings and the ordered task list

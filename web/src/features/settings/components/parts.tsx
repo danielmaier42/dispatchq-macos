@@ -2,6 +2,7 @@ import type {ReactNode} from 'react'
 import {Badge} from '@/components/ui/badge'
 import {Skeleton} from '@/components/ui/skeleton'
 import {Tooltip} from '@/components/ui/tooltip'
+import {usePlatform} from '@/lib/platform'
 
 // SectionTitle heads the content side with what the open section is for.
 export function SectionTitle({title, description}: {title: string; description: string}) {
@@ -16,6 +17,7 @@ export function SectionTitle({title, description}: {title: string; description: 
 // SaveMode tells a group's title how its changes are written, so nobody has
 // to guess whether a click already counted.
 export function SaveMode({mode, dirty}: {mode: 'instant' | 'draft'; dirty?: boolean}) {
+  const {mod} = usePlatform()
   if (mode === 'draft' && dirty)
     return (
       <Badge tone="accent" dot>
@@ -27,7 +29,7 @@ export function SaveMode({mode, dirty}: {mode: 'instant' | 'draft'; dirty?: bool
       content={
         mode === 'instant'
           ? 'Changes here apply as soon as you make them'
-          : 'Typed changes wait for Save (⌘S)'
+          : `Typed changes wait for Save (${mod}S)`
       }
     >
       <span className="cursor-default text-[11.5px] text-subtle-foreground">

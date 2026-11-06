@@ -538,6 +538,9 @@ export interface LimitedProvider {
 
 // GET /api/health response.
 export interface Health {
+  // The daemon's operating system as Go names it: "darwin", "linux". Missing
+  // from older daemons, which ran on macOS only.
+  platform?: string
   // "" when scheduled wake is healthy.
   wake_error: string
   // "" when unknown.
@@ -611,6 +614,8 @@ export interface UpdateStatus {
   current: string
   // false for a dev build.
   supported: boolean
+  // true when this system cannot install releases: only link to them.
+  unavailable?: boolean
   available: boolean
   // "" if unknown.
   latest: string

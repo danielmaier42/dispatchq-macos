@@ -8,6 +8,7 @@ import {invalidate, keys} from '@/lib/queries'
 import type {Settings} from '@/lib/types'
 import {commitSettings} from '../actions'
 import {SaveMode} from '../components/parts'
+import {usePlatform} from '@/lib/platform'
 
 // asideProviderOptions lists the providers that can do a job DispatchQ runs on
 // its own behalf (prompt review, the assistant). Only a harness that
@@ -34,6 +35,7 @@ function useAsideProviderOptions(current: string): SelectOption[] {
 }
 
 export function AssistantSection({value}: {value: Settings}) {
+  const {machine} = usePlatform()
   const reviewOn = !value.prompt_review_disabled
   const reviewProviders = useAsideProviderOptions(value.prompt_review_provider)
   const assistantProviders = useAsideProviderOptions(value.assistant_provider)
@@ -45,7 +47,7 @@ export function AssistantSection({value}: {value: Settings}) {
           <Row
             htmlFor="s-review"
             label="Check prompts with Claude"
-            description="Before a task is added, imported or edited, Claude reads its prompt against this Mac: paths that aren't here, a file to be written into a folder that doesn't exist, guidelines it points at. It offers a rewrite under the prompt box, and reviews the custom system prompt the same way."
+            description={`Before a task is added, imported or edited, Claude reads its prompt against ${machine}: paths that aren't here, a file to be written into a folder that doesn't exist, guidelines it points at. It offers a rewrite under the prompt box, and reviews the custom system prompt the same way.`}
             control={
               <Switch
                 id="s-review"

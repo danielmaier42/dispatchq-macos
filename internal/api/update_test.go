@@ -218,6 +218,9 @@ func TestUpdateEndpointsUnavailableWithoutService(t *testing.T) {
 	if s.Available || s.Supported {
 		t.Errorf("no service should mean nothing offered: %+v", s)
 	}
+	if !s.Unavailable {
+		t.Errorf("no service should say so: %+v", s)
+	}
 	// Mutating endpoints report unavailable.
 	if r := do(t, srv, "POST", "/api/update/download", nil); r.Status != http.StatusServiceUnavailable {
 		t.Errorf("download without service = %d, want 503", r.Status)
@@ -305,6 +308,29 @@ func TestRelaunchUpdateWithoutInstalledApp(t *testing.T) {
 
 	if r := do(t, srv, "POST", "/api/update/relaunch", nil); r.Status != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (%s)", r.Status, r.Body)
+	}
+}
+
+// Without an update service the system has no release installer, so there is
+// nothing to hand over to, even when an installed app is found.
+func TestRelaunchUpdateWithoutUpdateService(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(handler(Deps{Store: st}))
+	t.Cleanup(srv.Close)
+	stubInstalled(t, "0.8.1")
+	called := false
+	prev := relaunchInstalled
+	relaunchInstalled = func(string) error { called = true; return nil }
+	t.Cleanup(func() { relaunchInstalled = prev })
+
+	if r := do(t, srv, "POST", "/api/update/relaunch", nil); r.Status != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 (%s)", r.Status, r.Body)
+	}
+	if called {
+		t.Fatal("relaunched an installed app without an update service")
 	}
 }
 

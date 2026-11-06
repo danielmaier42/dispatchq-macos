@@ -8,6 +8,7 @@ import {Tooltip} from '@/components/ui/tooltip'
 import {api, errorMessage} from '@/lib/api'
 import type {PathResult} from '@/lib/types'
 import {EditorSection, Hint} from './parts'
+import {usePlatform} from '@/lib/platform'
 
 // The native macOS folder dialog, opened by the daemon. It starts in the folder
 // already in the field; 204 means it was cancelled.
@@ -28,6 +29,7 @@ export function WhereSection({
   hint?: string
   onChange: (dir: string) => void
 }) {
+  const {fileManager} = usePlatform()
   const [choosing, setChoosing] = useState(false)
   const choose = async () => {
     setChoosing(true)
@@ -59,7 +61,7 @@ export function WhereSection({
             className="font-mono text-[12.5px]"
             onChange={(e) => onChange(e.target.value)}
           />
-          <Tooltip content="Choose a folder in Finder">
+          <Tooltip content={`Choose a folder in ${fileManager}`}>
             <Button type="button" onClick={choose} loading={choosing} aria-label="Choose folder">
               {!choosing && <FolderOpen />}
               Choose…

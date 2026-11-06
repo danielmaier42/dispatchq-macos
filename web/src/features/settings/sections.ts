@@ -10,6 +10,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
+import type {PlatformWords} from '@/lib/platform'
 
 export const SECTION_IDS = [
   'general',
@@ -28,7 +29,8 @@ export interface SectionDef {
   id: SectionId
   label: string
   icon: LucideIcon
-  description: string
+  // A function when the wording names the machine.
+  description: string | ((w: PlatformWords) => string)
 }
 
 export const SECTIONS: SectionDef[] = [
@@ -42,7 +44,7 @@ export const SECTIONS: SectionDef[] = [
     id: 'appearance',
     label: 'Appearance',
     icon: Palette,
-    description: 'How DispatchQ looks on this Mac and in a browser tab',
+    description: (w) => `How DispatchQ looks on ${w.machine} and in a browser tab`,
   },
   {
     id: 'execution',
@@ -64,7 +66,7 @@ export const SECTIONS: SectionDef[] = [
     icon: Sparkles,
     description: 'The jobs Claude does for DispatchQ itself',
   },
-  {id: 'system', label: 'System', icon: Wrench, description: 'Removing DispatchQ from this Mac'},
+  {id: 'system', label: 'System', icon: Wrench, description: (w) => `Removing DispatchQ from ${w.machine}`},
   {id: 'about', label: 'About', icon: Info, description: 'Version and software updates'},
 ]
 

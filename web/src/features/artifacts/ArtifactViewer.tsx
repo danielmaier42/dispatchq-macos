@@ -17,6 +17,7 @@ import {canContinue} from '@/features/log/runs'
 import {neighbours, sourceName} from './logic'
 import {closeArtifact, stepArtifact, useArtifactViewer} from './store'
 import {ViewerBody} from './ViewerBody'
+import {usePlatform} from '@/lib/platform'
 
 // The quick-look viewer: a full-size dialog rather than a side sheet, because
 // an artifact is a document (a web page, a PDF) that wants the window's width,
@@ -202,6 +203,7 @@ function ViewerHeader({
 // The footer offers what is left to do with the artifact: delete it, or pick
 // up the chat that published it. Closing is the X and Esc, not a button here.
 function ViewerFooter({a, after}: {a: Artifact; after: string | null}) {
+  const {terminal} = usePlatform()
   const run = useRuns().data?.find((r) => r.run_id === a.run_id)
   const [continuing, setContinuing] = useState(false)
 
@@ -214,7 +216,7 @@ function ViewerFooter({a, after}: {a: Artifact; after: string | null}) {
     setContinuing(true)
     try {
       await api('POST', `/api/runs/${encodeURIComponent(run.run_id)}/continue`)
-      toast.success('Opening Terminal…')
+      toast.success(`Opening ${terminal}…`)
     } catch (e) {
       toast.error('Continue failed', {description: errorMessage(e)})
     } finally {
@@ -232,7 +234,9 @@ function ViewerFooter({a, after}: {a: Artifact; after: string | null}) {
       </Button>
       <div className="flex items-center gap-2">
         {canContinue(run) && (
-          <Tooltip content="Opens Terminal in the task’s folder and resumes the chat that published this artifact — with the full conversation context">
+          <Tooltip
+            content={`Opens ${terminal} in the task’s folder and resumes the chat that published this artifact — with the full conversation context`}
+          >
             <Button onClick={continueRun} loading={continuing}>
               {!continuing && <SquareTerminal />}
               Continue in Chat…

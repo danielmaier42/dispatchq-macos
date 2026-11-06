@@ -8,12 +8,14 @@ import type {QueueTask, Run} from '@/lib/types'
 import {openTaskEditor} from '@/features/task-editor/store'
 import {cancelResume, cancelRunning, continueInTerminal, replayRun} from '../actions'
 import {canContinue, canTakeOver, cancelMode} from '../runs'
+import {usePlatform} from '@/lib/platform'
 
 // The sheet's footer: call the run off, edit or run its task again, or pick its
 // session up in Terminal. Continue follows the run: offered as a take-over while it
 // runs, as a plain resume once it has finished for good, and hidden while it
 // waits to be resumed by the queue.
 export function RunLogActions({run}: {run: Run}) {
+  const {terminal} = usePlatform()
   const [busy, setBusy] = useState<'' | 'cancel' | 'continue'>('')
   // Once the user has canceled, a poll answered before the cancel landed must
   // not offer the action again.
@@ -91,13 +93,13 @@ export function RunLogActions({run}: {run: Run}) {
         <Tooltip
           content={
             takeOver
-              ? "Stops the unattended run and reopens its chat in Terminal, in the task's folder, with the full conversation context"
-              : "Opens Terminal in the task's folder and resumes this chat interactively, with the full conversation context"
+              ? `Stops the unattended run and reopens its chat in ${terminal}, in the task's folder, with the full conversation context`
+              : `Opens ${terminal} in the task's folder and resumes this chat interactively, with the full conversation context`
           }
         >
           <Button variant="primary" onClick={cont} loading={busy === 'continue'}>
             <SquareTerminal />
-            {takeOver ? 'Take over in Terminal' : 'Continue in Terminal'}
+            {takeOver ? `Take over in ${terminal}` : `Continue in ${terminal}`}
           </Button>
         </Tooltip>
       )}

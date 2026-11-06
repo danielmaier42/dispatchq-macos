@@ -14,8 +14,10 @@ import {DraftForm} from './components/DraftForm'
 import {FeedbackIntro} from './components/FeedbackIntro'
 import {envLine} from './feedback'
 import {retry, sendMessage, setComposer, startOver, useFeedback, writeManually} from './store'
+import {usePlatform} from '@/lib/platform'
 
 export function FeedbackView() {
+  const {isMac} = usePlatform()
   const info = useFeedbackInfo()
   const s = useFeedback()
 
@@ -143,7 +145,7 @@ export function FeedbackView() {
               />
             ))}
 
-          {s.mode === 'review' && <DraftForm repo={repo} env={envLine(info.data)} />}
+          {s.mode === 'review' && <DraftForm repo={repo} env={envLine(info.data, isMac)} />}
         </div>
       )}
     </ViewLayout>

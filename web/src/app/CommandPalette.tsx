@@ -27,10 +27,12 @@ import {useSaveAppearance} from '@/features/settings/use-appearance'
 import {navigate} from './nav'
 import {setPaletteOpen, usePalette} from './palette-store'
 import {VIEWS} from './views'
+import {usePlatform} from '@/lib/platform'
 
 // The command palette (⌘K): jump to a view, start an action, or find a task or
 // a recent run by name — everything the app can do, a few keystrokes away.
 export function CommandPalette() {
+  const {mod, appShortcuts} = usePlatform()
   const open = usePalette((s) => s.open)
   const tasks = useTasks().data ?? []
   const runs = useRuns().data ?? []
@@ -87,16 +89,24 @@ export function CommandPalette() {
               )}
 
               <Group heading="Actions">
-                <Item icon={Sparkles} onSelect={run(openAssistant)} hint="⌘J">
+                <Item icon={Sparkles} onSelect={run(openAssistant)} hint={`${mod}J`}>
                   Ask DispatchQ
                 </Item>
-                <Item icon={Plus} onSelect={run(() => openAddTask())} hint="⌘N">
+                <Item
+                  icon={Plus}
+                  onSelect={run(() => openAddTask())}
+                  hint={appShortcuts ? `${mod}N` : undefined}
+                >
                   New task
                 </Item>
                 <Item icon={Download} onSelect={run(pickAndImportTask)}>
                   Import task…
                 </Item>
-                <Item icon={RefreshCw} onSelect={run(() => void refreshAll())} hint="⌘R">
+                <Item
+                  icon={RefreshCw}
+                  onSelect={run(() => void refreshAll())}
+                  hint={appShortcuts ? `${mod}R` : undefined}
+                >
                   Refresh everything
                 </Item>
                 <Item
@@ -120,7 +130,7 @@ export function CommandPalette() {
 
               <Group heading="Go to">
                 {VIEWS.map((v, i) => (
-                  <Item key={v.id} icon={v.icon} onSelect={run(() => navigate(v.id))} hint={`⌘${i + 1}`}>
+                  <Item key={v.id} icon={v.icon} onSelect={run(() => navigate(v.id))} hint={`${mod}${i + 1}`}>
                     {v.label}
                   </Item>
                 ))}

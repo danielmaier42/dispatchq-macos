@@ -56,6 +56,10 @@ type Waker interface {
 // SetWaker enables wake planning after each loop tick.
 func (e *Engine) SetWaker(w Waker) { e.waker = w }
 
+// SetSleepInhibitor lets the engine hold off idle system sleep while runs are
+// in flight. Without one, the machine may sleep during a run.
+func (e *Engine) SetSleepInhibitor(i SleepInhibitor) { e.awake.setInhibitor(i) }
+
 // SetNotifier enables outcome notifications (failure / auth error).
 func (e *Engine) SetNotifier(n notify.Notifier) { e.notifier = n }
 
@@ -161,7 +165,7 @@ type Engine struct {
 	// weighs its members by so concurrent starts spread out.
 	runningOn map[string]int
 	wg        sync.WaitGroup
-	awake     sleepGuard // keeps the Mac awake while runs are in flight
+	awake     sleepGuard // keeps the machine awake while runs are in flight
 
 	// providerHealth is the health state last announced per provider, so an
 	// unresolved problem is reported once instead of on every tick. It is seeded

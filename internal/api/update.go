@@ -323,6 +323,10 @@ func spawnInstalledDaemon(app string) error {
 // on disk. It answers the case where an installer ran fine but the old daemon
 // kept running: the update is already installed, it just never took effect.
 func (s *server) relaunchUpdate(w http.ResponseWriter, _ *http.Request) {
+	if s.d.Updates == nil {
+		writeErr(w, http.StatusServiceUnavailable, errors.New("updates are not available"))
+		return
+	}
 	inst := installedApp()
 	if inst == nil {
 		writeErr(w, http.StatusServiceUnavailable, errors.New("no installed DispatchQ.app was found"))

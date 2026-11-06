@@ -144,7 +144,7 @@ The nightly cycle looks like this:
 ## Install
 
 1. Download the latest `dispatchq-<version>.pkg` from the
-   [Releases](https://github.com/danielmaier42/dispatchq-macos/releases) page.
+   [Releases](https://github.com/danielmaier42/dispatchq-app/releases) page.
 2. Open it and follow the installer.
 
 The package installs **DispatchQ** to `/Applications`, sets up a per-user

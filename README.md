@@ -233,6 +233,16 @@ It reuses the same daemon, queue and dashboard. What differs on Windows:
 | Keep awake | held while a run is active (the display may still sleep) |
 | Not available | native notifications (Pushover, ntfy and webhooks work), wake from sleep, continue in a terminal, in-app update check and uninstall button, appearance pinning |
 
+Platform layer: the Windows edition builds on the contributor's platform
+abstraction from [PR 159](https://github.com/danielmaier42/dispatchq-app/pull/159)
+(`cmd/dispatchqd/platform.go`). `platform_windows.go` supplies the Run-key service
+manager, the stray-daemon termination, the PowerShell dialogs, the Windows version and the
+no-console log setup; `internal/system` supplies the sleep inhibitor (the thread-pinned
+`SetThreadExecutionState` hold on Windows, `caffeinate -i` on macOS). Both the daemon and
+`dispatchq run-now` take it from `system.DefaultSleepInhibitor`. Linux and other systems
+keep the explicit unsupported fallback (`platform_other.go`). The Windows PoC therefore
+depends on PR 159 being merged first.
+
 The Windows code has been cross-compiled and its portable parts (shim resolution, the installer PATH script) are
 unit-tested on macOS; the Windows-only Job Object tests are compiled but have not run, and the app has **not** been run on a Windows machine yet (see
 [docs/windows/PLAN.md](docs/windows/PLAN.md) for the verification gaps).

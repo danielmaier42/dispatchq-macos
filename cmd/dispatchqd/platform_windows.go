@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -148,7 +149,7 @@ func (runKeyService) Uninstall(_ context.Context, out io.Writer) error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
 	if err == nil {
 		defer func() { _ = k.Close() }()
-		if err := k.DeleteValue(runValueName); err != nil && err != registry.ErrNotExist {
+		if err := k.DeleteValue(runValueName); err != nil && !errors.Is(err, registry.ErrNotExist) {
 			return fmt.Errorf("remove autostart: %w", err)
 		}
 	}

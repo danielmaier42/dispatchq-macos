@@ -59,6 +59,11 @@ First-start checklist
       appears in History with output.
   [ ] Start a long task and cancel it; check Task Manager that the CLI and its tools
       are gone.
+  [ ] If your provider is an npm install (a .cmd shim), run a task with a prompt that
+      contains quotes, % and & characters; it reaches the provider unchanged, or the run
+      fails with an explanation naming the character.
+  [ ] Install into a folder such as C:\Apps\$cash\DispatchQ (custom folder page), open a new
+      terminal: `dispatchq` resolves; uninstall removes that PATH entry.
   [ ] Close the window; the queue keeps running (dispatchqd.exe stays in Task Manager).
   [ ] Sign out and in again; dispatchqd.exe is running without opening the window.
   [ ] Report anything that fails, with %APPDATA%\dispatchq\dispatchqd.log.

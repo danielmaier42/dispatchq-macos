@@ -7,11 +7,11 @@ Status: a local-only proof of concept is implemented on `feature/windows-port-po
 | Area | State |
 | --- | --- |
 | Store and daemon locks | Implemented with `LockFileEx` (lock byte placed past EOF so the pid stays readable); atomic replace retries on sharing violations. Not run on Windows. |
-| Process tree | Job Object per run with kill-on-close, `taskkill /T` fallback, no console windows. Not run on Windows. |
-| Provider discovery | `.exe`/`.cmd` candidates (own installers, npm, scoop), then `PATH`; unit-tested. Provider argument handling through `.cmd` shims and real provider runs are unverified. |
+| Process tree | Each run is created suspended, assigned to a Job Object with kill-on-close, then resumed, so descendants started at once are members; if ownership cannot be established the run fails to start and is stopped. Cancel ends the job. No console windows. Windows fixtures (immediate descendants, cancel, abrupt owner death) are written and cross-compiled but have not run on Windows. |
+| Provider discovery | `.exe`/`.cmd` candidates (own installers, npm, scoop), then `PATH`; unit-tested. `.cmd`/`.bat` launchers are resolved to the node program or `.exe` they start and run directly, so prompts reach the provider as data; a shim that needs `cmd.exe` is run only when no argument contains a character cmd would interpret (`" % ^ & \| < > ( ) !`, line breaks), otherwise the run fails with an explanation. Same path for runs, readiness/model/limit probes and asides. The shim logic is unit-tested on macOS; real provider runs on Windows are unverified. |
 | Native window | WebView2 via the existing `webview_go` (built-in loader, no DLL to ship); links, accent colour. Cross-compiled only; never opened on Windows. |
 | Daemon lifecycle | Run-key autostart and start-now in `dispatchqd install`, log file, single daemon. Behaviour at lock, logout and reboot unverified. |
-| Installer | NSIS per-user installer with WebView2 bootstrapper, PATH entry, uninstaller, `/PURGE`. Built; never executed on Windows. |
+| Installer | NSIS per-user installer with WebView2 bootstrapper, PATH entry, uninstaller, `/PURGE`. The install directory reaches the PATH script (`path-helper.ps1`) through an environment variable, never as PowerShell source; helper exit codes are checked and reported. The script is round-trip tested under PowerShell on macOS with `$`, backtick, space, quote, `%` and Unicode paths. The installer itself was built, never executed on Windows. |
 | Disabled and documented | Native notifications, wake from sleep, continue in terminal, in-app update and uninstall, appearance pinning, shebang scripts. |
 | Open | Windows ARM64, WSL, execution after logout, code signing, updater, CI, website selection (planned until publication), real Windows end-to-end verification. |
 

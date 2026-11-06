@@ -227,14 +227,14 @@ It reuses the same daemon, queue and dashboard. What differs on Windows:
 | Window | WebView2, the same dashboard |
 | Background service | `dispatchqd.exe`, started from the per-user Run key at sign-in; runs only while you are signed in |
 | Data | `%APPDATA%\dispatchq`; the daemon log is `dispatchqd.log` there |
-| Providers | native `claude`, `codex`, `opencode` found in the usual install folders, npm and scoop shims, then `PATH`; a Claude login is read from `.credentials.json` |
-| Cancel | every run is placed in a Windows Job Object; cancelling, the idle watchdog or the daemon dying ends the whole process tree |
+| Providers | native `claude`, `codex`, `opencode` found in the usual install folders, npm and scoop shims, then `PATH`; an npm or scoop `.cmd` shim is resolved to the program it starts; a Claude login is read from `.credentials.json` |
+| Cancel | every run starts suspended, joins a Windows Job Object and is then resumed, so even a child started at once belongs to it; cancelling, the idle watchdog or the daemon dying ends the whole process tree, and a run whose job cannot be set up does not start |
 | Script jobs | run as PowerShell; a `#!` line is refused |
 | Keep awake | held while a run is active (the display may still sleep) |
 | Not available | native notifications (Pushover, ntfy and webhooks work), wake from sleep, continue in a terminal, in-app update check and uninstall button, appearance pinning |
 
-The Windows code has been cross-compiled and its portable parts are
-unit-tested on macOS; it has **not** been run on a Windows machine yet (see
+The Windows code has been cross-compiled and its portable parts (shim resolution, the installer PATH script) are
+unit-tested on macOS; the Windows-only Job Object tests are compiled but have not run, and the app has **not** been run on a Windows machine yet (see
 [docs/windows/PLAN.md](docs/windows/PLAN.md) for the verification gaps).
 
 ## Coming from ClaudeQ

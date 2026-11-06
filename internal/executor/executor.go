@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 	"github.com/danielmaier42/claudeq/internal/store"
 	"github.com/danielmaier42/claudeq/internal/task"
 )
@@ -369,7 +370,12 @@ func (e *Executor) Run(ctx context.Context, req Request) (provider.Result, error
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, invocation.Path, invocation.Args...) //nolint:gosec // the path comes from the configured provider instance or its adapter's detection
+	// binpath resolves an npm or scoop .cmd shim to the program it starts: a batch file
+	// cannot be started directly, and cmd.exe would reinterpret the prompt.
+	cmd, err := binpath.CommandContext(runCtx, invocation.Path, invocation.Args...)
+	if err != nil {
+		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
+	}
 	cmd.Dir = req.Task.WorkingDir
 	cmd.Env = e.runEnv(req, invocation.Env) // lets the run queue follow-up tasks (self-queue)
 	configureProcessGroup(cmd)              // so a killed run takes its whole process tree with it
@@ -390,7 +396,12 @@ func (e *Executor) Run(ctx context.Context, req Request) (provider.Result, error
 	if err := cmd.Start(); err != nil {
 		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
 	}
-	defer attachProcessTree(cmd)() // Windows: the Job Object that owns the run's tree
+	release, err := attachProcessTree(cmd) // Windows: the Job Object that owns the run's tree
+	if err != nil {
+		abortStarted(cmd)
+		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
+	}
+	defer release()
 
 	// Idle watchdog: kill the process if it stops producing output for too long.
 	var idleKilled atomic.Bool

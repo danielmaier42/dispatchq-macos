@@ -4,7 +4,7 @@
 ; Defines expected from the build script:
 ;   VERSION      product version string, e.g. dev-feature-windows-port-poc
 ;   STAGE        directory holding dispatchqapp.exe, dispatchqd.exe, dispatchq.exe,
-;                dispatchq.ico, LICENSE, INSTALL-WINDOWS.txt [, webview2-bootstrapper.exe]
+;                dispatchq.ico, LICENSE, INSTALL-WINDOWS.txt, path-helper.ps1 [, webview2-bootstrapper.exe]
 ;   OUTFILE      installer to write
 ;   BOOTSTRAPPER defined when STAGE contains webview2-bootstrapper.exe
 
@@ -49,6 +49,21 @@ VIAddVersionKey "LegalCopyright" "DispatchQ contributors"
 ; Parameters: /PURGE (uninstaller) also deletes the data directory.
 Var Purge
 
+; Adds (ACTION=Add) or removes (ACTION=Remove) the install directory in the user's
+; PATH. The directory is handed to the fixed script path-helper.ps1 through an
+; environment variable and is never part of PowerShell source, so $, backticks or
+; parentheses in a legal install path stay literal. A failure is reported.
+!macro PathHelper ACTION
+  System::Call 'Kernel32::SetEnvironmentVariableW(w "DISPATCHQ_INSTDIR", w "$INSTDIR")i.r0'
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\path-helper.ps1" -Action ${ACTION}'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint "Updating the PATH failed (exit code $0): $1"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ could not update your PATH (${ACTION}): $1$\r$\nThe dispatchq command may not be available in new terminals. You can add $INSTDIR to your user PATH yourself." /SD IDOK
+  ${EndIf}
+!macroend
+
 ; The WebView2 runtime registers its version under this client id, per machine
 ; or per user.
 !define WEBVIEW2_KEY "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
@@ -90,6 +105,7 @@ Section "DispatchQ" SecMain
   File "${STAGE}\dispatchq.ico"
   File "${STAGE}\LICENSE"
   File "${STAGE}\INSTALL-WINDOWS.txt"
+  File "${STAGE}\path-helper.ps1"
   WriteUninstaller "$INSTDIR\Uninstall DispatchQ.exe"
 
   Call EnsureWebView2
@@ -99,10 +115,15 @@ Section "DispatchQ" SecMain
   CreateShortcut "$SMPROGRAMS\DispatchQ\Uninstall DispatchQ.lnk" "$INSTDIR\Uninstall DispatchQ.exe"
 
   ; Add the CLI to the user's PATH.
-  nsExec::Exec 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$d=\"$INSTDIR\"; $$p=[Environment]::GetEnvironmentVariable(\"Path\",\"User\"); if(-not $$p){$$p=\"\"}; if(($$p -split \";\") -notcontains $$d){[Environment]::SetEnvironmentVariable(\"Path\",(($$p.TrimEnd(\";\")+\";\"+$$d).TrimStart(\";\")),\"User\")}"'
+  !insertmacro PathHelper Add
 
   ; Register the daemon to start at every sign-in and start it now.
   nsExec::ExecToLog '"$INSTDIR\dispatchqd.exe" install'
+  Pop $0
+  ${If} $0 != 0
+    DetailPrint "Registering the daemon failed (exit code $0)"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ could not register its background service for sign-in (exit code $0). Start DispatchQ from the Start menu; see INSTALL-WINDOWS.txt." /SD IDOK
+  ${EndIf}
 
   WriteRegStr HKCU "Software\DispatchQ" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DispatchQ" "DisplayName" "DispatchQ"
@@ -131,7 +152,7 @@ Section "Uninstall"
   nsExec::Exec 'taskkill /F /IM dispatchqd.exe'
   Sleep 800
 
-  nsExec::Exec 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$d=\"$INSTDIR\"; $$p=[Environment]::GetEnvironmentVariable(\"Path\",\"User\"); if($$p){[Environment]::SetEnvironmentVariable(\"Path\",((($$p -split \";\") | Where-Object { $$_ -and $$_ -ne $$d }) -join \";\"),\"User\")}"'
+  !insertmacro PathHelper Remove
 
   Delete "$SMPROGRAMS\DispatchQ\DispatchQ.lnk"
   Delete "$SMPROGRAMS\DispatchQ\Uninstall DispatchQ.lnk"
@@ -143,6 +164,7 @@ Section "Uninstall"
   Delete "$INSTDIR\dispatchq.ico"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\INSTALL-WINDOWS.txt"
+  Delete "$INSTDIR\path-helper.ps1"
   Delete "$INSTDIR\Uninstall DispatchQ.exe"
   RMDir "$INSTDIR"
 

@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 	"github.com/danielmaier42/claudeq/internal/system"
 )
 
@@ -83,7 +83,10 @@ func (a *Adapter) ReadLimits(ctx context.Context, inst provider.Instance) (provi
 func askAppServer(ctx context.Context, c provider.Command) (json.RawMessage, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.Path, c.Args...) // #nosec G204 — a configured binary path, no shell
+	cmd, err := binpath.CommandContext(ctx, c.Path, c.Args...) // a configured binary path, no shell
+	if err != nil {
+		return nil, err
+	}
 	system.NoWindow(cmd)
 	if len(c.Env) > 0 {
 		cmd.Env = append(cmd.Environ(), c.Env...)

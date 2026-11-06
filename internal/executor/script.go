@@ -74,7 +74,12 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 	if err := cmd.Start(); err != nil {
 		return provider.Result{}, fmt.Errorf("start script: %w", err)
 	}
-	defer attachProcessTree(cmd)() // Windows: the Job Object that owns the run's tree
+	release, err := attachProcessTree(cmd) // Windows: the Job Object that owns the run's tree
+	if err != nil {
+		abortStarted(cmd)
+		return provider.Result{}, fmt.Errorf("start script: %w", err)
+	}
+	defer release()
 
 	var idleKilled atomic.Bool
 	if req.IdleTimeout > 0 {

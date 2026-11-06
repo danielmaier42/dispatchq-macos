@@ -1,13 +1,13 @@
 // Command dispatchqd is the dispatchq background daemon: it runs the scheduling
 // loop that executes due tasks via the Claude Code CLI, and can install itself
-// as a launchd LaunchAgent (PLAN.md build phases 2–3).
+// as a login service, a launchd LaunchAgent on macOS (PLAN.md build phases 2–3).
 //
 // Usage:
 //
 //	dispatchqd --version
 //	dispatchqd run [--interval 5s]
-//	dispatchqd install     # install & start the LaunchAgent (autostart)
-//	dispatchqd uninstall    # stop & remove the LaunchAgent
+//	dispatchqd install     # install & start the login service (autostart)
+//	dispatchqd uninstall    # stop & remove the login service
 package main
 
 import (
@@ -31,7 +31,6 @@ import (
 	"github.com/danielmaier42/claudeq/internal/engine"
 	"github.com/danielmaier42/claudeq/internal/executor"
 	"github.com/danielmaier42/claudeq/internal/feedback"
-	"github.com/danielmaier42/claudeq/internal/fileaccess"
 	"github.com/danielmaier42/claudeq/internal/limit"
 	"github.com/danielmaier42/claudeq/internal/notify"
 	"github.com/danielmaier42/claudeq/internal/provider"
@@ -39,6 +38,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/review"
 	"github.com/danielmaier42/claudeq/internal/store"
 	"github.com/danielmaier42/claudeq/internal/system"
+	"github.com/danielmaier42/claudeq/internal/update"
 	"github.com/danielmaier42/claudeq/internal/version"
 )
 
@@ -76,9 +76,9 @@ func run(args []string) error {
 	case "run":
 		return cmdRun(args[1:])
 	case "install":
-		return cmdInstall()
+		return cmdInstall(newPlatform(system.Real{}))
 	case "uninstall":
-		return cmdUninstall()
+		return cmdUninstall(newPlatform(system.Real{}))
 	default:
 		fmt.Println("usage: dispatchqd run [--interval 5s] | install | uninstall | --version")
 		return fmt.Errorf("unknown command %q", args[0])
@@ -88,11 +88,12 @@ func run(args []string) error {
 func cmdRun(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	interval := fs.Duration("interval", 5*time.Second, "scheduler tick interval")
-	noWake := fs.Bool("no-wake", false, "do not schedule pmset wakes")
+	noWake := fs.Bool("no-wake", false, "do not schedule wakes from sleep")
 	addr := fs.String("addr", defaultAddr, "dashboard/API listen address (loopback only)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	plat := newPlatform(system.Real{})
 
 	home, err := store.DefaultHome()
 	if err != nil {
@@ -169,12 +170,16 @@ func cmdRun(args []string) error {
 		Home:     home,
 		QueueBin: resolveQueueBin(),
 	}, c, checker)
-	wakeOn := false
-	if w := platformWaker(); w != nil && !*noWake {
-		eng.SetWaker(w)
-		wakeOn = true
+	wakeOn := !*noWake && plat.waker != nil
+	if wakeOn {
+		eng.SetWaker(plat.waker)
+	} else if !*noWake {
+		fmt.Fprintln(os.Stdout, "dispatchqd: wake from sleep is not supported on this system")
 	}
-	eng.SetNotifier(liveNotifier{st: st})
+	if plat.sleep != nil {
+		eng.SetSleepInhibitor(plat.sleep)
+	}
+	eng.SetNotifier(liveNotifier{st: st, desktop: plat.desktop})
 	// Each provider's allowance is read without spending any of it: on a
 	// timer, when the dashboard asks, and whenever a run on that account ends.
 	limits := provider.NewLimitMonitor(registry, func() ([]provider.Instance, error) {
@@ -194,16 +199,20 @@ func cmdRun(args []string) error {
 			}
 		}()
 	})
-	// Ask for notification permission up front (only does anything when running
-	// from the app bundle) so run-outcome notifications carry the app icon.
-	notify.RequestMacAuthorization()
+	// Ask for notification permission up front (on macOS only does anything when
+	// running from the app bundle) so run-outcome notifications carry the app icon.
+	if plat.requestNotifyAuth != nil {
+		plat.requestNotifyAuth()
+	}
 	// Provoke the macOS file-access (TCC) consent prompt now, at startup — which
 	// happens at install and at every login, while the user is present — rather
 	// than mid-run overnight, where the prompt has no one to answer it and the
 	// run stalls. Reading each task folder is what makes macOS raise the prompt;
 	// once answered the decision sticks and this becomes a no-op. Folders added
 	// later are warmed per-task from the API (Deps.WarmFileAccess) at add/edit.
-	go warmEnabledTasks(st)
+	if plat.warmFileAccess != nil {
+		go warmEnabledTasks(st, plat.warmFileAccess)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -211,9 +220,13 @@ func cmdRun(args []string) error {
 	// Background update checker: polls GitHub for a newer release hourly and
 	// caches the result so the dashboard's "update available" banner and the
 	// manual "Check for updates" button answer instantly (see internal/update).
-	updSvc := platformUpdates()
-	if updSvc != nil {
+	// A system without a release installer gets no update service at all. The
+	// update endpoints then answer "not available".
+	var updates *update.Service
+	if plat.selfUpdate {
+		updSvc := update.NewService(update.GitHubFetcher{}, update.DefaultInterval)
 		go updSvc.Run(ctx)
+		updates = updSvc
 	}
 	go limits.Run(ctx, provider.DefaultLimitsInterval, func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, "dispatchqd: "+format+"\n", args...)
@@ -224,24 +237,23 @@ func cmdRun(args []string) error {
 	// the one runner, so they cannot drift apart in how they invoke a provider.
 	asides := &aside.Runner{Registry: registry}
 
-	deps := api.Deps{
-		Store: st, Runner: eng, Canceler: eng, TakeOver: eng,
-		ActiveTasks: eng.ActiveTaskIDs,
-		WakeError:   eng.WakeError, WarmFileAccess: warmFileAccess, Updates: updSvc,
-		LimitedUntil: eng.LimitedUntil, BlockedProviders: eng.BlockedProviders, BlockReasons: eng.BlockReasons,
-		Holds: eng.Holds, RunningOn: eng.RunningOn,
-		Feedback: feedback.New(asides), OSVersion: osVersion(system.Real{}),
-		Assistant: assistant.New(asides, &assistant.StoreSource{Store: st}),
-		Review:    &review.Reviewer{Ask: asides},
-		Registry:  registry, Providers: checker, Limits: limits,
-	}
-	// Dialogs, the terminal hand-off, notification status and the uninstaller
-	// are the parts that talk to the operating system; each platform wires what
-	// it supports and leaves the rest nil, which the API reports as unavailable.
-	platformDeps(&deps)
 	httpSrv := &http.Server{
-		Addr:              *addr,
-		Handler:           api.Handler(deps),
+		Addr: *addr,
+		Handler: api.Handler(api.Deps{
+			Store: st, Runner: eng, Canceler: eng, TakeOver: eng,
+			ChooseFolder: plat.chooseFolder, ActiveTasks: eng.ActiveTaskIDs,
+			SaveFile:     plat.saveFile,
+			OpenTerminal: plat.openTerminal,
+			WakeError:    eng.WakeError, WarmFileAccess: plat.warmFileAccess, Updates: updates,
+			LimitedUntil: eng.LimitedUntil, BlockedProviders: eng.BlockedProviders, BlockReasons: eng.BlockReasons,
+			Holds: eng.Holds, RunningOn: eng.RunningOn,
+			NotifyStatus: plat.notifyStatus,
+			Feedback:     feedback.New(asides), OSVersion: plat.osVersion,
+			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st}),
+			Review:    &review.Reviewer{Ask: asides},
+			Registry:  registry, Providers: checker, Limits: limits,
+			Uninstall: plat.uninstall,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -302,7 +314,11 @@ func reportProviderHealth(st *store.Store, checker *provider.Checker) {
 // every send instead of once at startup, so a channel switched on (or a token
 // corrected) in Settings takes effect with the next notification rather than
 // after the next restart.
-type liveNotifier struct{ st *store.Store }
+type liveNotifier struct {
+	st *store.Store
+	// desktop is the platform's on-screen channel. It is nil when there is none.
+	desktop notify.Notifier
+}
 
 // Notify delivers to every channel that is switched on and configured. A
 // config that fails to load is reported rather than swallowed: silently
@@ -311,17 +327,21 @@ type liveNotifier struct{ st *store.Store }
 func (l liveNotifier) Notify(ctx context.Context, n notify.Notification) error {
 	cfg, err := l.st.LoadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dispatchqd: notify: load config: %v (falling back to macOS-only)\n", err)
+		fmt.Fprintf(os.Stderr, "dispatchqd: notify: load config: %v (falling back to desktop notifications only)\n", err)
 	}
-	return notify.Multi{Notifiers: notifyChannels(cfg.Settings)}.Notify(ctx, n)
+	return notify.Multi{Notifiers: notifyChannels(l.desktop, cfg.Settings)}.Notify(ctx, n)
 }
 
-// notifyChannels assembles the notification channels: the platform's native one, plus
-// every remote channel that is both switched on and configured (FA-39/40/41).
+// notifyChannels assembles the notification channels: the desktop channel
+// whenever the platform has one (native macOS), plus every remote channel that
+// is both switched on and configured (FA-39/40/41).
 // A channel switched on but left half-filled in is skipped rather than attempted
 // and logged as an error on every single notification.
-func notifyChannels(s store.Settings) []notify.Notifier {
-	notifiers := platformNotifiers()
+func notifyChannels(desktop notify.Notifier, s store.Settings) []notify.Notifier {
+	var notifiers []notify.Notifier
+	if desktop != nil {
+		notifiers = append(notifiers, desktop)
+	}
 	if po := (notify.Pushover{Token: s.Pushover.Token, UserKey: s.Pushover.UserKey}); s.Pushover.Enabled && po.Configured() {
 		notifiers = append(notifiers, po)
 	}
@@ -334,39 +354,9 @@ func notifyChannels(s store.Settings) []notify.Notifier {
 	return notifiers
 }
 
-// warmFileAccess reads the given directories so macOS raises its file-access
-// consent prompt while the user is present (see call sites for why). It is
-// best-effort and bounded: a directory stuck behind an unanswered prompt cannot
-// wedge it, and it never blocks the scheduler. If access is already granted (the
-// common case) it is a silent no-op. Folders are first collapsed to their macOS
-// privacy category (ConsentTargets), so many tasks under ~/Documents provoke the
-// Documents prompt once rather than one blocked read each; it then probes every
-// remaining target (ProbeAll, not the first-block Probe) so distinct categories
-// each get their prompt in one pass. Wired into the API as Deps.WarmFileAccess so
-// a folder added at runtime is warmed the moment its task is created or edited.
-func warmFileAccess(dirs []string) {
-	home, _ := os.UserHomeDir()
-	targets := fileaccess.ConsentTargets(dirs, home)
-	for _, res := range fileaccess.ProbeAll(targets, fileaccess.DefaultProbeTimeout) {
-		switch res.Reason {
-		case fileaccess.ReasonTimeout:
-			// The read didn't return in time — during warming this almost always
-			// means macOS is now showing its consent prompt for the folder, which is
-			// exactly what we wanted. Nothing to fix; the user just clicks Allow.
-			fmt.Fprintf(os.Stdout, "dispatchqd: prompting for file access to %q "+
-				"(answer the macOS dialog to allow it)\n", res.BlockedPath)
-		default:
-			// Genuinely denied — point the user at where they can grant it.
-			fmt.Fprintf(os.Stderr, "dispatchqd: file access to %q is blocked (%s); allow it in "+
-				"System Settings > Privacy & Security > Files and Folders (or Full Disk Access)\n",
-				res.BlockedPath, res.Reason)
-		}
-	}
-}
-
 // warmEnabledTasks provokes the prompt for every enabled task's folder at
 // startup (install time and each login, while the user is present).
-func warmEnabledTasks(st *store.Store) {
+func warmEnabledTasks(st *store.Store, warm func(dirs []string)) {
 	// Let the login/session settle so the prompt actually surfaces rather than
 	// being lost in login-time churn.
 	time.Sleep(2 * time.Second)
@@ -380,7 +370,48 @@ func warmEnabledTasks(st *store.Store) {
 			dirs = append(dirs, t.WorkingDir)
 		}
 	}
-	warmFileAccess(dirs)
+	warm(dirs)
+}
+
+func cmdInstall(p platform) error {
+	// Check first: on a system without a service manager, install must not stop
+	// a running daemon and then fail.
+	if p.service == nil {
+		return fmt.Errorf("install: %w", errUnsupported)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate executable: %w", err)
+	}
+	ctx := context.Background()
+	// ClaudeQ's service and daemon go first. DefaultHome below moves ClaudeQ's
+	// data, which its daemon must no longer be writing to.
+	if err := p.service.RetireLegacy(ctx); err != nil {
+		return err
+	}
+	p.stopStray()
+
+	home, err := store.DefaultHome()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return err
+	}
+	spec := serviceSpec{
+		Bin:        self,
+		Args:       []string{"run"},
+		StdoutPath: filepath.Join(home, "dispatchqd.out.log"),
+		StderrPath: filepath.Join(home, "dispatchqd.err.log"),
+	}
+
+	// Stop any stray daemon still holding the loopback port (an orphan from a
+	// prior run/version that the service manager does not catch) so the freshly
+	// started one can bind and actually take over — otherwise an update
+	// wouldn't take effect until a reboot.
+	p.stopStray()
+
+	return p.service.Install(ctx, spec, os.Stdout)
 }
 
 // waitPortFree reports whether nothing is listening on the dashboard port,
@@ -398,6 +429,13 @@ func waitPortFree(d time.Duration) bool {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+func cmdUninstall(p platform) error {
+	if p.service == nil {
+		return fmt.Errorf("uninstall: %w", errUnsupported)
+	}
+	return p.service.Uninstall(context.Background(), os.Stdout)
 }
 
 // resolveQueueBin finds the dispatchq CLI shipped next to this daemon binary (in

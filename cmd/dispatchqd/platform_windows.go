@@ -3,7 +3,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,8 +21,6 @@ import (
 	"github.com/danielmaier42/claudeq/internal/notify"
 	"github.com/danielmaier42/claudeq/internal/store"
 	"github.com/danielmaier42/claudeq/internal/system"
-	"github.com/danielmaier42/claudeq/internal/update"
-	"github.com/danielmaier42/claudeq/internal/wake"
 )
 
 // exeSuffix is the extension of an executable next to this one.
@@ -77,26 +77,24 @@ func attachParentConsole() {
 	}
 }
 
-// platformWaker is nil: waking the machine from sleep needs Task Scheduler wake
-// timers and a power-plan check that this first Windows edition does not have.
-func platformWaker() *wake.Scheduler { return nil }
-
-// platformUpdates is nil: there is no published Windows installer to update to
-// (releases ship only the macOS package), so the dashboard offers no update.
-func platformUpdates() *update.Service { return nil }
-
-// platformNotifiers is empty: native Windows notifications are not implemented.
-// Pushover, ntfy and webhooks are added by the caller and work as on macOS.
-func platformNotifiers() []notify.Notifier { return nil }
-
-// platformDeps wires what Windows supports: native folder and save dialogs.
-// Continue-in-terminal, native notification status and the in-app uninstaller
-// stay nil, which the API answers as unavailable; the installer's uninstaller
-// is the way to remove the app.
-func platformDeps(d *api.Deps) {
-	d.ChooseFolder = api.PowerShellFolderChooser(system.Real{})
-	d.SaveFile = api.PowerShellSaveFileDialog(system.Real{})
-	d.NotifyStatus = func() string { return notify.AuthorizationUnsupported }
+// newPlatform wires what this first Windows edition supports: the Run-key
+// autostart, native folder and save dialogs, and the execution-state sleep
+// hold. Wake-from-sleep needs Task Scheduler wake timers and a power-plan check
+// it does not have yet; native notifications are not implemented, but Pushover,
+// ntfy and webhooks work as on macOS; continue-in-terminal and the in-app
+// uninstaller stay nil, which the API answers as unavailable (the installer's
+// uninstaller removes the app). There is no published Windows installer to
+// update to, so no update service is created.
+func newPlatform(r system.Runner) platform {
+	return platform{
+		service:          runKeyService{},
+		sleep:            system.DefaultSleepInhibitor(),
+		notifyStatus:     func() string { return notify.AuthorizationUnsupported },
+		chooseFolder:     api.PowerShellFolderChooser(r),
+		saveFile:         api.PowerShellSaveFileDialog(r),
+		osVersion:        osVersion(r),
+		stopStrayDaemons: killStrayDaemons,
+	}
 }
 
 // osVersion reports the Windows version, for the feedback issue's environment line.
@@ -111,34 +109,26 @@ func osVersion(_ system.Runner) func() string {
 // path, quoted because Program Files and user names contain spaces.
 func runCommand(self string) string { return `"` + self + `" run` }
 
-// cmdInstall makes the daemon start at every sign-in and starts it now.
-func cmdInstall() error {
-	self, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locate executable: %w", err)
-	}
-	home, err := store.DefaultHome()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(home, 0o755); err != nil {
-		return err
-	}
-	// Stop an older daemon first: it holds the dashboard port and the store
-	// lock, and a hand-over to a new version would otherwise start a daemon that
-	// cannot bind.
-	killStrayDaemons()
+// runKeyService keeps the daemon running in the signed-in session: it starts at
+// every sign-in through the HKCU Run key, and Install starts it right away.
+type runKeyService struct{}
 
+// RetireLegacy does nothing: no ClaudeQ build ever shipped for Windows.
+func (runKeyService) RetireLegacy(context.Context) error { return nil }
+
+// Install registers the autostart entry and starts the daemon now. The daemon
+// redirects its own log (see platformInit), so the spec's log paths are unused.
+func (runKeyService) Install(_ context.Context, spec serviceSpec, out io.Writer) error {
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
 	if err != nil {
 		return fmt.Errorf("open the Run key: %w", err)
 	}
 	defer func() { _ = k.Close() }()
-	if err := k.SetStringValue(runValueName, runCommand(self)); err != nil {
+	if err := k.SetStringValue(runValueName, runCommand(spec.Bin)); err != nil {
 		return fmt.Errorf("register autostart: %w", err)
 	}
 
-	cmd := exec.Command(self, "run")
+	cmd := exec.Command(spec.Bin, spec.Args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW,
 	}
@@ -147,14 +137,14 @@ func cmdInstall() error {
 	}
 	_ = cmd.Process.Release()
 
-	fmt.Printf("registered %s to start at sign-in (HKCU\\%s\\%s)\n", self, runKeyPath, runValueName)
-	fmt.Println("dispatchqd runs in your signed-in session; it stops when you sign out.")
-	fmt.Println("Wake-from-sleep is not available on Windows yet: keep the PC awake for queued work.")
+	fmt.Fprintf(out, "registered %s to start at sign-in (HKCU\\%s\\%s)\n", spec.Bin, runKeyPath, runValueName)
+	fmt.Fprintln(out, "dispatchqd runs in your signed-in session; it stops when you sign out.")
+	fmt.Fprintln(out, "Wake-from-sleep is not available on Windows yet: keep the PC awake for queued work.")
 	return nil
 }
 
-// cmdUninstall stops the daemon and removes its autostart entry.
-func cmdUninstall() error {
+// Uninstall removes the autostart entry and stops the daemon.
+func (runKeyService) Uninstall(_ context.Context, out io.Writer) error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
 	if err == nil {
 		defer func() { _ = k.Close() }()
@@ -163,8 +153,8 @@ func cmdUninstall() error {
 		}
 	}
 	killStrayDaemons()
-	fmt.Printf("removed the %s autostart entry and stopped the daemon\n", runValueName)
-	fmt.Println("To remove the app itself, use Settings > Apps > Installed apps > DispatchQ, or the Uninstall DispatchQ shortcut.")
+	fmt.Fprintf(out, "removed the %s autostart entry and stopped the daemon\n", runValueName)
+	fmt.Fprintln(out, "To remove the app itself, use Settings > Apps > Installed apps > DispatchQ, or the Uninstall DispatchQ shortcut.")
 	return nil
 }
 

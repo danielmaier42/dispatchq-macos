@@ -308,6 +308,29 @@ func TestRelaunchUpdateWithoutInstalledApp(t *testing.T) {
 	}
 }
 
+// Without an update service the system has no release installer, so there is
+// nothing to hand over to, even when an installed app is found.
+func TestRelaunchUpdateWithoutUpdateService(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(handler(Deps{Store: st}))
+	t.Cleanup(srv.Close)
+	stubInstalled(t, "0.8.1")
+	called := false
+	prev := relaunchInstalled
+	relaunchInstalled = func(string) error { called = true; return nil }
+	t.Cleanup(func() { relaunchInstalled = prev })
+
+	if r := do(t, srv, "POST", "/api/update/relaunch", nil); r.Status != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 (%s)", r.Status, r.Body)
+	}
+	if called {
+		t.Fatal("relaunched an installed app without an update service")
+	}
+}
+
 // pinDataFloor moves the oldest release that can run on this build's data for
 // one test, so the cases do not follow the real floor.
 func pinDataFloor(t *testing.T, floor string) {

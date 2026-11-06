@@ -2,31 +2,44 @@ package engine
 
 import "sync"
 
-// sleepGuard keeps the machine awake while runs are in flight, so a task can't
-// be frozen mid-run when the machine would otherwise idle-sleep. It is
-// reference-counted, so concurrent runs share a single assertion. How the
-// assertion is held is the platform's: `caffeinate -i` on macOS, an execution
-// state request on Windows (see holdAwake). Where there is no mechanism it does
-// nothing.
+// SleepInhibitor holds off idle system sleep. Inhibit takes the hold, and the
+// returned release gives it back. system.Hold satisfies it.
+type SleepInhibitor interface {
+	Inhibit() (release func(), err error)
+}
+
+// sleepGuard keeps the machine awake while runs are in flight. Without it, an
+// idle sleep can freeze a task mid-run. It is reference-counted, so concurrent
+// runs share a single hold. Without an inhibitor (see Engine.SetSleepInhibitor)
+// it does nothing. A hold that cannot be taken is tried again by the next run
+// that starts.
 type sleepGuard struct {
-	mu   sync.Mutex
-	n    int
-	stop func()
-	// hold starts the assertion; nil means the platform's holdAwake. A test
-	// replaces it.
-	hold func() func()
+	mu        sync.Mutex
+	n         int
+	inhibitor SleepInhibitor
+	hold      func() // releases the current hold, nil when none is held
+}
+
+func (g *sleepGuard) setInhibitor(i SleepInhibitor) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.inhibitor = i
+}
+
+func (g *sleepGuard) current() SleepInhibitor {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.inhibitor
 }
 
 func (g *sleepGuard) acquire() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.n++
-	if g.n == 1 && g.stop == nil {
-		hold := g.hold
-		if hold == nil {
-			hold = holdAwake
+	if g.hold == nil && g.inhibitor != nil {
+		if release, err := g.inhibitor.Inhibit(); err == nil {
+			g.hold = release
 		}
-		g.stop = hold()
 	}
 }
 
@@ -36,8 +49,8 @@ func (g *sleepGuard) release() {
 	if g.n > 0 {
 		g.n--
 	}
-	if g.n == 0 && g.stop != nil {
-		g.stop()
-		g.stop = nil
+	if g.n == 0 && g.hold != nil {
+		g.hold()
+		g.hold = nil
 	}
 }

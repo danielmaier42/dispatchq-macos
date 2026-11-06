@@ -52,6 +52,32 @@ jobs:
         with:
           version: v2.12.2
 
+  # Linux builds its own platform files (systemd, notify-send, the desktop
+  # dialogs), so it gets its own build, test and lint run.
+  build-test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          check-latest: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (race)
+        run: go test ./... -race
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+
   web:
     runs-on: ubuntu-latest
     defaults:

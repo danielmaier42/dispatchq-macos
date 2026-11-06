@@ -71,6 +71,7 @@ workflow engine:
 - [How it works](#how-it-works)
 - [Install](#install)
 - [Coming from ClaudeQ](#coming-from-claudeq)
+- [Linux (preview)](#linux-preview)
 - [Using it](#using-it)
 - [The app](#the-app)
 - [Settings](#settings)
@@ -249,6 +250,32 @@ Two things do not carry over, because macOS keys them to the app's bundle id:
 the notification permission (macOS asks again) and the window's view
 preferences such as the artifact grid or list layout. Appearance and accent
 colour are stored by the daemon and do carry over.
+
+## Linux (preview)
+
+The daemon, the CLI and the dashboard also run on Linux. There is no window app
+and no package yet: build from source and open the dashboard in a browser. The
+plan and the state of the port are in [docs/linux/PLAN.md](docs/linux/PLAN.md).
+
+```sh
+scripts/build-web.sh
+go build -o ~/.local/bin/ ./cmd/dispatchqd ./cmd/dispatchq
+dispatchqd install          # systemd user service: starts at login, restarts on exit
+xdg-open http://127.0.0.1:10765
+```
+
+What is different on Linux:
+
+| Feature | On Linux |
+|---|---|
+| Autostart | A systemd user service, `~/.config/systemd/user/dispatchq.service`. It runs while you are logged in. |
+| Data | `~/.local/share/dispatchq` (`$XDG_DATA_HOME/dispatchq`). `DISPATCHQ_HOME` still overrides it. |
+| Sleep during a run | Held off with a logind lock (`systemd-inhibit`), as `caffeinate` does on macOS. |
+| Wake from sleep | Not available. Linux needs root to set a wake alarm, so timed tasks wait until the computer is awake. |
+| Desktop notifications | Through `notify-send`. Pushover, ntfy and webhooks work as on macOS. |
+| Folder and save dialogs | `kdialog` on KDE Plasma, `zenity` elsewhere. Without either, type the path. |
+| Continue in a terminal | `xdg-terminal-exec`, else the desktop's terminal (Konsole, GNOME Terminal) or `x-terminal-emulator`. |
+| Updates and uninstall | Not from the app. Build a new version from source. To remove DispatchQ, run `dispatchqd uninstall` and delete the binaries. |
 
 ## Using it
 
@@ -2003,8 +2030,9 @@ that.
 
 ## Data on disk
 
-Everything lives under `~/Library/Application Support/dispatchq` (override with the
-`DISPATCHQ_HOME` environment variable):
+Everything lives under `~/Library/Application Support/dispatchq` (on Linux
+`~/.local/share/dispatchq`; override with the `DISPATCHQ_HOME` environment
+variable):
 
 | Path | Contents |
 |------|----------|
@@ -2021,7 +2049,8 @@ Everything lives under `~/Library/Application Support/dispatchq` (override with 
 | `.lock` / `.daemon.lock` | Lock files, both empty of interest. `.lock` serializes config/state writes between the daemon and a `dispatchq` command; `.daemon.lock` holds the running daemon's pid and is what makes a second daemon on the same store refuse to start. Both are released when the holding process exits, so neither needs clearing by hand. |
 
 The LaunchAgent itself is at
-`~/Library/LaunchAgents/de.maierdaniel.dispatchq.plist`.
+`~/Library/LaunchAgents/de.maierdaniel.dispatchq.plist` (on Linux the systemd
+user service is at `~/.config/systemd/user/dispatchq.service`).
 
 ## Uninstall
 
@@ -2104,7 +2133,7 @@ verification notes are in [PLAN.md](PLAN.md).
 
 ## Requirements
 
-- macOS 12 or newer
+- macOS 12 or newer, or Linux with systemd as a [preview](#linux-preview)
 - The [Claude Code](https://claude.com/claude-code) CLI, installed and
   authenticated
 - Optionally the [Codex](https://learn.chatgpt.com/docs/developer-commands?surface=cli)

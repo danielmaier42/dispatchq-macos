@@ -3,6 +3,8 @@
 Status: draft for review · No implementation until explicitly commissioned.
 Based on: `anforderungskatalog-taskqueue.md` (v0.2) + clarification dialogue (decisions D1–D8 below).
 
+The Linux port is planned and tracked separately in [docs/linux/PLAN.md](docs/linux/PLAN.md). The macOS plan below remains unchanged.
+
 ---
 
 ## 1. Summary

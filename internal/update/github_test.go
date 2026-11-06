@@ -10,7 +10,7 @@ import (
 const sampleReleasesJSON = `[
   {
     "tag_name": "v0.1.4",
-    "html_url": "https://github.com/danielmaier42/dispatchq-macos/releases/tag/v0.1.4",
+    "html_url": "https://github.com/danielmaier42/dispatchq-app/releases/tag/v0.1.4",
     "body": "Fixed a bug.\nAdded a thing.",
     "published_at": "2026-07-20T09:31:27Z",
     "assets": [
@@ -51,7 +51,7 @@ func TestGitHubFetcherReleases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Releases: %v", err)
 	}
-	if gotPath != "/repos/danielmaier42/dispatchq-macos/releases" {
+	if gotPath != "/repos/danielmaier42/dispatchq-app/releases" {
 		t.Errorf("request path = %q", gotPath)
 	}
 	if gotAccept != "application/vnd.github+json" {

@@ -3,6 +3,7 @@ import {useEffect, useLayoutEffect, useRef} from 'react'
 import {Button} from '@/components/ui/button'
 import {Kbd} from '@/components/ui/kbd'
 import {cn} from '@/lib/utils'
+import {usePlatform} from '@/lib/platform'
 
 // Composer is the chat input: it grows with its text up to a cap, and
 // ⌘↵ sends, like the other multi-line inputs in the app (plain ↵ is a newline).
@@ -29,6 +30,7 @@ export function Composer({
   enterSends?: boolean
   rows?: number
 }) {
+  const {modKey} = usePlatform()
   const ref = useRef<HTMLTextAreaElement>(null)
 
   useLayoutEffect(() => {
@@ -72,7 +74,7 @@ export function Composer({
         <div className="flex items-center gap-2 px-2.5 pb-2.5">
           <span className="flex-1 truncate pl-1 text-[12px] text-subtle-foreground">{hint}</span>
           <span className="flex items-center gap-0.5 text-[11px] text-subtle-foreground">
-            {!enterSends && <Kbd>⌘</Kbd>}
+            {!enterSends && <Kbd>{modKey}</Kbd>}
             <Kbd>↵</Kbd>
           </span>
           <Button size="sm" variant="primary" loading={busy} onClick={onSend} aria-label="Send">

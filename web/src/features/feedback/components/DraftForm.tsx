@@ -11,11 +11,13 @@ import {openExternal} from '@/lib/native'
 import type {FeedbackUrlResponse} from '@/lib/types'
 import {httpsOnly} from '../feedback'
 import {setDraft, setError, useFeedback} from '../store'
+import {usePlatform} from '@/lib/platform'
 
 // DraftForm is the issue as it will be filed. The environment line and the
 // labels are stated here rather than edited here: they travel in the
 // prefilled page, where they can still be removed.
 export function DraftForm({repo, env}: {repo: string; env: string}) {
+  const {modKey} = usePlatform()
   const {title, body, labels, error} = useFeedback()
   const [opening, setOpening] = useState(false)
   const [titleMissing, setTitleMissing] = useState(false)
@@ -107,7 +109,7 @@ export function DraftForm({repo, env}: {repo: string; env: string}) {
           change or delete anything on that page.
         </p>
         <span className="hidden items-center gap-0.5 sm:flex">
-          <Kbd>⌘</Kbd>
+          <Kbd>{modKey}</Kbd>
           <Kbd>↵</Kbd>
         </span>
         <Button variant="primary" loading={opening} onClick={() => void openIssue()}>

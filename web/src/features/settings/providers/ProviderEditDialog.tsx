@@ -22,6 +22,7 @@ import {saveProvider} from './actions'
 import {EnvEditor} from './EnvEditor'
 import {envPayload, envProblem, envRowsFor} from './env-logic'
 import {fallbackOptions} from './provider-logic'
+import {usePlatform} from '@/lib/platform'
 
 export function ProviderEditDialog({
   provider,
@@ -43,6 +44,7 @@ export function ProviderEditDialog({
 }
 
 function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void}) {
+  const {machine} = usePlatform()
   const providers = useProviderList()
   const [name, setName] = useState(p.name || '')
   const [binary, setBinary] = useState(p.binary_path || '')
@@ -164,10 +166,10 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
                 Passed to the CLI on every run and check. Set{' '}
                 <span className="font-mono">ANTHROPIC_API_KEY</span> to run this provider on API billing
                 instead of its login; it then shows no plan limits and its runs count in Usage with their real
-                cost. Values are stored on this Mac and are never shown again.
+                cost. Values are stored on {machine} and are never shown again.
               </>
             ) : (
-              'Passed to the CLI on every run and check. Values are stored on this Mac and are never shown again.'
+              `Passed to the CLI on every run and check. Values are stored on ${machine} and are never shown again.`
             )
           }
         >

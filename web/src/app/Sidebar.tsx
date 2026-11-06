@@ -15,6 +15,7 @@ import {useBadges} from './badges'
 import {navigate, useNav} from './nav'
 import {openPalette} from './palette-store'
 import {VIEWS, type ViewDef} from './views'
+import {usePlatform} from '@/lib/platform'
 
 const WEBSITE = 'https://www.dispatchq.de'
 
@@ -59,6 +60,7 @@ export function Sidebar() {
 }
 
 function Panel({onCollapse, className}: {onCollapse?: () => void; className?: string}) {
+  const {mod, appShortcuts} = usePlatform()
   const view = useNav((s) => s.view)
   const badges = useBadges()
   const assistantOpen = useAssistant((s) => s.open)
@@ -94,9 +96,9 @@ function Panel({onCollapse, className}: {onCollapse?: () => void; className?: st
             aria-pressed={assistantOpen}
           >
             <Sparkles /> Ask DispatchQ
-            <span className="ml-auto text-[11px] font-normal opacity-75">⌘J</span>
+            <span className="ml-auto text-[11px] font-normal opacity-75">{mod}J</span>
           </Button>
-          <Tooltip content="New task form (⌘N)">
+          <Tooltip content={appShortcuts ? `New task form (${mod}N)` : 'New task form'}>
             <Button
               variant="secondary"
               size="icon"
@@ -118,8 +120,9 @@ function Panel({onCollapse, className}: {onCollapse?: () => void; className?: st
           className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-[12.5px] text-subtle-foreground shadow-xs transition-colors hover:text-foreground"
         >
           <Search className="size-3.5" />
-          <span className="flex-1 text-left">Search & commands</span>
-          <Kbd>⌘K</Kbd>
+          {/* "Ctrl+K" is wider than "⌘K": a long label is cut, never wrapped. */}
+          <span className="min-w-0 flex-1 truncate text-left">Search & commands</span>
+          <Kbd>{mod}K</Kbd>
         </button>
       </div>
 
@@ -158,6 +161,7 @@ function Panel({onCollapse, className}: {onCollapse?: () => void; className?: st
 // Rail is the folded sidebar: the same actions and views as icons, each named
 // in a tooltip, and a toggle that brings the full sidebar back.
 function Rail({onExpand}: {onExpand: () => void}) {
+  const {mod, appShortcuts} = usePlatform()
   const view = useNav((s) => s.view)
   const badges = useBadges()
   const assistantOpen = useAssistant((s) => s.open)
@@ -181,7 +185,7 @@ function Rail({onExpand}: {onExpand: () => void}) {
           <PanelLeftOpen />
         </Button>
       </Tooltip>
-      <Tooltip content="Ask DispatchQ (⌘J)" side="right">
+      <Tooltip content={`Ask DispatchQ (${mod}J)`} side="right">
         <Button
           variant="primary"
           size="icon"
@@ -192,12 +196,12 @@ function Rail({onExpand}: {onExpand: () => void}) {
           <Sparkles />
         </Button>
       </Tooltip>
-      <Tooltip content="New task form (⌘N)" side="right">
+      <Tooltip content={appShortcuts ? `New task form (${mod}N)` : 'New task form'} side="right">
         <Button variant="secondary" size="icon" onClick={() => openAddTask()} aria-label="New task form">
           <Plus />
         </Button>
       </Tooltip>
-      <Tooltip content="Search & commands (⌘K)" side="right">
+      <Tooltip content={`Search & commands (${mod}K)`} side="right">
         <Button variant="secondary" size="icon" onClick={openPalette} aria-label="Search & commands">
           <Search />
         </Button>
@@ -226,9 +230,10 @@ function RailItem({
   count: number
   shortcut: number
 }) {
+  const {mod} = usePlatform()
   const Icon = def.icon
   return (
-    <Tooltip content={`${def.label} (⌘${shortcut})`} side="right">
+    <Tooltip content={`${def.label} (${mod}${shortcut})`} side="right">
       <button
         onClick={() => navigate(def.id)}
         aria-current={active ? 'page' : undefined}
@@ -268,6 +273,7 @@ function NavItem({
   shortcut: number
   onPick?: () => void
 }) {
+  const {mod} = usePlatform()
   const Icon = def.icon
   return (
     <button
@@ -294,7 +300,8 @@ function NavItem({
         <CountBadge count={count} className={def.id === 'settings' ? 'bg-danger text-white' : undefined} />
       ) : (
         <span className="text-[11px] text-subtle-foreground opacity-0 transition-opacity group-hover:opacity-100">
-          ⌘{shortcut}
+          {mod}
+          {shortcut}
         </span>
       )}
     </button>

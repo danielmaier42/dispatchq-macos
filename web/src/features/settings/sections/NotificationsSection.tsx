@@ -11,6 +11,7 @@ import type {Settings} from '@/lib/types'
 import {commitSettings} from '../actions'
 import {Channels} from '../components/Channels'
 import {SaveMode} from '../components/parts'
+import {usePlatform} from '@/lib/platform'
 
 // macOS keeps the alert style (Banners vanish, Alerts wait for a click). Only
 // the app window can open a System Settings URL; a browser tab says where to look.
@@ -20,6 +21,7 @@ function openNotificationSettings() {
 }
 
 export function NotificationsSection({value, stored}: {value: Settings; stored: Settings}) {
+  const {isMac, machine} = usePlatform()
   const notify = useHealth().data?.notify_status
   const blocked = notify === 'denied' || notify === 'not_determined'
 
@@ -39,7 +41,7 @@ export function NotificationsSection({value, stored}: {value: Settings; stored: 
         </Alert>
       )}
 
-      <Section title="On this Mac" actions={<SaveMode mode="instant" />}>
+      <Section title={`On ${machine}`} actions={<SaveMode mode="instant" />}>
         <RowGroup>
           <Row
             htmlFor="s-artifact-notify"
@@ -53,7 +55,7 @@ export function NotificationsSection({value, stored}: {value: Settings; stored: 
               />
             }
           />
-          {!blocked && (
+          {isMac && !blocked && (
             <Row
               label="Keep alerts on screen"
               description="macOS decides how long a notification lingers: pick Alerts, not Banners"

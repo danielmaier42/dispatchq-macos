@@ -4,6 +4,7 @@ import {openTaskEditor} from '@/features/task-editor/store'
 import {errorMessage, get, post} from '@/lib/api'
 import {invalidate, keys, queryClient} from '@/lib/queries'
 import type {Run, RunDetail} from '@/lib/types'
+import {currentPlatform} from '@/lib/platform'
 
 // Every action on a run, shared by the Log list and the run log sheet. Each one
 // reports whether it went through, so a caller keeps its own state in step
@@ -104,21 +105,24 @@ export async function cancelRunning(r: Run): Promise<boolean> {
 // working directory. A running run still owns its session, so it is taken
 // over: the daemon stops it first and opens Terminal once it is gone.
 export async function continueInTerminal(r: Run, takeOver: boolean): Promise<boolean> {
+  const {isMac, terminal} = currentPlatform()
   if (
     takeOver &&
     !(await confirm({
-      title: `Take over "${r.task_name}" in Terminal?`,
-      description:
-        'The unattended run is stopped and its chat reopens in Terminal, where you can write to it.',
+      title: `Take over "${r.task_name}" in ${terminal}?`,
+      description: `The unattended run is stopped and its chat reopens in ${terminal}, where you can write to it.`,
       confirmLabel: 'Take over',
       cancelLabel: 'Keep running',
     }))
   )
     return false
-  const pending = toast.loading(takeOver ? 'Stopping the run…' : 'Opening Terminal…')
+  const pending = toast.loading(takeOver ? 'Stopping the run…' : `Opening ${terminal}…`)
   try {
     await post(`${runPath(r.run_id)}/continue`)
-    toast.success('Terminal opened', {id: pending, description: 'The session continues there.'})
+    toast.success(isMac ? 'Terminal opened' : 'Terminal window opened', {
+      id: pending,
+      description: 'The session continues there.',
+    })
     return true
   } catch (e) {
     toast.error('Continue failed', {id: pending, description: errorMessage(e)})

@@ -23,6 +23,7 @@ import {pickSection, SECTIONS, type SectionId} from './sections'
 import {setSection, useSettingsUi} from './store'
 import {updatePending} from './update'
 import {useSettingsForm} from './use-settings-form'
+import {usePlatform} from '@/lib/platform'
 
 export function SettingsView() {
   const form = useSettingsForm()
@@ -41,11 +42,13 @@ export function SettingsView() {
   }, [requested, current])
 
   const edited = useMemo(() => editedSections(form.pending), [form.pending])
+  const words = usePlatform()
   const marks: Partial<Record<SectionId, NavMark>> = {}
   for (const id of edited) marks[id as SectionId] = 'unsaved'
   if (updatePending(update)) marks.about = 'update'
 
   const def = SECTIONS.find((s) => s.id === current) ?? SECTIONS[0]
+  const description = typeof def.description === 'function' ? def.description(words) : def.description
 
   return (
     <ViewLayout title="Settings">
@@ -57,7 +60,7 @@ export function SettingsView() {
             <SettingsNav sections={SECTIONS} current={current} marks={marks} onSelect={setSection} />
           </nav>
           <div className="min-w-0 flex-1">
-            <SectionTitle title={def.label} description={def.description} />
+            <SectionTitle title={def.label} description={description} />
             <SectionBody id={current} form={form} />
             {form.dirty && <SaveBar sections={edited} />}
           </div>

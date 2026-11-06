@@ -8,10 +8,12 @@ import {useSaveAppearance} from '@/features/settings/use-appearance'
 import {AccentPicker} from '../components/AccentPicker'
 import {AppearanceTiles} from '../components/AppearanceTiles'
 import {SaveMode} from '../components/parts'
+import {usePlatform} from '@/lib/platform'
 
 // Like the pause switch, the look is applied and written at once: a choice
 // about how the window looks is judged by looking at it.
 export function AppearanceSection() {
+  const {isMac} = usePlatform()
   const appearance = useTheme((s) => s.appearance)
   const accent = useTheme((s) => s.accent)
   const shown = useTheme(resolvedAccent)
@@ -21,7 +23,11 @@ export function AppearanceSection() {
     <>
       <Section
         title="Appearance"
-        description="Follow macOS, or keep DispatchQ light or dark whatever the Mac is doing"
+        description={
+          isMac
+            ? 'Follow macOS, or keep DispatchQ light or dark whatever the Mac is doing'
+            : 'Follow the system, or keep DispatchQ light or dark whatever the system is doing'
+        }
         actions={<SaveMode mode="instant" />}
       >
         <RowGroup className="p-4">
@@ -31,7 +37,11 @@ export function AppearanceSection() {
 
       <Section
         title="Accent colour"
-        description="Buttons, selections and highlights. System follows the accent set in macOS."
+        description={
+          isMac
+            ? 'Buttons, selections and highlights. System follows the accent set in macOS.'
+            : "Buttons, selections and highlights. System follows the desktop's accent colour."
+        }
         actions={<SaveMode mode="instant" />}
       >
         <RowGroup>

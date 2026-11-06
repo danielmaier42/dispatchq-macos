@@ -5,10 +5,12 @@ import {Kbd} from '@/components/ui/kbd'
 import {saveDraft} from '../actions'
 import {SECTIONS} from '../sections'
 import {discardDraft, useSettingsUi} from '../store'
+import {usePlatform} from '@/lib/platform'
 
 // SaveBar sits at the foot of Settings while typed changes wait to be saved,
 // naming where they are. ⌘S saves from anywhere in the view.
 export function SaveBar({sections}: {sections: Set<string>}) {
+  const {mod} = usePlatform()
   const saving = useSettingsUi((s) => s.saving)
   const where = SECTIONS.filter((s) => sections.has(s.id)).map((s) => s.label)
 
@@ -43,7 +45,7 @@ export function SaveBar({sections}: {sections: Set<string>}) {
         <Button variant="primary" onClick={() => void saveDraft()} loading={saving}>
           Save
           <Kbd className="ml-0.5 border-accent-foreground/30 bg-transparent text-accent-foreground/80">
-            ⌘S
+            {mod}S
           </Kbd>
         </Button>
       </div>

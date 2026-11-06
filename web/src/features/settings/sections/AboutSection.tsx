@@ -1,4 +1,4 @@
-import {Download, RefreshCw, Star} from 'lucide-react'
+import {Download, ExternalLink, RefreshCw, Star} from 'lucide-react'
 import {useState} from 'react'
 import {Row, RowGroup} from '@/components/layout/settings-row'
 import {Section} from '@/components/layout/view-layout'
@@ -18,10 +18,12 @@ import {
   updateSummary,
   versionLabel,
 } from '../update'
+import {usePlatform} from '@/lib/platform'
 
 const REPO = 'https://github.com/danielmaier42/dispatchq-macos'
 
 export function AboutSection() {
+  const {device} = usePlatform()
   const update = useUpdate().data
   const [checking, setChecking] = useState(false)
   const [reinstalling, setReinstalling] = useState(false)
@@ -65,7 +67,7 @@ export function AboutSection() {
                 )}
               </div>
               <div className="text-[12.5px] text-muted-foreground">
-                A queue for unattended coding-agents that runs on your Mac
+                A queue for unattended coding-agents that runs on your {device}
               </div>
             </div>
             <Button onClick={() => openExternal(REPO)}>
@@ -78,24 +80,37 @@ export function AboutSection() {
 
       <Section title="Software updates">
         <RowGroup>
-          <Row
-            label={update ? updateSummary(update) : 'Check GitHub for a newer release of DispatchQ'}
-            description={
-              update?.last_checked ? (
-                <Tooltip content={fullTime(update.last_checked)}>
-                  <span className="cursor-default">Last checked {relTime(update.last_checked)}</span>
-                </Tooltip>
-              ) : (
-                'DispatchQ checks GitHub every hour'
-              )
-            }
-            control={
-              <Button loading={checking || !!update?.checking} onClick={() => void check()}>
-                {!(checking || update?.checking) && <RefreshCw />}
-                {checking || update?.checking ? 'Checking…' : 'Check for updates'}
-              </Button>
-            }
-          />
+          {update?.unavailable ? (
+            <Row
+              label="This system does not install DispatchQ updates"
+              description="New versions are published as releases on GitHub"
+              control={
+                <Button onClick={() => openExternal(update.all_releases_url || REPO + '/releases')}>
+                  <ExternalLink />
+                  Releases
+                </Button>
+              }
+            />
+          ) : (
+            <Row
+              label={update ? updateSummary(update) : 'Check GitHub for a newer release of DispatchQ'}
+              description={
+                update?.last_checked ? (
+                  <Tooltip content={fullTime(update.last_checked)}>
+                    <span className="cursor-default">Last checked {relTime(update.last_checked)}</span>
+                  </Tooltip>
+                ) : (
+                  'DispatchQ checks GitHub every hour'
+                )
+              }
+              control={
+                <Button loading={checking || !!update?.checking} onClick={() => void check()}>
+                  {!(checking || update?.checking) && <RefreshCw />}
+                  {checking || update?.checking ? 'Checking…' : 'Check for updates'}
+                </Button>
+              }
+            />
+          )}
           {update && reinstall && (
             <Row
               label={reinstall.label}

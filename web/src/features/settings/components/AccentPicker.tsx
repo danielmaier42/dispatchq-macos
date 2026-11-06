@@ -4,11 +4,13 @@ import {Tooltip} from '@/components/ui/tooltip'
 import {ACCENT_PRESETS, readableOn, useTheme} from '@/lib/theme'
 import {useSaveAccent} from '@/features/settings/use-appearance'
 import {cn} from '@/lib/utils'
+import {usePlatform} from '@/lib/platform'
 
 // AccentPicker offers the Mac's accent, the macOS palette and any colour. The
 // theme store repaints on every change, so the window itself is the preview;
 // the custom picker repaints while dragging and saves once it settles.
 export function AccentPicker() {
+  const {isMac} = usePlatform()
   const accent = useTheme((s) => s.accent)
   const systemAccent = useTheme((s) => s.systemAccent)
   const saveAccent = useSaveAccent()
@@ -49,7 +51,7 @@ export function AccentPicker() {
     <div role="radiogroup" aria-label="Accent colour" className="flex flex-wrap items-start gap-x-2 gap-y-3">
       <Swatch
         label="System"
-        tip={`Follow the Mac's accent colour${systemAccent ? ` (now ${systemAccent})` : ''}`}
+        tip={`${isMac ? "Follow the Mac's accent colour" : "Follow the system's accent colour"}${systemAccent ? ` (now ${systemAccent})` : ''}`}
         color={systemAccent}
         selected={!accent}
         onSelect={() => pick('')}

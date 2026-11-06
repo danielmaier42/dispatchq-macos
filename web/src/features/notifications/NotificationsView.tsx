@@ -16,6 +16,7 @@ import {anyFilter, kindOptions, shown} from './logic'
 import {NotificationRow} from './NotificationRow'
 import {markAllNotificationsRead} from './open-target'
 import {clearNotificationFilters, setNotificationFilters, useNotificationFilters} from './use-filters'
+import {usePlatform} from '@/lib/platform'
 
 // The Notifications view: every notification the daemon sent — a run's
 // outcome, a new artifact, a provider in trouble, what a task said with
@@ -25,6 +26,7 @@ import {clearNotificationFilters, setNotificationFilters, useNotificationFilters
 const BATCH = 50
 
 export function NotificationsView() {
+  const {isMac} = usePlatform()
   const {data: notes, isPending, error} = useNotifications()
   const filters = useNotificationFilters()
   const [marking, setMarking] = useState(false)
@@ -113,7 +115,7 @@ export function NotificationsView() {
         <EmptyState
           icon={<BellOff />}
           title="No notifications yet"
-          description="Everything DispatchQ announces — a run that failed, a new artifact, a message from a task — is listed here, even after the macOS banner is gone."
+          description={`Everything DispatchQ announces — a run that failed, a new artifact, a message from a task — is listed here, even after the ${isMac ? 'macOS banner' : 'desktop notification'} is gone.`}
         />
       ) : !filtered.length ? (
         <EmptyState

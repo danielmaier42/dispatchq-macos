@@ -13,6 +13,8 @@ import (
 // self-update are unavailable.
 func newPlatform(system.Runner) platform {
 	return platform{
+		// Nil here: no sleep hold is implemented for this system yet.
+		sleep: system.DefaultSleepInhibitor(),
 		// The notify package answers "unsupported" off macOS.
 		notifyStatus: notify.MacAuthorization,
 	}

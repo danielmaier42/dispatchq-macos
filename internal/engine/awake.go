@@ -26,6 +26,12 @@ func (g *sleepGuard) setInhibitor(i SleepInhibitor) {
 	g.inhibitor = i
 }
 
+func (g *sleepGuard) current() SleepInhibitor {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.inhibitor
+}
+
 func (g *sleepGuard) acquire() {
 	g.mu.Lock()
 	defer g.mu.Unlock()

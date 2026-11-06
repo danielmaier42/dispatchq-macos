@@ -24,6 +24,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/provider/adapters"
 	"github.com/danielmaier42/claudeq/internal/randid"
 	"github.com/danielmaier42/claudeq/internal/store"
+	"github.com/danielmaier42/claudeq/internal/system"
 	"github.com/danielmaier42/claudeq/internal/task"
 	"github.com/danielmaier42/claudeq/internal/version"
 )
@@ -721,16 +722,25 @@ func cmdMove(st *store.Store, args []string) error {
 	return cmdList(st, nil)
 }
 
+// newRunNowEngine is the engine of a manual run. It gets the platform's sleep
+// inhibitor like the daemon's engine, so a long `dispatchq run-now` is not
+// frozen by idle sleep when the user walks away.
+func newRunNowEngine(st *store.Store, c clock.Clock, queueBin string) *engine.Engine {
+	registry := adapters.Default()
+	eng := engine.New(st, limit.NewGates(c), &executor.Executor{
+		Registry: registry, Home: st.Home(), QueueBin: queueBin,
+	}, c, provider.NewChecker(registry))
+	eng.SetSleepInhibitor(system.DefaultSleepInhibitor())
+	return eng
+}
+
 func cmdRunNow(st *store.Store, id string) error {
 	c := clock.Real{}
 	// Give the manual run the same self-queue context the daemon provides, so a
 	// task tested with run-now can queue follow-up work too. This process is the
 	// dispatchq CLI, so its own path is the queue binary.
 	self, _ := os.Executable()
-	registry := adapters.Default()
-	eng := engine.New(st, limit.NewGates(c), &executor.Executor{
-		Registry: registry, Home: st.Home(), QueueBin: self,
-	}, c, provider.NewChecker(registry))
+	eng := newRunNowEngine(st, c, self)
 	fmt.Printf("running task %q now...\n", id)
 	started := c.Now()
 	if err := eng.RunTaskNow(context.Background(), id); err != nil {

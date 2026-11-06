@@ -60,6 +60,9 @@ func (e *Engine) SetWaker(w Waker) { e.waker = w }
 // in flight. Without one, the machine may sleep during a run.
 func (e *Engine) SetSleepInhibitor(i SleepInhibitor) { e.awake.setInhibitor(i) }
 
+// SleepInhibitor returns the inhibitor set with SetSleepInhibitor, nil if none.
+func (e *Engine) SleepInhibitor() SleepInhibitor { return e.awake.current() }
+
 // SetNotifier enables outcome notifications (failure / auth error).
 func (e *Engine) SetNotifier(n notify.Notifier) { e.notifier = n }
 

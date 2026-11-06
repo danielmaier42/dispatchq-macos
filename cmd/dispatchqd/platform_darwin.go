@@ -27,7 +27,7 @@ func newPlatform(r system.Runner) platform {
 		service: launchdService{runner: r},
 		// pmset needs root. `dispatchqd install` explains the sudoers entry.
 		waker:             &wake.Scheduler{Runner: r, Sudo: true},
-		sleep:             system.Hold{Argv: []string{"caffeinate", "-i"}},
+		sleep:             system.DefaultSleepInhibitor(),
 		desktop:           notify.Mac{Runner: r},
 		requestNotifyAuth: notify.RequestMacAuthorization,
 		notifyStatus:      notify.MacAuthorization,

@@ -58,4 +58,20 @@ describe('AllowanceStrip', () => {
     expect(week).not.toContain('row-start-3')
     expect(week).toContain('@min-[860px]:col-start-3')
   })
+
+  it('lists the providers alphabetically by name, whatever order the configuration has', () => {
+    show([
+      entry('codex', []),
+      entry('Claude 10', []),
+      {...entry('claude 2', []), id: 'b'},
+      entry('Ärger', []),
+      {...entry('Claude 2', []), id: 'a'},
+    ])
+    const names = ['codex', 'Claude 10', 'claude 2', 'Claude 2', 'Ärger']
+    const lines = names.map((n) => screen.getByText(n))
+    const order = [...lines].sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    )
+    expect(order.map((el) => el.textContent)).toEqual(['Ärger', 'Claude 2', 'claude 2', 'Claude 10', 'codex'])
+  })
 })

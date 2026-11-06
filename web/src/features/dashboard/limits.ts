@@ -1,4 +1,4 @@
-import {relTime} from '@/lib/format'
+import {NO_CREDIT, relTime} from '@/lib/format'
 import type {LimitWindow, LimitsEntry, ProviderLimits} from '@/lib/types'
 
 // A window shows what is left of it, so the bar empties as it is used. It is
@@ -23,6 +23,20 @@ export function resetText(w: LimitWindow, now = Date.now()): string {
   return `Resets ${relTime(at, now)} · ${day} ${time}`
 }
 
+// byName orders the allowance strip alphabetically by the name it shows,
+// ignoring case and accents and reading digits as numbers ("Claude 2" before
+// "Claude 10"). Equal names keep a fixed order by id, so lines never swap
+// between polls. Only the display order changes: which provider a task or
+// pool picks does not depend on it.
+const nameCollator = new Intl.Collator(undefined, {sensitivity: 'base', numeric: true})
+const shownName = (p: Pick<LimitsEntry, 'id' | 'name'>) => p.name || p.id
+
+export function byName<T extends Pick<LimitsEntry, 'id' | 'name'>>(entries: T[]): T[] {
+  return [...entries].sort(
+    (a, b) => nameCollator.compare(shownName(a), shownName(b)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  )
+}
+
 // The week sits in the same column on every provider, also where an account has
 // no five-hour window, so the rows can be read down a column.
 export function windowSlots(windows: LimitWindow[] = []): (LimitWindow | null)[] {
@@ -39,6 +53,33 @@ export const noLimits = (l: ProviderLimits) => l.state === 'unsupported'
 
 // readFailed is a reading that should have worked and did not.
 export const readFailed = (l: ProviderLimits) => l.state === 'unavailable'
+
+// creditGone is a provider whose API credit balance is proven used up: a run
+// was refused with "Credit balance is too low" and its gate is still closed.
+// That is the only way the balance becomes known (see creditUnknown).
+export const creditGone = (p: LimitsEntry) => p.blocked?.reason === 'credit_exhausted'
+
+// creditUnknown is an API-key account whose balance nobody has proven empty:
+// the balance cannot be read, so it may be ample or nearly gone.
+export const creditUnknown = (p: LimitsEntry) => !!p.limits.api_key && !creditGone(p)
+
+export const creditUnknownHint =
+  'An API key spends prepaid credit, and Anthropic offers no way to read that balance without an admin key. ' +
+  'DispatchQ only learns it is used up when a run is refused with "Credit balance is too low"; then this line says so.'
+
+// blockText says what an account block means and when the provider is tried
+// again; empty for a provider that is not blocked by one. A used-up credit
+// balance reads NO_CREDIT and nothing else: its retries stay silent.
+export function blockText(p: LimitsEntry, now = Date.now()): string {
+  const b = p.blocked
+  if (!b?.reason) return ''
+  if (b.reason === 'credit_exhausted') return NO_CREDIT
+  const retry = Date.parse(b.until) > now ? `tried again ${relTime(b.until, now)}` : 'tried again now'
+  if (b.reason === 'billing_refused') {
+    return `Billing refused: the credit is used up or a spend limit was reached. Check the Anthropic Console; ${retry}.`
+  }
+  return `Claude subscription access is disabled by the organisation; ${retry}.`
+}
 
 // limitStatusText says when the figures are from, or why there are none.
 export function limitStatusText(l: ProviderLimits, now = Date.now()): string {

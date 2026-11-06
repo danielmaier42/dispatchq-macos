@@ -145,7 +145,7 @@ The nightly cycle looks like this:
 ## Install
 
 1. Download the latest `dispatchq-<version>.pkg` from the
-   [Releases](https://github.com/danielmaier42/dispatchq-macos/releases) page.
+   [Releases](https://github.com/danielmaier42/dispatchq-app/releases) page.
 2. Open it and follow the installer.
 
 The package installs **DispatchQ** to `/Applications`, sets up a per-user
@@ -308,7 +308,8 @@ colour are stored by the daemon and do carry over.
    the allowance resets).
 3. Check the **Log** for the outcome, open a run to read the full log, or replay
    it. A finished one-shot task leaves the queue but stays in history; recurring
-   tasks remain queued for their next occurrence.
+   tasks remain queued for their next occurrence. Its id is free again: a task
+   added later under the same id is a new task and runs.
 4. The **Dashboard** shows how much of each provider's allowance is left;
    **Usage** shows what DispatchQ consumed over the last 14 days.
 
@@ -470,7 +471,7 @@ also the first preset. **⌘↵** saves, and closing with unsaved changes asks
 first. The window opens on the Dashboard:
 
 - **Dashboard** — what needs attention at a glance. On top, the **allowance
-  strip**: one line per enabled provider with its logo, what is left of each
+  strip**: one line per enabled provider, sorted alphabetically by name, with its logo, what is left of each
   window (for Claude the 5-hour and the weekly window, for Codex the windows its
   account has) and when each resets; a bar turns orange at 25% left and red at
   10%. At the right end of each line sits the provider's urgency on a small
@@ -480,12 +481,24 @@ first. The window opens on the Dashboard:
   only the urgency value, without a running-task count; it turns
   green while the provider is above it. It is read without spending any usage
   (see [How much is left](#how-much-is-left)); the strip says how old the
-  reading is and **Read now** asks again. An account on an API key has no plan
-  limits and says so plainly. Right under it, the **Pool** card puts every
+  reading is and **Read now** asks again. An account on an API key shows
+  *Credit balance unknown*: its prepaid credit cannot be read, so DispatchQ
+  claims neither that it has no limit nor that it has credit left. Once a run on
+  it is refused with *Credit balance is too low*, the line turns red and says
+  *No credit left* and nothing more. DispatchQ keeps trying the provider
+  quietly in the background, so no retry time is shown; the banner on top
+  reads only *No credit left*, and a rate limit on another provider keeps its
+  own banner beside it. A
+  billing refusal that does not name the credit balance (a spend limit set on
+  the account, say) pauses the provider the same way and reads *Billing
+  refused*. Settings and `dispatchq provider limits` keep showing *Credit
+  balance unknown*: only the running daemon knows that a run was refused.
+  Right under it, the **Pool** card puts every
   [pool](#provider-pools) on one line, its members in the order a run started
   now would take them. Below that, cards in a fixed order: what is
   **running now** (and runs a rate limit paused, with their resume time,
-  counted apart as *N waiting*), what is **up next** (due tasks first, with the
+  counted apart as *N waiting*; a run whose provider has no API credit left
+  says only *No credit left*, without a resume time), what is **up next** (due tasks first, with the
   reason a task is held; tasks with quiet history are left out), runs that
   **failed in the last 24 hours**, and the **last 7 days** (runs, success rate,
   tokens and cost). Each entry opens its log or its task. Running now lists five
@@ -772,8 +785,11 @@ per token through the API instead of drawing on the login's plan.
   `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` — use the configuration
   directory) and names starting with `DISPATCHQ_` or `CLAUDEQ_`.
 - **Limits and Usage.** A Claude provider with an `ANTHROPIC_API_KEY` (or
-  `ANTHROPIC_AUTH_TOKEN`) shows *No plan limits for API-key accounts*: the plan
-  windows of a login it may also hold are not what it spends. Its runs are
+  `ANTHROPIC_AUTH_TOKEN`) shows *Credit balance unknown* instead of plan
+  windows: the windows of a login it may also hold are not what it spends, and
+  the key's prepaid credit balance cannot be read. A used-up balance only shows
+  once a run is refused for it; then the provider pauses for an hour (see
+  [When the limit is reached](#when-the-limit-is-reached)). Its runs are
   counted in Usage like any other, with the cost Claude Code reports, which for a
   key is what is actually billed. Subscription runs show the API-equivalent cost.
 
@@ -860,12 +876,15 @@ A provider can name a **fallback**: the provider its tasks run on while its own
 allowance is used up. Without one — the default — those tasks simply wait, as
 before.
 
-- It applies to the rate limit and to nothing else. A provider that is missing,
+- It applies to the rate limit, and to the account blocks that count as one (a
+  Claude organisation that disallows subscription access, a used-up API credit
+  balance or another billing refusal), and to nothing else. A provider that is missing,
   logged out or switched off is still never answered by running the work
   somewhere else; those tasks stay queued and say why.
 - The chain is followed as far as it reaches. A provider in it that cannot take
   the work right now — rate-limited itself, switched off, not installed, not
-  logged in — is stepped over and its own fallback is asked. When nothing in the
+  logged in, or with a last allowance reading that shows a window used up
+  until a reset still ahead — is stepped over and its own fallback is asked. When nothing in the
   chain can work, the tasks wait: the queue is honest about being stuck.
 - **The interrupted session does not travel.** A session belongs to the account
   that issued it, so the substitute starts the task again from the beginning and
@@ -900,6 +919,7 @@ Reading them costs no tokens and none of the allowance.
 |---------|-----------------------------|---------------|
 | Claude | The usage endpoint Claude Code's own `/usage` screen reads, called with the login the CLI stored for that provider's configuration directory | 5 hours, week |
 | Codex | The CLI's own `codex app-server`, asked `account/rateLimits/read` with the provider's `CODEX_HOME` | whichever windows the account reports, one or two (5 hours, week) |
+| Claude on an API key | nothing: the prepaid credit balance of an `ANTHROPIC_API_KEY` cannot be read without an admin key | none, shown as *Credit balance unknown*; on the Dashboard *No credit left* once a run was refused for it |
 | opencode | nothing; it runs whatever backend it is pointed at | none, shown as *No limit* |
 
 The daemon reads them **when the Dashboard opens**, on **View → Refresh**
@@ -1985,17 +2005,23 @@ that.
   At reset the gate reopens and the blocked task **resumes its session** rather
   than starting over.
 - **An account that may not run at all counts as a limit.** When Claude Code
-  answers that the organisation has disabled Claude subscription access, the
-  account has no allowance rather than a used-up one, so the provider pauses
-  exactly as it does on a limit — and its fallback takes the work. The pause is
-  an hour, because that block lifts through an admin or a billing change, never
-  by waiting a few minutes. The run says so instead of reading as a plain
+  answers that the organisation has disabled Claude subscription access, or
+  that the API credit balance is too low (an instance running on an
+  `ANTHROPIC_API_KEY` whose prepaid credit is used up), or refuses it with any
+  other billing error (a spend limit set on the account), the account has nothing
+  to spend, so the provider pauses exactly as it does on a limit — and its
+  fallback takes the work. The pause is an hour, because such a block lifts
+  through an admin or a billing change, never by waiting a few minutes; no reset
+  time is invented for it. The run says so instead of reading as a plain
   failure.
 - **A fallback provider skips the wait.** If the blocked provider names one (see
   [When the limit is reached](#when-the-limit-is-reached)), its tasks run there
   meanwhile — from the start, since a session belongs to the account that issued
   it. The interrupted session is then dropped instead of being resumed after the
-  reset, so the task does not run twice.
+  reset, so the task does not run twice. A pool task moves the same way: on the
+  next tick the pool ranks it onto a member that can work. This holds however
+  the paused run was started, by the scheduler or with **Run now**, also for a
+  task queued again under the id of one that had already run once.
 - **A blocked queue says so.** While the gate is closed a banner names the time
   it reopens, the paused run is marked *rescheduled* in the Log with that time,
   and the task carries a *rescheduled* badge in the Queue — a waiting queue is

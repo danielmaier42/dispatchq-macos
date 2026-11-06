@@ -1,11 +1,11 @@
 import {useNow} from '@/hooks/use-now'
-import {BellOff, Check, Copy, MoonStar, PauseCircle, RefreshCw, Unplug} from 'lucide-react'
+import {Ban, BellOff, Check, Copy, MoonStar, PauseCircle, RefreshCw, Unplug} from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {Button} from '@/components/ui/button'
 import {toast} from '@/components/ui/toaster'
 import {Tooltip} from '@/components/ui/tooltip'
 import {errorMessage} from '@/lib/api'
-import {relTime} from '@/lib/format'
+import {NO_CREDIT, relTime} from '@/lib/format'
 import {isAppWindow, openExternal} from '@/lib/native'
 import {invalidate, keys, useHealth} from '@/lib/queries'
 import {RenameBar} from '@/features/whats-new/RenameBar'
@@ -17,6 +17,7 @@ import {
   limitHeading,
   NOTIFICATION_SETTINGS_URL,
   notificationsBlocked,
+  splitLimits,
   SUDOERS_COMMAND,
   wakeNeedsSudoers,
 } from './health'
@@ -43,7 +44,7 @@ export function StatusBanners() {
     <div className="shrink-0">
       {h.wake_error && <WakeBar error={h.wake_error} />}
       {notificationsBlocked(h.notify_status) && <NotifyBar status={h.notify_status} />}
-      {h.limited_until && <LimitBar until={h.limited_until} providers={h.limited_providers ?? []} />}
+      {h.limited_until && <LimitBars until={h.limited_until} providers={h.limited_providers ?? []} />}
       {whatsNew?.rename_pending && !whatsNew.show && <RenameBar />}
     </div>
   )
@@ -162,12 +163,10 @@ function NotifyBar({status}: {status: NotifyStatus}) {
   )
 }
 
-// The queue standing still on a rate limit is normal, not a fault: say what it
-// is waiting for, and until when, so a paused queue is never mistaken for a
-// stuck one.
-function LimitBar({until, providers}: {until: string; providers: LimitedProvider[]}) {
+// A used-up credit balance gets a bar of its own that says exactly that and
+// nothing more; an ordinary rate limit beside it keeps its full explanation.
+function LimitBars({until, providers}: {until: string; providers: LimitedProvider[]}) {
   const now = useNow(15_000)
-  const at = activeLimit(until, now)
 
   // Ask again the moment the gate should reopen instead of waiting for the
   // next 30 s poll; the views showing resume times read the same answer.
@@ -178,6 +177,22 @@ function LimitBar({until, providers}: {until: string; providers: LimitedProvider
     return () => clearTimeout(t)
   }, [until])
 
+  // Each bar keeps to its own clock: the credit retry passing does not hide a
+  // rate limit that still holds, nor the other way round.
+  const split = splitLimits(providers, until)
+  return (
+    <>
+      {activeLimit(split.creditUntil, now) && <StatusBar tone="danger" icon={<Ban />} title={NO_CREDIT} />}
+      {split.until && <LimitBar until={split.until} providers={split.rateLimited} now={now} />}
+    </>
+  )
+}
+
+// The queue standing still on a rate limit is normal, not a fault: say what it
+// is waiting for, and until when, so a paused queue is never mistaken for a
+// stuck one.
+function LimitBar({until, providers, now}: {until: string; providers: LimitedProvider[]; now: number}) {
+  const at = activeLimit(until, now)
   if (!at) return null
   const coverage = limitCoverage(providers)
   const when = (

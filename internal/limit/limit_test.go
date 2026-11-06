@@ -70,3 +70,27 @@ func TestConcurrentBlockAndRead(_ *testing.T) {
 	}
 	<-done
 }
+
+func TestBlockReasonLastsWhileClosedAndIsForgottenOnReopen(t *testing.T) {
+	start := time.Date(2026, 11, 5, 22, 0, 0, 0, time.UTC)
+	fc := clock.NewFake(start)
+	gates := NewGates(fc)
+	g := gates.For("api")
+
+	g.BlockBecause(start.Add(time.Hour), "credit_exhausted")
+	// A plain limit reported while the account block stands keeps its reason.
+	g.Block(start.Add(2 * time.Hour))
+	if got := gates.Reasons(); got["api"] != "credit_exhausted" || len(got) != 1 {
+		t.Fatalf("reasons = %v, want the credit block", got)
+	}
+
+	fc.Advance(2 * time.Hour)
+	if g.Reason() != "" || len(gates.Reasons()) != 0 {
+		t.Fatalf("reason = %q after reopening, want none", g.Reason())
+	}
+	// A plain limit after the gate reopened does not bring the old reason back.
+	g.Block(fc.Now().Add(time.Hour))
+	if g.Reason() != "" {
+		t.Fatalf("reason = %q for a plain limit, want none", g.Reason())
+	}
+}

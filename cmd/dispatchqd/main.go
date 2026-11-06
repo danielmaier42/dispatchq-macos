@@ -228,7 +228,7 @@ func cmdRun(args []string) error {
 		Store: st, Runner: eng, Canceler: eng, TakeOver: eng,
 		ActiveTasks: eng.ActiveTaskIDs,
 		WakeError:   eng.WakeError, WarmFileAccess: warmFileAccess, Updates: updSvc,
-		LimitedUntil: eng.LimitedUntil, BlockedProviders: eng.BlockedProviders,
+		LimitedUntil: eng.LimitedUntil, BlockedProviders: eng.BlockedProviders, BlockReasons: eng.BlockReasons,
 		Holds: eng.Holds, RunningOn: eng.RunningOn,
 		Feedback: feedback.New(asides), OSVersion: osVersion(system.Real{}),
 		Assistant: assistant.New(asides, &assistant.StoreSource{Store: st}),

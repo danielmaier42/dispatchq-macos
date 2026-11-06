@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/danielmaier42/claudeq/internal/store"
 )
@@ -366,6 +367,43 @@ func TestResolveAvailableStepsOverAHopThatCannotWork(t *testing.T) {
 	}
 	if got.Instance.ID != "spare" {
 		t.Fatalf("provider = %q, want the first hop that can actually work", got.Instance.ID)
+	}
+}
+
+// TestResolveAvailableStepsOverAHopReadAsUsedUp: a hop whose last reading shows
+// a window used up until a reset still ahead is stepped over like a blocked
+// one. A reading whose reset has passed, or that names none, does not count.
+func TestResolveAvailableStepsOverAHopReadAsUsedUp(t *testing.T) {
+	now := time.Date(2026, 11, 5, 22, 0, 0, 0, time.UTC)
+	ahead, past := now.Add(24*time.Hour), now.Add(-time.Minute)
+	for _, tc := range []struct {
+		name  string
+		spare Limits
+		want  string
+	}{
+		{"used up until a reset ahead", Limits{Windows: []LimitWindow{{ID: "week", UsedPercent: 100, ResetsAt: &ahead}}}, "codex"},
+		{"five hours used up", Limits{Windows: []LimitWindow{{ID: "five_hour", UsedPercent: 100, ResetsAt: &ahead}, {ID: "week", UsedPercent: 20, ResetsAt: &ahead}}}, "codex"},
+		{"reset already passed", Limits{Windows: []LimitWindow{{ID: "week", UsedPercent: 100, ResetsAt: &past}}}, "spare"},
+		{"no reset known", Limits{Windows: []LimitWindow{{ID: "week", UsedPercent: 100}}}, "spare"},
+		{"room left", Limits{Windows: []LimitWindow{{ID: "week", UsedPercent: 90, ResetsAt: &ahead}}}, "spare"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			av := limitedIDs(map[string]bool{"claude": true})
+			av.Now = func() time.Time { return now }
+			av.Limits = func(inst Instance) (Limits, bool) {
+				if inst.ID == "spare" {
+					return tc.spare, true
+				}
+				return Limits{}, false
+			}
+			got, err := fallbackSet(t).ResolveAvailable(Selection{ProviderID: "claude"}, av)
+			if err != nil {
+				t.Fatalf("ResolveAvailable: %v", err)
+			}
+			if got.Instance.ID != tc.want {
+				t.Fatalf("provider = %q, want %q", got.Instance.ID, tc.want)
+			}
+		})
 	}
 }
 

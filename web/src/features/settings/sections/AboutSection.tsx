@@ -19,7 +19,7 @@ import {
   versionLabel,
 } from '../update'
 
-const REPO = 'https://github.com/danielmaier42/dispatchq-macos'
+const REPO = 'https://github.com/danielmaier42/dispatchq-app'
 
 export function AboutSection() {
   const update = useUpdate().data

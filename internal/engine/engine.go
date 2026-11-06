@@ -98,6 +98,12 @@ func (e *Engine) LimitedUntil() time.Time { return e.gates.BlockedUntil() }
 // queue".
 func (e *Engine) BlockedProviders() map[string]time.Time { return e.gates.Blocked() }
 
+// BlockReasons returns, for the blocked provider instances whose pause is an
+// account block rather than a used-up allowance window, which block it is (a
+// provider.Block). Surfaced on the dashboard so a used-up credit balance reads
+// as one, not as a limit that resets on its own.
+func (e *Engine) BlockReasons() map[string]string { return e.gates.Reasons() }
+
 // RunningOn returns how many runs are in flight per provider instance, which
 // is part of a provider's urgency (see provider.ScoreProvider). Surfaced on the
 // Dashboard, so the urgency it shows is the one the scheduler acts on.
@@ -567,12 +573,19 @@ func runNotes(res provider.Resolved, dropped string) []string {
 
 // isDue evaluates one task's trigger. The caller holds e.mu, because whether the
 // task is already running is part of the answer.
+//
+// A one-shot task holding an interrupted session has not completed, whatever
+// its completed-once mark says. The mark can predate the session: a task
+// re-queued under the id of one that already ran, and then started by hand,
+// keeps it. Without this such a run, once a rate limit or a used-up credit
+// balance stopped it, would never be picked up again: neither on another pool
+// member or fallback right away, nor on its own account once that reopens.
 func (e *Engine) isDue(t task.Task, st *store.State, deps dependencyState, now time.Time) (bool, error) {
 	anchor, _ := st.LastStart(t.ID)
 	ok, err := schedule.Due(t, schedule.Inputs{
 		Now:             now,
 		Running:         e.active[t.ID],
-		CompletedOnce:   st.IsCompletedOnce(t.ID),
+		CompletedOnce:   completedOnce(t.ID, st),
 		CronAnchor:      anchor,
 		DependenciesMet: deps.met(t.ID),
 	})
@@ -580,6 +593,13 @@ func (e *Engine) isDue(t task.Task, st *store.State, deps dependencyState, now t
 		return false, fmt.Errorf("evaluate task %q: %w", t.ID, err)
 	}
 	return ok, nil
+}
+
+// completedOnce reports whether a one-shot task has finished: it carries the
+// mark and holds no interrupted session (see isDue).
+func completedOnce(taskID string, st *store.State) bool {
+	_, waiting := st.PendingResume(taskID)
+	return st.IsCompletedOnce(taskID) && !waiting
 }
 
 // dependencyState is one tick's answer to "may this dependent job go yet", and
@@ -1235,13 +1255,14 @@ func (e *Engine) finish(t task.Task, providerID string, rec store.Run, res provi
 		// The limit belongs to the provider that hit it, so only its gate closes.
 		gate := e.gates.For(providerID)
 		if until := res.ResetAt; !until.IsZero() && until.After(e.clock.Now()) {
-			gate.Block(until.Add(RateLimitResetBuffer))
+			gate.BlockBecause(until.Add(RateLimitResetBuffer), string(res.Block))
 		} else {
 			delay := res.RetryAfter
 			if delay <= 0 {
 				delay = e.backoff
 			}
-			gate.BlockFor(delay) // wait for reset, then resume this session
+			// wait for reset, then resume this session
+			gate.BlockBecause(e.clock.Now().Add(delay), string(res.Block))
 		}
 		// Record when the session is planned to continue (the gate keeps the
 		// longest known block, so this is the real time, not just this run's),
@@ -1251,6 +1272,10 @@ func (e *Engine) finish(t task.Task, providerID string, rec store.Run, res provi
 		}
 		_ = e.store.UpdateState(func(st *store.State) error {
 			st.SetPendingResume(t.ID, res.SessionID, providerID)
+			// The work is not done. A one-shot task started by hand after an
+			// earlier run had already marked it done would otherwise never be
+			// due again, so it would neither resume nor move to another provider.
+			st.ClearCompletedOnce(t.ID)
 			return nil
 		})
 	default:
@@ -1544,7 +1569,7 @@ func (e *Engine) wakeCandidates(cfg store.Config, st *store.State, now time.Time
 		}
 		switch t.Trigger {
 		case task.TriggerFixed:
-			if !st.IsCompletedOnce(t.ID) && t.FixedAt.After(now) {
+			if !completedOnce(t.ID, st) && t.FixedAt.After(now) {
 				out = append(out, t.FixedAt)
 			}
 		case task.TriggerCron:

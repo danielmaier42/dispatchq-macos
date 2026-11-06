@@ -21,9 +21,8 @@ import (
 func newPlatform(r system.Runner) platform {
 	p := platform{
 		service: systemdService{runner: r},
-		sleep: system.Hold{Argv: []string{"systemd-inhibit",
-			"--what=idle:sleep", "--who=DispatchQ", "--why=Running a queued task", "--mode=block",
-			"sleep", "infinity"}},
+		// The same hold as the CLI's run-now: a logind lock via systemd-inhibit.
+		sleep: system.DefaultSleepInhibitor(),
 		// The notify package answers "unsupported" off macOS: Linux has no
 		// per-app notification permission to ask about.
 		notifyStatus: notify.MacAuthorization,

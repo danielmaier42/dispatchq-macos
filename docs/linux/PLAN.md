@@ -14,7 +14,7 @@ Run the daemon, the CLI, the dashboard and the native window on Linux desktops w
 | Autostart | systemd user service with `Restart=always`, `KillMode=mixed` and `TimeoutStopSec=60`. | The daemon winds down its runs itself within `engine.ShutdownGrace` (30 s). systemd signals only the daemon, as launchd does. |
 | Session scope | The service runs while the user is logged in. | It needs the user's provider logins and the desktop session. Running after logout is a separate decision. |
 | Data directory | `$XDG_DATA_HOME/dispatchq`, by default `~/.local/share/dispatchq`. | Run logs, history and artifacts are data, not configuration. |
-| Sleep prevention | `systemd-inhibit --what=idle:sleep --mode=block`, held by `system.Hold` for as long as runs are in flight. | A user service gets the logind block lock without a prompt (tested on Ubuntu, systemd 259). |
+| Sleep prevention | `systemd-inhibit --what=idle:sleep --mode=block` from `system.DefaultSleepInhibitor()`, held for as long as runs are in flight. The daemon and `dispatchq run-now` share it. | A user service gets the logind block lock without a prompt (tested on Ubuntu, systemd 259). |
 | Wake from sleep | Not offered. | `rtcwake` and `WakeSystem=` need root. A privileged helper would be its own change. |
 | Notifications | `notify-send`. | It talks to every freedesktop notification server. No new Go dependency. |
 | Dialogs | `kdialog` on KDE Plasma, `zenity` elsewhere. | Synchronous programs, like the `osascript` dialogs on macOS, and testable with a fake runner. |

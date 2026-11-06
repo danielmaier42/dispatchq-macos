@@ -23,9 +23,6 @@ import (
 	"github.com/danielmaier42/claudeq/internal/store"
 )
 
-// defaultShell runs a script that does not name its own interpreter.
-const defaultShell = "/bin/sh"
-
 // runScript executes a script task and classifies the outcome by its exit
 // status: zero is a success, anything else a failure. There is nothing to parse
 // — a script reports through its exit code, so dispatchq does not guess at its
@@ -42,13 +39,13 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	src := req.Task.Prompt
-	path := filepath.Join(dir, "job")
+	path := filepath.Join(dir, scriptFileName)
 	if err := os.WriteFile(path, []byte(src), 0o700); err != nil { //nolint:gosec // the script must be executable to honour its own shebang
 		return provider.Result{}, fmt.Errorf("write script: %w", err)
 	}
-	name, args := defaultShell, []string{path}
-	if strings.HasPrefix(src, "#!") {
-		name, args = path, nil
+	name, args, err := scriptCommand(path, src)
+	if err != nil {
+		return provider.Result{}, err
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -77,6 +74,7 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 	if err := cmd.Start(); err != nil {
 		return provider.Result{}, fmt.Errorf("start script: %w", err)
 	}
+	defer attachProcessTree(cmd)() // Windows: the Job Object that owns the run's tree
 
 	var idleKilled atomic.Bool
 	if req.IdleTimeout > 0 {

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/danielmaier42/claudeq/internal/system"
 )
 
 // HealthState is what a readiness check concluded about one instance. It says
@@ -96,6 +98,7 @@ func (ExecProber) Probe(ctx context.Context, c Command) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.Path, c.Args...) // #nosec G204 — a configured binary path, no shell
+	system.NoWindow(cmd)
 	if len(c.Env) > 0 {
 		cmd.Env = append(cmd.Environ(), c.Env...)
 	}

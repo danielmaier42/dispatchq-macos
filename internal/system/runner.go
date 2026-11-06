@@ -18,5 +18,7 @@ type Real struct{}
 
 // Run executes name with args and returns combined stdout+stderr.
 func (Real) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	NoWindow(cmd)
+	return cmd.CombinedOutput()
 }

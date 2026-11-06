@@ -70,6 +70,7 @@ workflow engine:
 
 - [How it works](#how-it-works)
 - [Install](#install)
+- [Windows (local proof of concept)](#windows-local-proof-of-concept)
 - [Coming from ClaudeQ](#coming-from-claudeq)
 - [Using it](#using-it)
 - [The app](#the-app)
@@ -197,6 +198,44 @@ dashboard shows it if a wake ever fails):
 ```sh
 echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/dispatchq
 ```
+
+## Windows (local proof of concept)
+
+There is a first native Windows x64 edition. It is **not published**: releases
+and the website offer only the macOS installer, and CI builds nothing for
+Windows. You build the installer yourself on a Mac (or Linux) and copy it over:
+
+```sh
+brew install mingw-w64 makensis librsvg imagemagick   # once
+scripts/build-windows.sh                              # writes dist/windows/
+```
+
+That produces `DispatchQ-<version>-windows-x64-setup.exe` and a `SHA256SUMS`
+file. The installer is per user (no administrator rights), unsigned (SmartScreen
+asks you to confirm), installs under `%LOCALAPPDATA%\Programs\DispatchQ`,
+registers the daemon to start at every sign-in, adds the CLI to your user
+`PATH`, and installs the Microsoft Edge WebView2 Runtime when it is missing.
+Uninstall it from Settings > Apps, the Start menu, or `dispatchq uninstall`
+(`/PURGE` also deletes `%APPDATA%\dispatchq`). The step-by-step notes and a
+first-start checklist ship in the installer as
+[`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt).
+
+It reuses the same daemon, queue and dashboard. What differs on Windows:
+
+| Area | Windows PoC |
+| --- | --- |
+| Window | WebView2, the same dashboard |
+| Background service | `dispatchqd.exe`, started from the per-user Run key at sign-in; runs only while you are signed in |
+| Data | `%APPDATA%\dispatchq`; the daemon log is `dispatchqd.log` there |
+| Providers | native `claude`, `codex`, `opencode` found in the usual install folders, npm and scoop shims, then `PATH`; a Claude login is read from `.credentials.json` |
+| Cancel | every run is placed in a Windows Job Object; cancelling, the idle watchdog or the daemon dying ends the whole process tree |
+| Script jobs | run as PowerShell; a `#!` line is refused |
+| Keep awake | held while a run is active (the display may still sleep) |
+| Not available | native notifications (Pushover, ntfy and webhooks work), wake from sleep, continue in a terminal, in-app update check and uninstall button, appearance pinning |
+
+The Windows code has been cross-compiled and its portable parts are
+unit-tested on macOS; it has **not** been run on a Windows machine yet (see
+[docs/windows/PLAN.md](docs/windows/PLAN.md) for the verification gaps).
 
 ## Coming from ClaudeQ
 
@@ -2044,6 +2083,7 @@ Requires Go 1.26+, Node.js 22+ with npm (for the web UI) and `librsvg`
 scripts/build-app.sh    # build/DispatchQ.app          (double-click or `open` it)
 scripts/build-pkg.sh    # dist/dispatchq-<version>.pkg  (installer)
 make web                # only the web UI, into internal/api/web
+scripts/build-windows.sh  # dist/windows/…-setup.exe  (local Windows PoC, see above)
 ```
 
 The daemon embeds the web UI when it is compiled, so build the UI first

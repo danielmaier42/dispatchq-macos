@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/system"
 )
 
 // rateLimitsRequest is the conversation ReadLimits holds with `codex
@@ -83,6 +84,7 @@ func askAppServer(ctx context.Context, c provider.Command) (json.RawMessage, err
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.Path, c.Args...) // #nosec G204 — a configured binary path, no shell
+	system.NoWindow(cmd)
 	if len(c.Env) > 0 {
 		cmd.Env = append(cmd.Environ(), c.Env...)
 	}

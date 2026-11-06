@@ -18,11 +18,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -35,7 +32,6 @@ import (
 	"github.com/danielmaier42/claudeq/internal/executor"
 	"github.com/danielmaier42/claudeq/internal/feedback"
 	"github.com/danielmaier42/claudeq/internal/fileaccess"
-	"github.com/danielmaier42/claudeq/internal/launchd"
 	"github.com/danielmaier42/claudeq/internal/limit"
 	"github.com/danielmaier42/claudeq/internal/notify"
 	"github.com/danielmaier42/claudeq/internal/provider"
@@ -43,10 +39,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/review"
 	"github.com/danielmaier42/claudeq/internal/store"
 	"github.com/danielmaier42/claudeq/internal/system"
-	"github.com/danielmaier42/claudeq/internal/uninstall"
-	"github.com/danielmaier42/claudeq/internal/update"
 	"github.com/danielmaier42/claudeq/internal/version"
-	"github.com/danielmaier42/claudeq/internal/wake"
 )
 
 // defaultAddr is the loopback address the dashboard/API listens on. The
@@ -64,6 +57,7 @@ const defaultAddr = "127.0.0.1:10765"
 const daemonLockWait = engine.ShutdownGrace + 20*time.Second
 
 func main() {
+	platformInit(os.Args[1:])
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "dispatchqd:", err)
 		os.Exit(1)
@@ -175,8 +169,10 @@ func cmdRun(args []string) error {
 		Home:     home,
 		QueueBin: resolveQueueBin(),
 	}, c, checker)
-	if !*noWake {
-		eng.SetWaker(&wake.Scheduler{Runner: system.Real{}, Sudo: true})
+	wakeOn := false
+	if w := platformWaker(); w != nil && !*noWake {
+		eng.SetWaker(w)
+		wakeOn = true
 	}
 	eng.SetNotifier(liveNotifier{st: st})
 	// Each provider's allowance is read without spending any of it: on a
@@ -215,8 +211,10 @@ func cmdRun(args []string) error {
 	// Background update checker: polls GitHub for a newer release hourly and
 	// caches the result so the dashboard's "update available" banner and the
 	// manual "Check for updates" button answer instantly (see internal/update).
-	updSvc := update.NewService(update.GitHubFetcher{}, update.DefaultInterval)
-	go updSvc.Run(ctx)
+	updSvc := platformUpdates()
+	if updSvc != nil {
+		go updSvc.Run(ctx)
+	}
 	go limits.Run(ctx, provider.DefaultLimitsInterval, func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, "dispatchqd: "+format+"\n", args...)
 	})
@@ -226,23 +224,24 @@ func cmdRun(args []string) error {
 	// the one runner, so they cannot drift apart in how they invoke a provider.
 	asides := &aside.Runner{Registry: registry}
 
+	deps := api.Deps{
+		Store: st, Runner: eng, Canceler: eng, TakeOver: eng,
+		ActiveTasks: eng.ActiveTaskIDs,
+		WakeError:   eng.WakeError, WarmFileAccess: warmFileAccess, Updates: updSvc,
+		LimitedUntil: eng.LimitedUntil, BlockedProviders: eng.BlockedProviders,
+		Holds: eng.Holds, RunningOn: eng.RunningOn,
+		Feedback: feedback.New(asides), OSVersion: osVersion(system.Real{}),
+		Assistant: assistant.New(asides, &assistant.StoreSource{Store: st}),
+		Review:    &review.Reviewer{Ask: asides},
+		Registry:  registry, Providers: checker, Limits: limits,
+	}
+	// Dialogs, the terminal hand-off, notification status and the uninstaller
+	// are the parts that talk to the operating system; each platform wires what
+	// it supports and leaves the rest nil, which the API reports as unavailable.
+	platformDeps(&deps)
 	httpSrv := &http.Server{
-		Addr: *addr,
-		Handler: api.Handler(api.Deps{
-			Store: st, Runner: eng, Canceler: eng, TakeOver: eng,
-			ChooseFolder: api.OSAScriptFolderChooser(system.Real{}), ActiveTasks: eng.ActiveTaskIDs,
-			SaveFile:     api.OSAScriptSaveFileDialog(system.Real{}),
-			OpenTerminal: api.OSAScriptTerminalOpener(system.Real{}),
-			WakeError:    eng.WakeError, WarmFileAccess: warmFileAccess, Updates: updSvc,
-			LimitedUntil: eng.LimitedUntil, BlockedProviders: eng.BlockedProviders,
-			Holds: eng.Holds, RunningOn: eng.RunningOn,
-			NotifyStatus: notify.MacAuthorization,
-			Feedback:     feedback.New(asides), OSVersion: osVersion(system.Real{}),
-			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st}),
-			Review:    &review.Reviewer{Ask: asides},
-			Registry:  registry, Providers: checker, Limits: limits,
-			Uninstall: openUninstaller,
-		}),
+		Addr:              *addr,
+		Handler:           api.Handler(deps),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -263,7 +262,7 @@ func cmdRun(args []string) error {
 	}()
 
 	fmt.Printf("dispatchqd %s: watching %s\n  dashboard: http://%s  (tick %s, wake %t)\n",
-		version.String(), home, *addr, *interval, !*noWake)
+		version.String(), home, *addr, *interval, wakeOn)
 	if err := eng.Loop(ctx, *interval); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
@@ -317,12 +316,12 @@ func (l liveNotifier) Notify(ctx context.Context, n notify.Notification) error {
 	return notify.Multi{Notifiers: notifyChannels(cfg.Settings)}.Notify(ctx, n)
 }
 
-// notifyChannels assembles the notification channels: native macOS always, plus
+// notifyChannels assembles the notification channels: the platform's native one, plus
 // every remote channel that is both switched on and configured (FA-39/40/41).
 // A channel switched on but left half-filled in is skipped rather than attempted
 // and logged as an error on every single notification.
 func notifyChannels(s store.Settings) []notify.Notifier {
-	notifiers := []notify.Notifier{notify.Mac{Runner: system.Real{}}}
+	notifiers := platformNotifiers()
 	if po := (notify.Pushover{Token: s.Pushover.Token, UserKey: s.Pushover.UserKey}); s.Pushover.Enabled && po.Configured() {
 		notifiers = append(notifiers, po)
 	}
@@ -384,96 +383,6 @@ func warmEnabledTasks(st *store.Store) {
 	warmFileAccess(dirs)
 }
 
-func cmdInstall() error {
-	self, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locate executable: %w", err)
-	}
-	agentsDir, err := launchAgentsDir()
-	if err != nil {
-		return err
-	}
-	// ClaudeQ's agent and daemon go first. launchd would restart a daemon its
-	// job still owns, and it would run the same queue next to this one; and
-	// DefaultHome below moves ClaudeQ's data, which its daemon must no longer
-	// be writing to.
-	legacy := launchd.Agent{Runner: system.Real{}, Dir: agentsDir, Label: launchd.LegacyLabel, UID: os.Getuid()}
-	if err := legacy.Uninstall(context.Background()); err != nil {
-		return fmt.Errorf("remove ClaudeQ LaunchAgent: %w", err)
-	}
-	killStrayDaemons()
-
-	home, err := store.DefaultHome()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(home, 0o755); err != nil {
-		return err
-	}
-
-	cfg := launchd.Config{
-		Label:      launchd.DefaultLabel,
-		BinPath:    self,
-		Args:       []string{"run"},
-		StdoutPath: filepath.Join(home, "dispatchqd.out.log"),
-		StderrPath: filepath.Join(home, "dispatchqd.err.log"),
-	}
-	// When running from inside the app bundle, tie the agent to it so Login Items
-	// shows the DispatchQ name and icon instead of a bare "dispatchqd".
-	if strings.Contains(self, ".app/Contents/MacOS/") {
-		cfg.AssociatedBundleID = launchd.DefaultLabel // == the app bundle id
-	}
-	plist, err := launchd.Plist(cfg)
-	if err != nil {
-		return err
-	}
-
-	// Stop any stray daemon still holding the loopback port (an orphan from a
-	// prior run/version that launchd's bootout won't catch) so the freshly
-	// bootstrapped one can bind and actually take over — otherwise an update
-	// wouldn't take effect until a reboot.
-	killStrayDaemons()
-
-	agent := launchd.Agent{Runner: system.Real{}, Dir: agentsDir, Label: launchd.DefaultLabel, UID: os.Getuid()}
-	if err := agent.Install(context.Background(), plist); err != nil {
-		return err
-	}
-
-	fmt.Printf("installed LaunchAgent %s (%s)\n", launchd.DefaultLabel, agent2path(agentsDir))
-	fmt.Println("dispatchqd will now start at login and restart on exit.")
-	fmt.Println()
-	fmt.Println("To enable wake-from-sleep, pmset must run as root. Add a sudoers entry once:")
-	fmt.Printf("  echo '%s ALL=(root) NOPASSWD: /usr/bin/pmset' | sudo tee /etc/sudoers.d/dispatchq\n", currentUser())
-	return nil
-}
-
-// strayDaemonPatterns match a running daemon: this one, and claudeqd from
-// before the rename to DispatchQ.
-var strayDaemonPatterns = []string{"dispatchqd run", "claudeqd run"}
-
-// killStrayDaemons terminates any running `dispatchqd run` process and waits for
-// the loopback port to come free, so the daemon the caller is about to
-// bootstrap can actually bind it. The current process is `dispatchqd install`, so
-// the pattern never matches itself.
-//
-// Waiting on the port rather than on a fixed delay matters: a daemon that keeps
-// the port keeps serving its own (older) version, which is what makes an update
-// look like it did nothing.
-func killStrayDaemons() {
-	for _, p := range strayDaemonPatterns {
-		_ = exec.Command("pkill", "-f", p).Run()
-	}
-	if waitPortFree(3 * time.Second) {
-		return
-	}
-	// Still held — a daemon that ignored SIGTERM, or one started from another
-	// copy of the app. Escalate rather than bootstrapping into a taken port.
-	for _, p := range strayDaemonPatterns {
-		_ = exec.Command("pkill", "-9", "-f", p).Run()
-	}
-	_ = waitPortFree(2 * time.Second)
-}
-
 // waitPortFree reports whether nothing is listening on the dashboard port,
 // waiting up to d for a dying daemon to let go of it.
 func waitPortFree(d time.Duration) bool {
@@ -491,37 +400,6 @@ func waitPortFree(d time.Duration) bool {
 	}
 }
 
-func cmdUninstall() error {
-	agentsDir, err := launchAgentsDir()
-	if err != nil {
-		return err
-	}
-	agent := launchd.Agent{Runner: system.Real{}, Dir: agentsDir, Label: launchd.DefaultLabel, UID: os.Getuid()}
-	if err := agent.Uninstall(context.Background()); err != nil {
-		return err
-	}
-	fmt.Printf("removed LaunchAgent %s\n", launchd.DefaultLabel)
-	cli := resolveQueueBin()
-	if cli == "" {
-		cli = filepath.Join(update.DefaultAppPath, "Contents", "MacOS", "dispatchq")
-	}
-	fmt.Printf("To remove the app, the wake permission and the installer receipt as well, run: %s uninstall\n", cli)
-	return nil
-}
-
-// openUninstaller opens the uninstaller of the app bundle this daemon runs
-// from in the macOS Installer (Settings > System > Uninstall).
-func openUninstaller(ctx context.Context) error {
-	self, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locate executable: %w", err)
-	}
-	if resolved, err := filepath.EvalSymlinks(self); err == nil {
-		self = resolved
-	}
-	return uninstall.Open(ctx, system.Real{}, self)
-}
-
 // resolveQueueBin finds the dispatchq CLI shipped next to this daemon binary (in
 // the app bundle's Contents/MacOS, or the dev build directory). Its absolute
 // path is handed to each run as DISPATCHQ_BIN so a task can queue follow-up work
@@ -532,48 +410,9 @@ func resolveQueueBin() string {
 	if err != nil {
 		return ""
 	}
-	cand := filepath.Join(filepath.Dir(self), "dispatchq")
+	cand := filepath.Join(filepath.Dir(self), "dispatchq"+exeSuffix)
 	if info, err := os.Stat(cand); err == nil && !info.IsDir() {
 		return cand
 	}
 	return ""
-}
-
-func launchAgentsDir() (string, error) {
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
-	}
-	return filepath.Join(h, "Library", "LaunchAgents"), nil
-}
-
-func agent2path(dir string) string {
-	return filepath.Join(dir, launchd.DefaultLabel+".plist")
-}
-
-func currentUser() string {
-	if u := os.Getenv("USER"); u != "" {
-		return u
-	}
-	return "<your-username>"
-}
-
-// osVersion reports the macOS product version (e.g. "15.6") for the feedback
-// issue's environment line. It is asked once and cached: the version cannot
-// change while the daemon runs, and an unreadable one simply stays empty.
-func osVersion(r system.Runner) func() string {
-	var once sync.Once
-	var cached string
-	return func() string {
-		once.Do(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			out, err := r.Run(ctx, "sw_vers", "-productVersion")
-			if err != nil {
-				return
-			}
-			cached = strings.TrimSpace(string(out))
-		})
-		return cached
-	}
 }

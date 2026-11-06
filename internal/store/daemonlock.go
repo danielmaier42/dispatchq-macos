@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -55,7 +54,7 @@ func (l *DaemonLock) Close() error {
 	}
 	f := l.f
 	l.f = nil
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	_ = unlockFile(f)
 	return f.Close()
 }
 
@@ -65,7 +64,7 @@ func (l *DaemonLock) Close() error {
 // and each one's startup reconciliation writes off the other's in-flight run as
 // interrupted.
 //
-// The claim is an flock, so it dies with the process: a daemon killed with
+// The claim is an OS file lock (flock on macOS, LockFileEx on Windows), so it dies with the process: a daemon killed with
 // SIGKILL or lost to a power cut leaves no stale lock behind to clear by hand.
 // It waits up to wait for a predecessor to let go, which covers the hand-over
 // during an update (the new daemon is bootstrapped while the old one is still
@@ -81,11 +80,11 @@ func (s *Store) LockDaemon(wait time.Duration) (*DaemonLock, error) {
 	}
 	deadline := time.Now().Add(wait)
 	for {
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err = tryLockExclusive(f)
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
+		if !errors.Is(err, errLockHeld) {
 			_ = f.Close()
 			return nil, fmt.Errorf("acquire daemon lock: %w", err)
 		}

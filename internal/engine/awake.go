@@ -1,49 +1,43 @@
 package engine
 
-import (
-	"os/exec"
-	"runtime"
-	"sync"
-)
+import "sync"
 
-// sleepGuard keeps the Mac awake while runs are in flight by holding a
-// `caffeinate -i` assertion (prevents idle system sleep), so a task can't be
-// frozen mid-run when the machine would otherwise idle-sleep. It is
-// reference-counted, so concurrent runs share a single assertion. No-op off
-// macOS or if caffeinate can't start.
+// sleepGuard keeps the machine awake while runs are in flight, so a task can't
+// be frozen mid-run when the machine would otherwise idle-sleep. It is
+// reference-counted, so concurrent runs share a single assertion. How the
+// assertion is held is the platform's: `caffeinate -i` on macOS, an execution
+// state request on Windows (see holdAwake). Where there is no mechanism it does
+// nothing.
 type sleepGuard struct {
-	mu  sync.Mutex
-	n   int
-	cmd *exec.Cmd
+	mu   sync.Mutex
+	n    int
+	stop func()
+	// hold starts the assertion; nil means the platform's holdAwake. A test
+	// replaces it.
+	hold func() func()
 }
 
 func (g *sleepGuard) acquire() {
-	if runtime.GOOS != "darwin" {
-		return
-	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.n++
-	if g.n == 1 && g.cmd == nil {
-		cmd := exec.Command("caffeinate", "-i")
-		if err := cmd.Start(); err == nil {
-			g.cmd = cmd
-			go func() { _ = cmd.Wait() }() // reap once it's killed
+	if g.n == 1 && g.stop == nil {
+		hold := g.hold
+		if hold == nil {
+			hold = holdAwake
 		}
+		g.stop = hold()
 	}
 }
 
 func (g *sleepGuard) release() {
-	if runtime.GOOS != "darwin" {
-		return
-	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.n > 0 {
 		g.n--
 	}
-	if g.n == 0 && g.cmd != nil {
-		_ = g.cmd.Process.Kill()
-		g.cmd = nil
+	if g.n == 0 && g.stop != nil {
+		g.stop()
+		g.stop = nil
 	}
 }

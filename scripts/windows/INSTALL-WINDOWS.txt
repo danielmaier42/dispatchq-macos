@@ -1,0 +1,68 @@
+DispatchQ for Windows (proof of concept, local build)
+=====================================================
+
+What this is
+  A first native Windows edition of DispatchQ: the same dashboard and queue as the
+  Mac app, in a WebView2 window, with the same daemon running in your signed-in
+  session. It has not been published and has had little testing on real Windows
+  machines. Keep the macOS app as the reference.
+
+Requirements
+  - Windows 11 x64 (Windows 10 x64 may work, it is untested).
+  - Microsoft Edge WebView2 Runtime. Windows 11 includes it; the installer installs
+    it when it is missing and the installer carries the bootstrapper.
+  - A provider CLI you already use: Claude Code, Codex or OpenCode, installed natively
+    (not inside WSL) and signed in.
+
+Install
+  1. Double-click DispatchQ-<version>-windows-x64-setup.exe. No administrator rights
+     are needed; it installs for your user under %LOCALAPPDATA%\Programs\DispatchQ.
+  2. Windows SmartScreen will warn that the publisher is unknown (the installer is not
+     signed). Choose "More info", then "Run anyway".
+  3. Finish the wizard. The background service starts and the DispatchQ window opens.
+
+What gets installed
+  - dispatchqapp.exe   the window
+  - dispatchqd.exe     the background service; starts at every sign-in (registry value
+                       HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DispatchQ)
+  - dispatchq.exe      the command line; the install folder is added to your user PATH
+  - Start menu folder DispatchQ with the app and the uninstaller
+  - Your data lives in %APPDATA%\dispatchq (tasks, history, settings, logs).
+    The daemon's own log is %APPDATA%\dispatchq\dispatchqd.log.
+
+Uninstall
+  - Settings > Apps > Installed apps > DispatchQ > Uninstall, or the Start menu entry
+    "Uninstall DispatchQ", or in a terminal: dispatchq uninstall
+  - This stops the service, removes the autostart entry, the shortcuts and the PATH entry.
+    Your tasks and history are kept. To delete them as well run
+      "%LOCALAPPDATA%\Programs\DispatchQ\Uninstall DispatchQ.exe" /PURGE
+    or delete %APPDATA%\dispatchq yourself afterwards.
+
+What works and what does not (first version)
+  Works (by design, not yet verified on Windows hardware unless noted in the PR):
+    queue, schedules, history, artifacts, dashboard, folder and save dialogs,
+    Pushover/ntfy/webhook notifications, process-tree cancel, one daemon per data
+    directory, keeping the PC awake while a run is active.
+  Not available, and shown as unavailable instead of failing silently:
+    native Windows notifications, waking the PC from sleep for a scheduled run,
+    "continue in a terminal", in-app update check and uninstall button,
+    Appearance pinning of the window frame.
+  Differences:
+    Script jobs run as PowerShell, not sh; a script that starts with #! is refused.
+    The daemon runs only while you are signed in. After a sign-out or reboot, queued
+    work waits until you sign in again.
+
+First-start checklist
+  [ ] The installer finished and the DispatchQ window shows the dashboard.
+  [ ] Settings > Providers shows your CLI as ready (a missing CLI says so).
+  [ ] Add a task in a scratch folder with a one-line prompt and run it now; the run
+      appears in History with output.
+  [ ] Start a long task and cancel it; check Task Manager that the CLI and its tools
+      are gone.
+  [ ] Close the window; the queue keeps running (dispatchqd.exe stays in Task Manager).
+  [ ] Sign out and in again; dispatchqd.exe is running without opening the window.
+  [ ] Report anything that fails, with %APPDATA%\dispatchq\dispatchqd.log.
+
+Verify the download
+  Compare the SHA-256 of the installer with SHA256SUMS next to it:
+    Get-FileHash .\DispatchQ-<version>-windows-x64-setup.exe -Algorithm SHA256

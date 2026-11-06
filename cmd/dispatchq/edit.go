@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -604,16 +603,10 @@ func applyEditedDoc(st *store.Store, orig task.Task, before, after []byte) error
 	})
 }
 
-// runEditor opens path in the user's editor and waits for it to close. The
-// command goes through the shell, the way git does it, so $EDITOR may carry
-// arguments ("code -w") as well as a path with spaces; the file is passed as an
-// argument rather than interpolated, so its name is never re-parsed.
+// runEditor opens path in the user's editor and waits for it to close.
 func runEditor(path string) error {
-	editor := firstNonEmpty(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
-	if editor == "" {
-		return fmt.Errorf("no editor configured; set $EDITOR")
-	}
-	cmd := exec.Command("sh", "-c", editor+` "$1"`, "sh", path) // #nosec G204 — the user's own $EDITOR
+	editor := firstNonEmpty(os.Getenv("VISUAL"), os.Getenv("EDITOR"), defaultEditor)
+	cmd := editorCommand(editor, path)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("editor %q: %w", editor, err)

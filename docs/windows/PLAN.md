@@ -1,6 +1,21 @@
 # DispatchQ Windows port and shared application repository
 
-Status: planning only. Implementation is deferred until Claude subscription usage is available again and the maintainer resumes the work. Do not start implementation, schedule jobs, rename repositories, or publish binaries from this planning task.
+Status: a local-only proof of concept is implemented on `feature/windows-port-poc` (supersedes the earlier "implementation deferred" note; the maintainer asked for it explicitly). It is built by `scripts/build-windows.sh` and is never built, released or advertised by CI, GitHub Releases or the website. No repository rename, base-repo extraction, relay or iOS work is part of it.
+
+### Proof of concept status (2026-11-06)
+
+| Area | State |
+| --- | --- |
+| Store and daemon locks | Implemented with `LockFileEx` (lock byte placed past EOF so the pid stays readable); atomic replace retries on sharing violations. Not run on Windows. |
+| Process tree | Job Object per run with kill-on-close, `taskkill /T` fallback, no console windows. Not run on Windows. |
+| Provider discovery | `.exe`/`.cmd` candidates (own installers, npm, scoop), then `PATH`; unit-tested. Provider argument handling through `.cmd` shims and real provider runs are unverified. |
+| Native window | WebView2 via the existing `webview_go` (built-in loader, no DLL to ship); links, accent colour. Cross-compiled only; never opened on Windows. |
+| Daemon lifecycle | Run-key autostart and start-now in `dispatchqd install`, log file, single daemon. Behaviour at lock, logout and reboot unverified. |
+| Installer | NSIS per-user installer with WebView2 bootstrapper, PATH entry, uninstaller, `/PURGE`. Built; never executed on Windows. |
+| Disabled and documented | Native notifications, wake from sleep, continue in terminal, in-app update and uninstall, appearance pinning, shebang scripts. |
+| Open | Windows ARM64, WSL, execution after logout, code signing, updater, CI, website selection (planned until publication), real Windows end-to-end verification. |
+
+Verification gap: no Windows machine or VM was available to the implementer (no Parallels/UTM/VirtualBox, no Wine), so no behaviour on Windows has been observed. Everything above marked unrun needs the first-install checklist in `scripts/windows/INSTALL-WINDOWS.txt` on a Windows 11 x64 PC.
 
 Created: 2026-11-05.
 

@@ -390,6 +390,7 @@ func (e *Executor) Run(ctx context.Context, req Request) (provider.Result, error
 	if err := cmd.Start(); err != nil {
 		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
 	}
+	defer attachProcessTree(cmd)() // Windows: the Job Object that owns the run's tree
 
 	// Idle watchdog: kill the process if it stops producing output for too long.
 	var idleKilled atomic.Bool

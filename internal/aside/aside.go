@@ -20,6 +20,7 @@ import (
 
 	"github.com/danielmaier42/claudeq/internal/provider"
 	"github.com/danielmaier42/claudeq/internal/randid"
+	"github.com/danielmaier42/claudeq/internal/system"
 )
 
 // Runner asks a configured provider instance a question.
@@ -101,6 +102,7 @@ func (r *Runner) exec(ctx context.Context, dir string, cmd provider.Command) ([]
 // writes to stderr can never end up inside the JSON that gets parsed.
 func execCommand(ctx context.Context, dir string, cmd provider.Command) ([]byte, error) {
 	c := exec.CommandContext(ctx, cmd.Path, cmd.Args...) //nolint:gosec // the adapter built this from the configured provider
+	system.NoWindow(c)
 	c.Dir = dir
 	if len(cmd.Env) > 0 {
 		c.Env = append(os.Environ(), cmd.Env...)

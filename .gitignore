@@ -21,3 +21,4 @@ web/node_modules/
 /dispatchq
 /dispatchqd
 /dispatchqapp
+*.syso

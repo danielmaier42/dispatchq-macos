@@ -5,8 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 // DetectBinary finds the Codex CLI. It returns an absolute path, or "" if it
@@ -25,13 +28,7 @@ func DetectBinary() string {
 		return p
 	}
 	home, _ := os.UserHomeDir()
-	for _, c := range []string{
-		filepath.Join(home, ".local", "bin", "codex"),
-		filepath.Join(home, ".codex", "bin", "codex"),
-		"/opt/homebrew/bin/codex",
-		"/usr/local/bin/codex",
-		filepath.Join(home, "bin", "codex"),
-	} {
+	for _, c := range installCandidates(home) {
 		if isExecutableFile(c) {
 			return c
 		}
@@ -45,6 +42,21 @@ func DetectBinary() string {
 	return ""
 }
 
+// installCandidates lists the common install locations of the CLI, most likely
+// first. Native Windows installs live in other places than the Unix ones.
+func installCandidates(home string) []string {
+	if runtime.GOOS == "windows" {
+		return binpath.CurrentWindowsCandidates("codex")
+	}
+	return []string{
+		filepath.Join(home, ".local", "bin", "codex"),
+		filepath.Join(home, ".codex", "bin", "codex"),
+		"/opt/homebrew/bin/codex",
+		"/usr/local/bin/codex",
+		filepath.Join(home, "bin", "codex"),
+	}
+}
+
 // loginShellTimeout bounds the profile-sourcing probe. A shell profile is
 // arbitrary code; one that blocks must not hold up whoever asked where the CLI
 // is.
@@ -53,6 +65,9 @@ const loginShellTimeout = 5 * time.Second
 // viaLoginShell asks the user's login+interactive shell to resolve `codex`, so
 // PATH additions in their profile are honoured.
 func viaLoginShell() string {
+	if runtime.GOOS == "windows" {
+		return "" // no POSIX login shell; the PATH lookup covers the profile
+	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/zsh"
@@ -80,10 +95,4 @@ func viaLoginShell() string {
 	return ""
 }
 
-func isExecutableFile(p string) bool {
-	fi, err := os.Stat(p)
-	if err != nil || fi.IsDir() {
-		return false
-	}
-	return fi.Mode()&0o111 != 0
-}
+func isExecutableFile(p string) bool { return binpath.IsExecutableFile(p) }

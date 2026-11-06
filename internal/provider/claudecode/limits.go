@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -216,6 +217,10 @@ func (a *Adapter) login(ctx context.Context, inst provider.Instance) (oauthLogin
 func (a *Adapter) readKeychain(ctx context.Context, service string) ([]byte, error) {
 	if a.keychain != nil {
 		return a.keychain(ctx, service)
+	}
+	if runtime.GOOS != "darwin" {
+		// No keychain: Claude Code keeps its login in .credentials.json there.
+		return nil, errors.New("no keychain on this platform")
 	}
 	cmd := exec.CommandContext(ctx, "/usr/bin/security", "find-generic-password", "-s", service, "-w")
 	// Only stdout: it holds the secret and nothing else, and stderr is not

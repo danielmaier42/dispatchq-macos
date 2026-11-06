@@ -102,7 +102,7 @@ func (s *server) feedbackURL(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, errors.New("the issue needs a title"))
 		return
 	}
-	body := strings.TrimSpace(req.Body) + envFooter(version.String(), s.osVersion())
+	body := strings.TrimSpace(req.Body) + envFooter(version.String(), s.osVersion(), s.platform())
 	writeJSON(w, http.StatusOK, map[string]string{
 		"url": feedback.IssueURL(update.DefaultRepo, title, body, req.Labels),
 	})
@@ -111,14 +111,18 @@ func (s *server) feedbackURL(w http.ResponseWriter, r *http.Request) {
 // envFooter renders the two environment details that ride along with the issue.
 // They are stated in the review step and land in the prefilled page, where the
 // user can still delete the line before pressing Create. An unknown value is
-// simply left out.
-func envFooter(app, osv string) string {
+// simply left out. A macOS version is a bare number and gets the system's
+// name. Other systems report their full name.
+func envFooter(app, osv, platform string) string {
 	var parts []string
 	if app = oneLine(app, 60); app != "" {
 		parts = append(parts, "DispatchQ "+app)
 	}
 	if osv = oneLine(osv, 60); osv != "" {
-		parts = append(parts, "macOS "+osv)
+		if platform == "darwin" {
+			osv = "macOS " + osv
+		}
+		parts = append(parts, osv)
 	}
 	if len(parts) == 0 {
 		return ""
@@ -137,7 +141,15 @@ func oneLine(s string, limit int) string {
 	return s
 }
 
-// osVersion reports the macOS product version, "" when the daemon cannot ask.
+// platform is the daemon's operating system, "darwin" when Deps leaves it out.
+func (s *server) platform() string {
+	if s.d.Platform == "" {
+		return "darwin"
+	}
+	return s.d.Platform
+}
+
+// osVersion reports the system version, "" when the daemon cannot ask.
 func (s *server) osVersion() string {
 	if s.d.OSVersion == nil {
 		return ""

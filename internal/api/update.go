@@ -26,6 +26,9 @@ type updateStatus struct {
 	// Supported is false for a development build (version "dev"), where updates
 	// cannot be compared and nothing is offered.
 	Supported bool `json:"supported"`
+	// Unavailable is true when this system has no update service: it cannot
+	// install a release, so the dashboard only links to the releases page.
+	Unavailable bool `json:"unavailable,omitempty"`
 	// Available is true when a newer, non-dismissed release with an installer is
 	// ready to download.
 	Available bool `json:"available"`
@@ -201,7 +204,9 @@ func (s *server) currentStatus() updateStatus {
 
 func (s *server) getUpdate(w http.ResponseWriter, _ *http.Request) {
 	if s.d.Updates == nil {
-		writeJSON(w, http.StatusOK, buildUpdateStatus(version.String(), installedVersion(), "", update.Snapshot{}))
+		st := buildUpdateStatus(version.String(), installedVersion(), "", update.Snapshot{})
+		st.Unavailable = true
+		writeJSON(w, http.StatusOK, st)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.currentStatus())

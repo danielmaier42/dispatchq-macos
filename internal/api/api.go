@@ -104,9 +104,15 @@ type Deps struct {
 	// Assistant is the chat that operates dispatchq. Optional; when nil the
 	// dashboard says the chat is not available.
 	Assistant *assistant.Service
-	// OSVersion reports the macOS product version (e.g. "15.6") for the
-	// environment line of a feedback issue. Optional; empty leaves it out.
+	// OSVersion reports the system version for the environment line of a
+	// feedback issue: the macOS product version (e.g. "15.6"), or on another
+	// system its full name (e.g. "Ubuntu 26.04 LTS"). Optional. Empty leaves
+	// it out.
 	OSVersion func() string
+	// Platform is the operating system the daemon runs on, as runtime.GOOS
+	// names it ("darwin", "linux"). The dashboard words its hints for it.
+	// Empty counts as "darwin".
+	Platform string
 	// Review checks a draft prompt against this machine before it is queued.
 	// Optional; when nil the dashboard shows no suggestions.
 	Review PromptReviewer
@@ -912,8 +918,17 @@ func (s *server) continueRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, err)
 		return
 	}
+	// The shell deletes the file as soon as it reads it. A terminal that was
+	// started but died before its shell ran never gets to, so the file is
+	// removed after secretEnvTTL in any case.
+	time.AfterFunc(secretEnvTTL, cleanup)
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// secretEnvTTL is how long the secret environment file of a continued session
+// may wait for its shell. A shell reads it within seconds of the terminal
+// opening.
+var secretEnvTTL = 2 * time.Minute
 
 // takeOverTimeout bounds the wait for a taken-over run's process to go; the
 // executor's own kill escalation is far shorter.
@@ -1506,6 +1521,7 @@ func (s *server) getHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
+		"platform":          s.platform(),
 		"wake_error":        wakeErr,
 		"notify_status":     notifyStatus,
 		"limited_until":     limitedUntil,

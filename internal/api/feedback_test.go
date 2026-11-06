@@ -161,6 +161,19 @@ func TestFeedbackURLAppendsTheEnvironment(t *testing.T) {
 	}
 }
 
+func TestEnvFooterNamesTheSystem(t *testing.T) {
+	cases := []struct{ osv, platform, want string }{
+		{"15.6", "darwin", "\n\n---\nDispatchQ 2.1.0 · macOS 15.6"},
+		{"Ubuntu 26.04 LTS", "linux", "\n\n---\nDispatchQ 2.1.0 · Ubuntu 26.04 LTS"},
+		{"", "linux", "\n\n---\nDispatchQ 2.1.0"},
+	}
+	for _, c := range cases {
+		if got := envFooter("2.1.0", c.osv, c.platform); got != c.want {
+			t.Errorf("envFooter(%q, %q) = %q, want %q", c.osv, c.platform, got, c.want)
+		}
+	}
+}
+
 func TestFeedbackURLLeavesOutAnUnknownOSVersion(t *testing.T) {
 	// A daemon that cannot read sw_vers must not write "macOS " with nothing
 	// after it into a public issue.

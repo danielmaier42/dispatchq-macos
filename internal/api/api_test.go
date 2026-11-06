@@ -372,6 +372,22 @@ func TestHealthReportsWakeError(t *testing.T) {
 	}
 }
 
+func TestHealthReportsThePlatform(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for dep, want := range map[string]string{"": "darwin", "darwin": "darwin", "linux": "linux"} {
+		srv := httptest.NewServer(handler(Deps{Store: st, Platform: dep}))
+		var got map[string]any
+		do(t, srv, "GET", "/api/health", nil).into(t, &got)
+		srv.Close()
+		if got["platform"] != want {
+			t.Errorf("Platform %q: platform = %v, want %q", dep, got["platform"], want)
+		}
+	}
+}
+
 func TestHealthReportsNotifyStatus(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -846,6 +862,50 @@ func TestContinueRunKeepsTheKeyOffTheCommandLine(t *testing.T) {
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Fatalf("the env file still exists after the wrapper ran: %v", err)
+	}
+}
+
+// A terminal that opens but never runs its shell must not leave the key in a
+// temporary file.
+func TestContinueRunRemovesAnUnreadKeyFile(t *testing.T) {
+	prev := secretEnvTTL
+	secretEnvTTL = 20 * time.Millisecond
+	t.Cleanup(func() { secretEnvTTL = prev })
+
+	stubSrv, srvStore, got := continueFixture(t, func(r *store.Run) {
+		r.Provider = store.RunProvider{ID: "claude-api", Kind: store.DefaultProviderKind, Name: "Claude API"}
+	}, nil)
+	stubSrv.Close()
+	reg := provider.NewRegistry(claudecode.New())
+	srv := httptest.NewServer(Handler(Deps{Store: srvStore, Registry: reg, Providers: provider.NewChecker(reg),
+		OpenTerminal: func(_ context.Context, dir string, argv []string) error {
+			got.dir, got.argv = dir, argv
+			return nil // reported as opened, but its shell never runs
+		}}))
+	t.Cleanup(srv.Close)
+	if err := srvStore.UpdateConfig(func(cfg *store.Config) error {
+		cfg.Providers = append(cfg.Providers, store.Provider{
+			ID: "claude-api", Kind: store.DefaultProviderKind, Name: "Claude API",
+			BinaryPath: "/opt/claude", Enabled: true, Env: map[string]string{"ANTHROPIC_API_KEY": "sk-ant-x"},
+		})
+		return nil
+	}); err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+	if r := do(t, srv, "POST", "/api/runs/r1/continue", nil); r.Status != http.StatusNoContent {
+		t.Fatalf("continue status = %d (%s)", r.Status, r.Body)
+	}
+	file := got.argv[3]
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			return
+		}
+		if time.Now().After(deadline) {
+			_ = os.Remove(file)
+			t.Fatal("the unread key file is still there")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

@@ -15,8 +15,9 @@ import (
 var errUnsupported = errors.New("not supported on this operating system")
 
 // platform is everything the daemon gets from the operating system it runs
-// on. newPlatform builds it in one file per system (platform_darwin.go, and
-// platform_other.go for the rest), so the daemon itself names no system tool.
+// on. newPlatform builds it in one file per system (platform_darwin.go,
+// platform_linux.go, and platform_other.go for the rest), so the daemon itself
+// names no system tool.
 // A nil field means the system has no such service. The daemon then skips it.
 // The dashboard endpoints of a missing dialog, terminal, uninstaller or update
 // service answer "not available".
@@ -53,6 +54,7 @@ type platform struct {
 type serviceSpec struct {
 	Bin        string   // absolute path to dispatchqd
 	Args       []string // arguments, e.g. ["run"]
+	Home       string   // the data directory the daemon must use
 	StdoutPath string
 	StderrPath string
 }

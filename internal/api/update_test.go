@@ -218,6 +218,9 @@ func TestUpdateEndpointsUnavailableWithoutService(t *testing.T) {
 	if s.Available || s.Supported {
 		t.Errorf("no service should mean nothing offered: %+v", s)
 	}
+	if !s.Unavailable {
+		t.Errorf("no service should say so: %+v", s)
+	}
 	// Mutating endpoints report unavailable.
 	if r := do(t, srv, "POST", "/api/update/download", nil); r.Status != http.StatusServiceUnavailable {
 		t.Errorf("download without service = %d, want 503", r.Status)

@@ -40,6 +40,27 @@ func TestMacBuildsEscapedOsascript(t *testing.T) {
 	}
 }
 
+func TestFreeDesktopPassesTitleAndEscapedBody(t *testing.T) {
+	r := &recordRunner{}
+	err := FreeDesktop{Runner: r}.Notify(context.Background(),
+		Notification{Title: "-x <task> failed", Message: `exit 3: a < b && "c"`})
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	want := []string{"notify-send", "--app-name=DispatchQ", "--icon=dispatchq", "--",
+		"-x <task> failed", `exit 3: a &lt; b &amp;&amp; "c"`}
+	if strings.Join(r.args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("args = %q\nwant   %q", r.args, want)
+	}
+}
+
+func TestFreeDesktopPropagatesRunnerError(t *testing.T) {
+	err := FreeDesktop{Runner: &recordRunner{err: errors.New("no server")}}.Notify(context.Background(), Notification{Title: "t"})
+	if err == nil || !strings.Contains(err.Error(), "notify-send") {
+		t.Fatalf("err = %v, want a notify-send error", err)
+	}
+}
+
 func TestMacPropagatesRunnerError(t *testing.T) {
 	m := Mac{Runner: &recordRunner{err: errors.New("no gui")}}
 	if err := m.Notify(context.Background(), Notification{Title: "t", Message: "m"}); err == nil {

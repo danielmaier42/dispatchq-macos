@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -35,6 +36,9 @@ type uninstallEnv struct {
 }
 
 func cmdUninstall(args []string) error {
+	if err := uninstallSupported(runtime.GOOS); err != nil {
+		return err
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)
@@ -53,6 +57,17 @@ func cmdUninstall(args []string) error {
 			return cmd.Run()
 		},
 	})
+}
+
+// uninstallSupported reports why `dispatchq uninstall` cannot run on goos. It
+// runs the macOS uninstaller package. Elsewhere it names the manual steps.
+func uninstallSupported(goos string) error {
+	if goos == "darwin" {
+		return nil
+	}
+	return fmt.Errorf("dispatchq uninstall removes the macOS app and is not available on %s. "+
+		"Run `dispatchqd uninstall` to remove the login service, then delete the dispatchq binaries "+
+		"(and, to remove tasks and history too, the data directory)", goos)
 }
 
 // runUninstall runs the uninstaller package with the command-line installer,

@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -247,8 +248,8 @@ func cmdRun(args []string) error {
 			WakeError:    eng.WakeError, WarmFileAccess: plat.warmFileAccess, Updates: updates,
 			LimitedUntil: eng.LimitedUntil, BlockedProviders: eng.BlockedProviders, BlockReasons: eng.BlockReasons,
 			Holds: eng.Holds, RunningOn: eng.RunningOn,
-			NotifyStatus: plat.notifyStatus,
-			Feedback:     feedback.New(asides), OSVersion: plat.osVersion,
+			NotifyStatus: plat.notifyStatus, Platform: runtime.GOOS,
+			Feedback: feedback.New(asides), OSVersion: plat.osVersion,
 			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st}),
 			Review:    &review.Reviewer{Ask: asides},
 			Registry:  registry, Providers: checker, Limits: limits,
@@ -401,6 +402,7 @@ func cmdInstall(p platform) error {
 	spec := serviceSpec{
 		Bin:        self,
 		Args:       []string{"run"},
+		Home:       home,
 		StdoutPath: filepath.Join(home, "dispatchqd.out.log"),
 		StderrPath: filepath.Join(home, "dispatchqd.err.log"),
 	}

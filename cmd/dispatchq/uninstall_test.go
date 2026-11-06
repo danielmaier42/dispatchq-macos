@@ -132,3 +132,13 @@ func TestUninstallDoesNotCreateDataDir(t *testing.T) {
 		t.Fatalf("data directory was created (stat err = %v)", err)
 	}
 }
+
+func TestUninstallSupportedOnlyOnMacOS(t *testing.T) {
+	if err := uninstallSupported("darwin"); err != nil {
+		t.Fatalf("darwin: %v", err)
+	}
+	err := uninstallSupported("linux")
+	if err == nil || !strings.Contains(err.Error(), "dispatchqd uninstall") {
+		t.Fatalf("linux: err = %v, want a pointer to dispatchqd uninstall", err)
+	}
+}

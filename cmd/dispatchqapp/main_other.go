@@ -1,5 +1,7 @@
 //go:build !darwin
 
+// Command dispatchqapp is the native DispatchQ window. On systems without a
+// window implementation it exits with a message.
 package main
 
 import (

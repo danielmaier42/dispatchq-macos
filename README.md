@@ -451,8 +451,8 @@ first. The window opens on the Dashboard:
   and every run on the account counts as a proof too. A ping that cannot reach
   the account at all (no network at login, say) is no test and is tried again
   an hour later. The line says what the latest proof found, on the right where
-  a plan account says *week used up*: *Credit OK*, *No credit left* or
-  *Credit not checked yet*; its tooltip says which proof and when. An account
+  a plan account says *week used up*: *credit available*, *credit used up* in red, or
+  *credit not checked yet*; its tooltip says which proof and when. An account
   refused with *Credit balance is too low* is treated exactly like a used-up
   week: it takes no work until a ping gets an answer again, also across a
   restart of the app, its tasks go to the next pool member or fallback at once,
@@ -461,7 +461,7 @@ first. The window opens on the Dashboard:
   at once and unlocks the account straight away. Opening the Dashboard and
   **⌘R** do not ping. A billing refusal
   that does not name the credit balance (a spend limit set on the account,
-  say) pauses the provider the same way and reads *Billing refused*.
+  say) pauses the provider the same way and reads *billing refused* in red.
   `dispatchq provider limits` shows the same latest proof.
   Right under it, the **Pool** card puts every
   [pool](#provider-pools) on one line, its members in the order a run started

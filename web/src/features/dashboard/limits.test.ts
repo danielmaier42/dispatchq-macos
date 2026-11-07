@@ -113,14 +113,14 @@ describe('limits', () => {
       ...base,
       credit: {status: 'ok' as const, checked_at: '2026-11-05T19:00:00Z', source: 'ping' as const},
     }
-    expect(creditLabel(ok)).toBe('Credit OK')
+    expect(creditLabel(ok)).toBe('credit available')
     expect(creditLabel({...ok, blocked: {until: '2026-11-12T00:00:00Z', reason: 'credit_exhausted'}})).toBe(
-      'No credit left',
+      'credit used up',
     )
     expect(creditLabel({...base, blocked: {until: '2026-11-12T00:00:00Z', reason: 'billing_refused'}})).toBe(
-      'Billing refused',
+      'billing refused',
     )
-    expect(creditLabel(base)).toBe('Credit not checked yet')
+    expect(creditLabel(base)).toBe('credit not checked yet')
     expect(creditLabel(entry({state: 'ok', checked_at: ''}))).toBe('')
   })
   it('an ordinary limit is no account block', () => {

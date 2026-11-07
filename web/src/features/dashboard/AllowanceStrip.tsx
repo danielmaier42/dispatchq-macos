@@ -18,6 +18,7 @@ import {
   creditBlock,
   creditHint,
   creditLabel,
+  creditRefused,
   creditText,
   leftLevel,
   limitStatusText,
@@ -213,7 +214,13 @@ function ProviderLine({
       <div className={cn(gauge, 'flex min-w-0 justify-end')}>
         {credit ? (
           <Tooltip content={`${creditText(p, now).replace(/\.?$/, '.')} ${creditHint}`}>
-            <div className="truncate rounded-sm text-[12px] text-muted-foreground" tabIndex={0}>
+            <div
+              className={cn(
+                'truncate rounded-sm text-[12px]',
+                creditRefused(credit) ? 'text-danger' : 'text-muted-foreground',
+              )}
+              tabIndex={0}
+            >
               {credit}
             </div>
           </Tooltip>

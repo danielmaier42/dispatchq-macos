@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Build a DispatchQ Windows installer locally (cross-compiled from macOS or Linux)
-# for x64 or ARM64. Windows artifacts are never built or published by CI; this is
-# the only path that produces them.
+# Build a DispatchQ Windows installer (cross-compiled from macOS or Linux) for x64
+# or ARM64. Pull request CI runs this script on macOS for both architectures and
+# keeps the results as workflow artifacts for beta testing; no release workflow
+# builds or publishes Windows installers.
 #
 # Output (default dist/windows/ for x64, dist/windows-arm64/ for ARM64):
 #   DispatchQ-<version>-windows-<x64|arm64>-setup.exe

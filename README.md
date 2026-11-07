@@ -202,9 +202,11 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/dispa
 ## Windows (local proof of concept)
 
 There is a first native Windows edition for x64 and ARM64 PCs. It is **not
-published**: releases and the website offer only the macOS installer, and CI
-builds nothing for Windows. You build the installer yourself on a Mac (or Linux)
-and copy it over:
+published**: releases and the website offer only the macOS installer. Every
+CI run builds both installers for beta testing and keeps them as workflow
+artifacts of that run (`DispatchQ-<version>-windows-<x64|arm64>`, kept 14 days,
+for signed-in GitHub users), never as release assets. Or build the installer
+yourself on a Mac (or Linux) and copy it over:
 
 ```sh
 brew install mingw-w64 makensis librsvg imagemagick   # once

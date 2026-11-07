@@ -73,3 +73,124 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  # Beta test downloads of the Windows edition: both installers, built from the
+  # commit under test by scripts/build-windows.sh exactly as on a maintainer's
+  # Mac, and uploaded as workflow artifacts of this run. Nothing is released or
+  # published here; the tag-driven release workflow stays macOS-only.
+  windows-installer:
+    name: windows-installer (${{ matrix.label }})
+    # The script cross-compiles from macOS: Homebrew's mingw-w64 for x64 and the
+    # pinned official llvm-mingw macOS build for ARM64, the toolchains local
+    # builds use. Both payloads are native to their target (cgo WebView2 window
+    # included); only the NSIS stub is x86.
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            label: x64
+            machine: "8664"
+          - arch: arm64
+            label: arm64
+            machine: aa64
+    env:
+      # A pull request builds its head commit, not GitHub's merge preview, so the
+      # artifact matches a commit on the branch testers can name.
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+          check-latest: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install build tools
+        run: |
+          tools="makensis librsvg imagemagick"
+          if [ "${{ matrix.arch }}" = amd64 ]; then tools="$tools mingw-w64"; fi
+          # shellcheck disable=SC2086 # word splitting is intended
+          brew install $tools
+
+      # The ARM64 toolchain is the llvm-mingw release pinned in the script; the
+      # script verifies the download's checksum, the cache only saves the fetch.
+      - name: Read the pinned llvm-mingw release
+        if: matrix.arch == 'arm64'
+        id: llvm
+        run: echo "release=$(sed -n 's/^LLVM_MINGW_RELEASE=//p' scripts/build-windows.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache llvm-mingw
+        if: matrix.arch == 'arm64'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/windows/cache/toolchains
+          key: llvm-mingw-${{ steps.llvm.outputs.release }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build the installer
+        id: build
+        run: |
+          short="${SOURCE_SHA:0:7}"
+          if [ -n "$PR_NUMBER" ]; then
+            version="dev-pr${PR_NUMBER}-${short}"
+          else
+            version="dev-${GITHUB_REF_NAME//\//-}-${short}"
+          fi
+          out="dist/windows-ci-${{ matrix.label }}"
+          DISPATCHQ_VERSION="$version" scripts/build-windows.sh --arch "${{ matrix.arch }}" "$out"
+          {
+            echo "version=$version"
+            echo "out=$out"
+          } >> "$GITHUB_OUTPUT"
+
+      # The script already refuses a payload of the wrong machine type; this
+      # checks the result independently of its architecture table.
+      - name: Verify the installer
+        env:
+          OUT: ${{ steps.build.outputs.out }}
+          VERSION: ${{ steps.build.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          LABEL: ${{ matrix.label }}
+          MACHINE: ${{ matrix.machine }}
+        run: |
+          . scripts/windows/arch.sh
+          fail() { echo "::error::$*"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ] || fail "checked out $(git rev-parse HEAD), expected $SOURCE_SHA"
+          for exe in dispatchqapp dispatchqd dispatchq; do
+            got="$(pe_machine "build/windows/stage-$LABEL/$exe.exe" || echo unreadable)"
+            [ "$got" = "$MACHINE" ] || fail "$exe.exe has PE machine $got, expected $MACHINE"
+            echo "$exe.exe: PE machine 0x$got"
+          done
+          setup="DispatchQ-$VERSION-windows-$LABEL-setup.exe"
+          [ -s "$OUT/$setup" ] || fail "missing $OUT/$setup"
+          got="$(pe_machine "$OUT/$setup" || echo unreadable)"
+          [ "$got" = 14c ] || fail "installer has PE machine $got, expected the x86 NSIS stub (14c)"
+          (cd "$OUT" && shasum -a 256 -c SHA256SUMS)
+          jq -e --arg head "$SOURCE_SHA" --arg version "$VERSION" --arg target "windows/$ARCH" \
+            --arg machine "0x$MACHINE" --arg setup "$setup" \
+            '.source_head == $head and .source_dirty == false and .version == $version
+             and .target == $target and .payload_pe_machine == $machine and .installer == $setup' \
+            "$OUT/BUILD-INFO.json" >/dev/null || { cat "$OUT/BUILD-INFO.json"; fail "BUILD-INFO.json does not match this build"; }
+          cat "$OUT/BUILD-INFO.json"
+
+      - name: Upload the beta installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: DispatchQ-${{ steps.build.outputs.version }}-windows-${{ matrix.label }}
+          path: ${{ steps.build.outputs.out }}/
+          if-no-files-found: error
+          retention-days: 14

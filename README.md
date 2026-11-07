@@ -74,7 +74,6 @@ workflow engine:
 - [How it works](#how-it-works)
 - [Install](#install)
 - [Windows (beta)](#windows-beta)
-- [Coming from ClaudeQ](#coming-from-claudeq)
 - [Using it](#using-it)
 - [The app](#the-app)
 - [Settings](#settings)
@@ -173,18 +172,16 @@ the app), and reports the install as *failed* if the new daemon never takes
 over — rather than finishing green while the machine keeps running the old
 version. It resolves the logged-in user through macOS SystemConfiguration,
 the console device and console login records, validating that the user's GUI
-session exists. If user detection fails while either daemon is running, the
+session exists. If user detection fails while a daemon is running, the
 install fails instead of silently skipping the update. Before stopping
-processes it unloads both the current LaunchAgent
-and the old ClaudeQ agent, so neither can restart an outdated daemon during
-the update. It replaces stale agent files, re-enables the DispatchQ service
+processes it unloads the LaunchAgent, so it cannot restart an outdated daemon
+during the update. It replaces stale agent files, re-enables the DispatchQ service
 and explicitly starts it. Remaining daemons are stopped only for the logged-in
-user. An install cannot succeed while that user's old ClaudeQ daemon remains
+user. An install cannot succeed while an outdated daemon of that user remains
 running, or if the bundled daemon cannot report its version. It also lists any
 other `DispatchQ.app` copies it finds.
 
-You can update directly from ClaudeQ 1.x to the latest DispatchQ package;
-installing 2.0.0 first is not required. If installation fails, open **Window →
+If installation fails, open **Window →
 Installer Log** in macOS Installer, select **Show All Logs** and look for the
 `dispatchq:` messages. Closing the app window alone does not stop its daemon.
 
@@ -212,61 +209,60 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/dispa
 
 ## Windows (beta)
 
-There is a native Windows beta for x64 and ARM64 PCs. It needs no WSL. It is
-**not published yet**: no release so far carries a Windows installer. From the
-next release on, every release attaches both Windows installers next to the
-macOS one, under the release's own version:
+DispatchQ runs natively on Windows 11 PCs with an x64 or ARM64 processor. It
+needs no WSL. Every release, from 2.1.0 on, attaches two Windows installers next
+to the macOS package, under the same version:
 `dispatchq-<version>-windows-x64-beta.exe` and
 `dispatchq-<version>-windows-arm64-beta.exe`. Only the file name marks them as
-beta; the version number and the release are the same as for macOS. Until then,
-every CI run builds both installers for beta testing and keeps them as workflow
-artifacts of that run (`dispatchq-<version>-windows-<x64|arm64>-beta`, kept 14
-days, for signed-in GitHub users). Or build the installer yourself on a Mac (or
-Linux) and copy it over:
+beta; the version number and the release are the same as for macOS.
 
-```sh
-brew install mingw-w64 makensis librsvg imagemagick   # once
-scripts/build-windows.sh                              # x64, writes dist/windows/
-scripts/build-windows.sh --arch arm64                 # ARM64, writes dist/windows-arm64/
-```
+1. Check your processor under **Settings > System > About > System type**, then
+   download the matching installer from the
+   [Releases](https://github.com/danielmaier42/dispatchq-app/releases) page:
+   - **x64-based processor** (Intel or AMD):
+     `dispatchq-<version>-windows-x64-beta.exe`
+   - **ARM-based processor** (for example Snapdragon):
+     `dispatchq-<version>-windows-arm64-beta.exe`. The x64 installer also runs
+     there, with its programs emulated.
+2. Run it. Setup installs for your user only and needs no administrator rights.
+   The installer is not signed, so SmartScreen warns that the publisher is
+   unknown: choose **More info**, then **Run anyway**.
+3. Finish the wizard. **Open DispatchQ** on its last page starts the window.
 
-That produces `dispatchq-<version>-windows-<x64|arm64>-beta.exe`, a
-`SHA256SUMS` file and a `BUILD-INFO.json` naming the source commit and
-toolchain. The ARM64 build needs [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
-for the window's C++ part; on a Mac the script downloads the pinned official
-release into `build/windows/cache` (checksum verified, nothing installed
-system-wide), or uses `DISPATCHQ_LLVM_MINGW=<dir>` or one on `PATH`. The build
-checks that the three programs carry the target's machine type.
+Setup installs under `%LOCALAPPDATA%\Programs\DispatchQ`, registers the daemon
+to start at every sign-in, adds the CLI to your user `PATH`, and installs the
+Microsoft Edge WebView2 Runtime only when the window would not find a usable
+one: `dispatchqd webview2-status` repeats the window's own lookup and loads the
+runtime's library the way the window does, in a separate process ended after 20
+seconds (setup ends the check after a minute). When the runtime is still not
+confirmed usable after Microsoft's bootstrapper, setup shows the bootstrapper's
+result and what the check found, and finishes the rest of the installation; it
+does not repair a damaged runtime.
 
 Each installer holds programs for one architecture. The installer itself is a
 32-bit x86 program for both (NSIS has no ARM64 stub), which Windows on ARM runs
 emulated. The ARM64 installer refuses to run on a non-ARM PC; the x64 one runs
-on 64-bit Windows, including Windows 11 on ARM, where its programs run emulated.
-The installer is per user (no administrator rights), unsigned (SmartScreen
-asks you to confirm), installs under `%LOCALAPPDATA%\Programs\DispatchQ`,
-registers the daemon to start at every sign-in, adds the CLI to your user
-`PATH`, and installs the Microsoft Edge WebView2 Runtime only when the window
-would not find a usable one: `dispatchqd webview2-status` repeats the window's
-own lookup and loads the runtime's library the way the window does, in a
-separate process ended after 20 seconds (setup ends the check after a minute).
-When the runtime is still not confirmed usable after Microsoft's bootstrapper,
-setup shows the bootstrapper's result and what the check found, and finishes
-the rest of the installation; it does not repair a damaged runtime.
-Uninstall it from Settings > Apps, the Start menu, or `dispatchq uninstall`
-(`/PURGE` also deletes `%APPDATA%\dispatchq`). Installing, upgrading and
-uninstalling stop only this installation's window and the daemon that has your
-data directory's lock file open, as Windows reports it, after checking that it
-runs from the installation folder (or, when installing, from the folder the
-previous installer recorded). Another copy of DispatchQ, or a daemon for a
-different `DISPATCHQ_HOME`, keeps running. When such a copy uses your data
-directory, or its owner cannot be identified, setup and the uninstaller stop
-before changing anything, show which process it is and offer Retry once you
-have quit it; `dispatchqd install` and `uninstall` fail the same way. Setup
-never runs the dispatchqd it is about to replace; it uses a copy of the new one.
-The step-by-step notes and a
-first-start checklist are in
-[`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt) in this repository;
-the installer does not copy them to the PC.
+on 64-bit Windows, including Windows 11 on ARM.
+
+To update, use About > **Check for updates** or run a newer installer over the
+existing one. Uninstall from Settings > Apps, the Start menu, or
+`dispatchq uninstall` (`/PURGE` also deletes `%APPDATA%\dispatchq`). Installing,
+upgrading and uninstalling stop only this installation's window and the daemon
+that has your data directory's lock file open, as Windows reports it, after
+checking that it runs from the installation folder (or, when installing, from
+the folder the previous installer recorded). Another copy of DispatchQ, or a
+daemon for a different `DISPATCHQ_HOME`, keeps running. When such a copy uses
+your data directory, or its owner cannot be identified, setup and the
+uninstaller stop before changing anything, show which process it is and offer
+Retry once you have quit it; `dispatchqd install` and `uninstall` fail the same
+way. Setup never runs the dispatchqd it is about to replace; it uses a copy of
+the new one. The step-by-step notes and a first-start checklist are in
+[`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt) in this
+repository; the installer does not copy them to the PC.
+
+The beta has had little testing on real Windows machines. The table below lists
+what differs from macOS and what is not available; the end of this section says
+what has been verified.
 
 It reuses the same daemon, queue and dashboard. What differs on Windows:
 
@@ -324,14 +320,12 @@ macOS by running the real helper code behind a fake `wsl.exe` with real
 processes; whether `wsl.exe` forwards end of file and exit codes as documented,
 and how long a distribution takes to start, are checked on the PC
 ([`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt), "Providers in
-WSL"). An older build ignores a provider's `[providers.execution]` table and
-would drop it when it rewrites the configuration; no released build has one.
+WSL"). A build older than 2.1.0 ignores a provider's `[providers.execution]`
+table and drops it when it rewrites the configuration.
 
-Platform layer: the Windows beta builds on the platform abstraction Lukas Wolfrum
-([@Kryolisc](https://github.com/Kryolisc)) contributed in
-[PR 159](https://github.com/danielmaier42/dispatchq-app/pull/159)
-(`cmd/dispatchqd/platform.go`), adopted in full, including its later fix that holds off idle
-sleep during `dispatchq run-now`, so PR 159 needs no separate merge. `platform_windows.go` supplies the Run-key service
+Platform layer: the Windows beta builds on a platform abstraction layer
+(`cmd/dispatchqd/platform.go`) that keeps operating-system specifics out of the
+shared daemon. `platform_windows.go` supplies the Run-key service
 manager, the termination of this installation's daemon (the process Windows reports as having
 the data directory's lock file open, checked by process instance and executable path,
 never by process name),
@@ -343,60 +337,8 @@ keep the explicit unsupported fallback (`platform_other.go`).
 
 The Windows code has been cross-compiled and its portable parts (shim resolution, the installer PATH script,
 the build's architecture handling) are unit-tested on macOS; the Windows-only Job Object tests are compiled but have not run.
-An x64 build has been installed on one Windows PC and first testing there is under way; the ARM64 build has **not** been run
-on Windows at all (see [docs/windows/PLAN.md](docs/windows/PLAN.md) for the verification gaps).
-
-## Coming from ClaudeQ
-
-DispatchQ was called **ClaudeQ** up to version 1.x. Version 2.0 renames the
-app, the binaries and everything they write, and moves an existing
-installation over on its own. Update as usual, from the update banner or by
-opening the new release's `.pkg`; the GitHub repository keeps its old
-name for now, so updates keep arriving from the same place.
-
-What the update does:
-
-| ClaudeQ | DispatchQ | How it moves |
-|---------|-----------|--------------|
-| `/Applications/ClaudeQ.app` | `/Applications/DispatchQ.app` | The installer puts the new app in place and moves the old one to your Bin once DispatchQ runs (only a bundle whose id says it is ClaudeQ). It creates the Bin folder if needed and preserves existing items there. In its place it leaves a verified link to `DispatchQ.app`. Installed with nobody logged in, the old app stays; delete it yourself. |
-| `claudeq`, `claudeqd`, `claudeqapp` | `dispatchq`, `dispatchqd`, `dispatchqapp` | Inside the new app. The app also carries `claudeq` as a link to `dispatchq`, so a script that calls `/Applications/ClaudeQ.app/Contents/MacOS/claudeq` keeps working. That path is deprecated: a later release removes both links, so move scripts to the new path (the check below finds them). |
-| LaunchAgent `de.maierdaniel.claudeq` | `de.maierdaniel.dispatchq` | The old agent is booted out, its daemon stopped and its plist removed before the new one starts, so the queue never runs twice. Installed with nobody logged in, DispatchQ does this the first time you open it. |
-| `~/Library/Application Support/claudeq` | `~/Library/Application Support/dispatchq` | Moved on the first start, tasks, history, logs and artifacts included. The old path stays as a link to the new folder, so log paths in the history and scripts that read the old folder keep working. |
-| `/etc/sudoers.d/claudeq` | `/etc/sudoers.d/dispatchq` | Replaced. |
-| `CLAUDEQ_HOME`, `CLAUDEQ_BIN`, `CLAUDEQ_RUN_ID`, … | `DISPATCHQ_HOME`, `DISPATCHQ_BIN`, `DISPATCHQ_RUN_ID`, … | Every run gets both names for now. `CLAUDEQ_HOME` set in your shell is still honoured when `DISPATCHQ_HOME` is not set. |
-| `.claudeq` task files | `.dispatchq` | Both import. |
-| Webhook default body `"source":"claudeq"` | `"source":"dispatchq"` | Changes with the update. An automation that filters on the old value needs the new one; a webhook with its own template is unaffected. |
-
-With a logged-in user, installation fails if it cannot retire the old app or
-if either compatibility link does not resolve to DispatchQ. A different app
-or an unrelated link at `ClaudeQ.app` is preserved and reported as an error,
-so the installer never replaces something it cannot identify as ClaudeQ.
-
-Your tasks themselves are not rewritten behind your back. The first time
-DispatchQ 2.0 opens, a **What's new** dialog introduces the new name, the
-redesigned app and the beta features that are now available to everyone. It
-has a **Check tasks** button: the [prompt review](#the-prompt-review) looks at
-every task whose prompt or script mentions ClaudeQ, and at the custom system
-prompt if it does (a task that never does is skipped and costs nothing) and lists the ones that still call `ClaudeQ.app`, read a `CLAUDEQ_`
-variable or name the old data folder, each with what it would change. Every
-fix with a rewrite is selected; untick the ones you want to keep as they are
-and click **Migrate**. A task you edited after the check is left alone. A task
-that calls the old CLI still runs through the compatibility link, but the check
-reports it anyway, because the link goes away in a later release. Closing the dialog while the check runs
-or before migrating asks first.
-
-The dialog opens by itself once; a fresh installation that never had ClaudeQ
-skips it. Until the check has run with nothing left to fix, a banner above every
-view says that some tasks still mention ClaudeQ; its **Check tasks** button
-reopens the dialog and starts the check, and its close button hides the banner
-for good. The command palette (⌘K) reopens the dialog too, under **What's new
-in DispatchQ**. The check needs a prompt reviewer that can answer (Claude Code
-or Codex, see [the prompt review](#the-prompt-review)).
-
-Two things do not carry over, because macOS keys them to the app's bundle id:
-the notification permission (macOS asks again) and the window's view
-preferences such as the artifact grid or list layout. Appearance and accent
-colour are stored by the daemon and do carry over.
+An x64 build runs on one Windows PC; the ARM64 build has **not** been run on
+Windows on ARM hardware (see [docs/windows/PLAN.md](docs/windows/PLAN.md) for the verification gaps).
 
 ## Using it
 
@@ -837,7 +779,7 @@ in the list, and leaving Settings keeps the draft for the session.
 | | | Review provider / Review model | Which provider answers the review, and with which model. Only providers that can hold an *aside* are offered; *Default* follows the global default provider, and the model falls back to the reviewing provider's own default. |
 | | Assistant | Assistant provider / Assistant model | Which provider answers in [Ask DispatchQ](#asking-dispatchq) and drafts the GitHub issue on the [Feedback](#sending-feedback) page, and with which model. Left at *DispatchQ's choice*, on Claude Code the chat uses a mid-size model (Sonnet) and feedback a small one (Haiku), rather than whatever you picked for real tasks; other harnesses use their own default. Only providers that can hold an *aside* are offered. |
 | **System** | Danger zone | Remove DispatchQ from this computer | **Uninstall…** asks you to type *uninstall*, then opens the uninstaller in the macOS Installer. Your tasks, history and settings are kept unless you select them under **Customize**. See [Uninstall](#uninstall). |
-| **About** | Software updates | Version / Check for updates | Current version, when the last check ran, and a manual **Check for updates** (`dispatchq update check` does the same from a terminal; the running app shows the result within a minute); an available update shows its notes with **Download & install**, **Dismiss** and **All releases**. On a development build, **Reinstall** downloads the latest release and opens its installer; it stays disabled, with the reason, while that release is older than the oldest one that can read this build's data (2.0.0 for now, since 1.x cannot run on data moved by the DispatchQ rename). |
+| **About** | Software updates | Version / Check for updates | Current version, when the last check ran, and a manual **Check for updates** (`dispatchq update check` does the same from a terminal; the running app shows the result within a minute); an available update shows its notes with **Download & install**, **Dismiss** and **All releases**. On a development build, **Reinstall** downloads the latest release and opens its installer; it stays disabled, with the reason, while that release is older than the oldest one that can read this build's data (2.0.0 for now). |
 
 ## Providers
 
@@ -2224,9 +2166,9 @@ environment variable):
 | `artifacts/<id>/<file>` | The published files themselves (snapshots copied at publish time). |
 | `notifications.json` | Outbox of notifications sent with `dispatchq notify`, waiting for the daemon to deliver them (normally empty). |
 | `inbox.json` | The last 200 notifications the daemon sent (title, message, kind, what each points at, read flag), as listed in the Notifications view. |
-| `state.json` | Machine bookkeeping: read/unread flags (runs and artifacts), which artifacts have been notified about, cron anchors, pending-resume sessions, the provider health you were last told about, the latest credit proof of each API-key account (ping or run, answered or refused), which queue groups are folded shut, dismissed update version, the What's new edition you closed, whether the ClaudeQ rename check is done. |
+| `state.json` | Machine bookkeeping: read/unread flags (runs and artifacts), which artifacts have been notified about, cron anchors, pending-resume sessions, the provider health you were last told about, the latest credit proof of each API-key account (ping or run, answered or refused), which queue groups are folded shut, dismissed update version, the What's new edition you closed, whether the check for tasks that still use the 1.x names is done. |
 | `dispatchqd.out.log` / `dispatchqd.err.log` | Daemon stdout/stderr on macOS; on Windows the daemon log is `dispatchqd.log`. |
-| `../claudeq` | After an update from ClaudeQ: a link from the old data folder to this one (see [Coming from ClaudeQ](#coming-from-claudeq)). |
+| `../claudeq` | After an update from a 1.x version: a link from the old data folder to this one. |
 | `.lock` / `.daemon.lock` | Lock files, both empty of interest. `.lock` serializes config/state writes between the daemon and a `dispatchq` command; `.daemon.lock` holds the running daemon's pid and is what makes a second daemon on the same store refuse to start. Both are released when the holding process exits, so neither needs clearing by hand. |
 
 On macOS the LaunchAgent itself is at
@@ -2251,8 +2193,8 @@ It removes:
 | The background agent | `~/Library/LaunchAgents/de.maierdaniel.dispatchq.plist`; every running DispatchQ daemon and window is stopped, and a run in progress is cancelled |
 | The wake permission | `/etc/sudoers.d/dispatchq` |
 | The installer receipt | `pkgutil --forget de.maierdaniel.dispatchq` |
-| What ClaudeQ left | `ClaudeQ.app` (or the link the installer put in its place), its LaunchAgent `de.maierdaniel.claudeq`, its daemon and window, `/etc/sudoers.d/claudeq` and its receipt, if any of them are still there |
-| **Customize → Tasks, history and settings** (off by default) | `~/Library/Application Support/dispatchq` and the `claudeq` link next to it, and the app's own folders (also those of ClaudeQ) under `~/Library` (`WebKit`, `Caches`, `HTTPStorages`, `Saved Application State`, `Preferences`) |
+| What a 1.x version left | `ClaudeQ.app` (or the link the installer put in its place), its LaunchAgent `de.maierdaniel.claudeq`, its daemon and window, `/etc/sudoers.d/claudeq` and its receipt, if any of them are still there |
+| **Customize → Tasks, history and settings** (off by default) | `~/Library/Application Support/dispatchq` and the `claudeq` link next to it, and the app's own folders (also those of 1.x versions) under `~/Library` (`WebKit`, `Caches`, `HTTPStorages`, `Saved Application State`, `Preferences`) |
 
 The uninstaller leaves no receipt of its own. It also cleans up after an app
 that was already dragged to the Bin: open the `.pkg` from the Bin's copy of
@@ -2280,7 +2222,7 @@ Requires Go 1.26+, Node.js 22+ with npm (for the web UI) and `librsvg`
 scripts/build-app.sh    # build/DispatchQ.app          (double-click or `open` it)
 scripts/build-pkg.sh    # dist/dispatchq-<version>-macos-arm64.pkg  (installer)
 make web                # only the web UI, into internal/api/web
-scripts/build-windows.sh  # dist/windows/…-windows-x64-beta.exe  (local Windows beta build, see above)
+scripts/build-windows.sh  # dist/windows/…-windows-x64-beta.exe  (local Windows beta build, see below)
 ```
 
 The daemon embeds the web UI when it is compiled, so build the UI first
@@ -2296,9 +2238,32 @@ Apple silicon `.pkg` and both Windows beta installers, checks each one's file
 name, architecture, version and source commit, and publishes the GitHub Release
 only when all three succeeded.
 
+### Building the Windows installers
+
+You do not need this to use DispatchQ on Windows; it is for testing a change
+before it is released. Every CI run builds both installers and keeps them as
+workflow artifacts of that run (`dispatchq-<version>-windows-<x64|arm64>-beta`,
+kept 14 days, for signed-in GitHub users). To build one yourself on a Mac (or
+Linux) and copy it over:
+
+```sh
+brew install mingw-w64 makensis librsvg imagemagick   # once
+scripts/build-windows.sh                              # x64, writes dist/windows/
+scripts/build-windows.sh --arch arm64                 # ARM64, writes dist/windows-arm64/
+```
+
+That produces `dispatchq-<version>-windows-<x64|arm64>-beta.exe`, a
+`SHA256SUMS` file and a `BUILD-INFO.json` naming the source commit and
+toolchain. The ARM64 build needs [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
+for the window's C++ part; on a Mac the script downloads the pinned official
+release into `build/windows/cache` (checksum verified, nothing installed
+system-wide), or uses `DISPATCHQ_LLVM_MINGW=<dir>` or one on `PATH`. The build
+checks that the three programs carry the target's machine type.
+
 ## Architecture
 
-A headless Go daemon owns all state and logic; a thin WKWebView app is the only
+A headless Go daemon owns all state and logic; a thin WKWebView app on macOS or
+WebView2 app on Windows is the only
 UI, talking to the daemon over loopback. Runs go through a **provider adapter**:
 the daemon knows a task runs on a configured provider instance with a model and
 an access mode, and the adapter for that provider owns the rest. The Claude Code

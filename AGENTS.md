@@ -121,3 +121,7 @@ never let it drift:
   the CLI/command reference, the settings table, and the "Data on disk" table.
 - Before reporting work as done, re-read the relevant README sections and confirm they reflect
   reality — treat a stale README as a failed quality gate, exactly like a red test.
+- A platform or release change updates that platform's install section as well as the README
+  introduction. End-user install steps describe the implemented normal release flow (Releases
+  page, the platform's release asset, its installer); CI artifacts and local builds belong in a
+  separate developer build section, never in the install steps.

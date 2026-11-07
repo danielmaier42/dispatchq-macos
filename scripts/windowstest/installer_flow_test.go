@@ -150,6 +150,12 @@ type installerRun struct {
 	exits func(program, sub string) (string, string)
 	// answers answers MessageBoxes in order; the default is the /SD answer.
 	answers []string
+	// registry holds values by physical location (see regLocation); reads
+	// go through the current SetRegView view.
+	registry map[string]string
+	view     string
+	// messages are the texts of the MessageBoxes shown, expanded.
+	messages []string
 	// trace lists the commands run and the changes made, in order.
 	trace      []string
 	mutations  []string
@@ -158,10 +164,30 @@ type installerRun struct {
 }
 
 func newRun(t *testing.T, prog nsisProgram, files map[string]string, exits func(program, sub string) (string, string), answers ...string) *installerRun {
-	return &installerRun{t: t, prog: prog, vars: map[string]string{}, files: files, exits: exits, answers: answers}
+	return &installerRun{t: t, prog: prog, vars: map[string]string{}, files: files, exits: exits, answers: answers,
+		registry: map[string]string{}, view: "32"}
 }
 
-var userVar = regexp.MustCompile(`\$(InstallFailed|Purge|[0-9])\b`)
+var userVar = regexp.MustCompile(`\$(InstallFailed|Purge|R[0-9]|[0-9])\b`)
+
+// regLocation is where a key read by the installer's x86 process on 64-bit
+// Windows is stored. HKCU\Software is shared by both views. HKLM\SOFTWARE in
+// the 32-bit view (the default of an x86 process) is stored under
+// SOFTWARE\WOW6432Node, which the 64-bit view (SetRegView 64) does not
+// redirect. A path that names WOW6432Node itself is modelled as reaching the
+// same stored key, the most generous reading of a location Windows reserves.
+func regLocation(root, path, view string) string {
+	p := strings.ToLower(path)
+	switch {
+	case root != "HKLM":
+		return strings.ToLower(root) + `\` + p
+	case view == "64" || strings.HasPrefix(p, `software\wow6432node\`):
+		return `hklm\` + p
+	case strings.HasPrefix(p, `software\`):
+		return `hklm\software\wow6432node\` + strings.TrimPrefix(p, `software\`)
+	}
+	return `hklm\` + p
+}
 
 func (r *installerRun) expand(s string) string {
 	return userVar.ReplaceAllStringFunc(s, func(v string) string { return r.vars[v] })
@@ -292,6 +318,7 @@ func (r *installerRun) call(name string) bool {
 				answer, r.answers = r.answers[0], r.answers[1:]
 			}
 			r.trace = append(r.trace, "ask: "+answer)
+			r.messages = append(r.messages, r.expand(arg(in, 1)))
 			for k := 2; k+1 < len(in.args); k += 2 {
 				if in.args[k] != "/SD" && in.args[k] == answer {
 					next = jump(i, in.args[k+1])
@@ -305,7 +332,9 @@ func (r *installerRun) call(name string) bool {
 			case "nsExec::ExecToLog", "nsExec::Exec":
 				r.stack = append(r.stack, code)
 			case "ExecWait":
-				if v := arg(in, 1); v != "" {
+				if code == "error" {
+					r.errors = true
+				} else if v := arg(in, 1); v != "" {
 					r.vars[v] = code
 				}
 			}
@@ -330,7 +359,27 @@ func (r *installerRun) call(name string) bool {
 			op == "DeleteRegValue", op == "CreateShortcut", op == "CreateDirectory", op == "WriteUninstaller", op == "Rename":
 			r.mutate(op + " " + strings.Join(in.args, " "))
 		case op == "ReadRegStr":
-			r.vars[arg(in, 0)] = "1.0.0.0"
+			v, ok := r.registry[regLocation(arg(in, 1), r.expand(arg(in, 2)), r.view)+"|"+strings.ToLower(arg(in, 3))]
+			r.vars[arg(in, 0)] = v
+			if !ok {
+				r.errors = true
+			}
+			r.trace = append(r.trace, fmt.Sprintf("read: %s %s view %s = %q", arg(in, 1), arg(in, 2), r.view, v))
+		case op == "SetRegView":
+			switch v := arg(in, 0); v {
+			case "32", "64":
+				r.view = v
+			case "default":
+				r.view = "32"
+			default:
+				r.t.Fatalf("line %d: unsupported SetRegView %q", in.line, v)
+			}
+		case op == "IntFmt":
+			n, err := strconv.ParseInt(r.expand(arg(in, 2)), 0, 64)
+			if err != nil || arg(in, 1) != "0x%08X" {
+				r.t.Fatalf("line %d: unsupported IntFmt %v", in.line, in.args)
+			}
+			r.vars[arg(in, 0)] = fmt.Sprintf("0x%08X", uint32(int32(n)))
 		case op == "DetailPrint", op == "Sleep", op == "SetErrorLevel", op == "InitPluginsDir", op == "System::Call":
 		default:
 			r.t.Fatalf("%s line %d: the simulation does not model %q", name, in.line, op)
@@ -370,13 +419,15 @@ func (r *installerRun) run(cmd string) (string, string) {
 }
 
 // preprocess runs makensis -PPO on an installer script.
-func preprocess(t *testing.T, nsi string) nsisProgram {
+// Extra defines (such as -DBOOTSTRAPPER) are passed on.
+func preprocess(t *testing.T, nsi string, defines ...string) nsisProgram {
 	t.Helper()
 	if _, err := exec.LookPath("makensis"); err != nil {
 		t.Skip("makensis not installed")
 	}
-	out, err := exec.Command("makensis", "-PPO", "-INPUTCHARSET", "UTF8",
-		"-DVERSION=test", "-DARCH=x64", "-DSTAGE=stage", "-DOUTFILE=out.exe", nsi).Output()
+	args := append([]string{"-PPO", "-INPUTCHARSET", "UTF8"}, defines...)
+	args = append(args, "-DVERSION=test", "-DARCH=x64", "-DSTAGE=stage", "-DOUTFILE=out.exe", nsi)
+	out, err := exec.Command("makensis", args...).Output()
 	if err != nil {
 		t.Fatalf("makensis -PPO: %v", err)
 	}

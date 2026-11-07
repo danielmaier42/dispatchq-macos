@@ -76,9 +76,11 @@ Var InstallFailed
   ${EndIf}
 !macroend
 
-; The WebView2 runtime registers its version under this client id, per machine
-; or per user.
-!define WEBVIEW2_KEY "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+; Where the WebView2 Runtime documents its version ("pv"), per machine or per
+; user. Its per-machine entry is in the 32-bit registry view (stored under
+; WOW6432Node on 64-bit Windows); this key is the logical path, read through
+; SetRegView, never the physical WOW6432Node path Windows reserves.
+!define WEBVIEW2_CLIENTS "SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
 ; Refuses a machine the payload cannot run on. ARM64 executables need Windows on
 ; ARM; x64 executables run on x64 Windows and, emulated, on Windows 11 on ARM.
@@ -131,44 +133,86 @@ Function SkipFinishAfterFailure
   ${EndIf}
 FunctionEnd
 
-; ReadWebView2Version leaves the installed WebView2 Runtime version in $0, or
-; "" when there is none (a stale per-machine entry reads 0.0.0.0).
-Function ReadWebView2Version
-  ReadRegStr $0 HKLM "SOFTWARE\WOW6432Node\${WEBVIEW2_KEY}" "pv"
-  ${If} $0 == ""
-    ReadRegStr $0 HKCU "${WEBVIEW2_KEY}" "pv"
+; ReadWebView2Registration leaves the WebView2 Runtime version registered in
+; $R0, or "" when there is none. An empty or 0.0.0.0 entry is stale and the
+; next location is read: per machine in the 32-bit view, per machine in the
+; 64-bit view, per user. Only used when CheckWebView2 cannot run its check.
+Function ReadWebView2Registration
+  SetRegView 32
+  ReadRegStr $R0 HKLM "${WEBVIEW2_CLIENTS}" "pv"
+  ${If} $R0 == ""
+  ${OrIf} $R0 == "0.0.0.0"
+    SetRegView 64
+    ReadRegStr $R0 HKLM "${WEBVIEW2_CLIENTS}" "pv"
+    SetRegView 32
   ${EndIf}
-  ${If} $0 == "0.0.0.0"
-    StrCpy $0 ""
+  ${If} $R0 == ""
+  ${OrIf} $R0 == "0.0.0.0"
+    ReadRegStr $R0 HKCU "${WEBVIEW2_CLIENTS}" "pv"
+  ${EndIf}
+  ${If} $R0 == "0.0.0.0"
+    StrCpy $R0 ""
   ${EndIf}
 FunctionEnd
 
-; EnsureWebView2 installs the runtime when it is missing. The installation of
-; DispatchQ continues either way: the daemon and CLI do not need WebView2, only
-; the window does. When the runtime is still missing afterwards (download
-; blocked, bootstrapper refused or failed), the user is told what happened and
-; how to fix it instead of finding a window that does not open.
-Function EnsureWebView2
-  Call ReadWebView2Version
-  ${If} $0 == ""
-!ifdef BOOTSTRAPPER
-    DetailPrint "Installing the Microsoft Edge WebView2 Runtime (needed for the DispatchQ window)"
-    File "/oname=$PLUGINSDIR\webview2-bootstrapper.exe" "${STAGE}\webview2-bootstrapper.exe"
-    ClearErrors
-    ExecWait '"$PLUGINSDIR\webview2-bootstrapper.exe" /silent /install' $1
-    ${If} ${Errors}
-      StrCpy $1 "could not be started"
+; CheckWebView2 sets $R1 to "yes" when the DispatchQ window will find a usable
+; WebView2 Runtime and to "no" when it will not, and leaves what was found in
+; $R2. The installed dispatchqd (this build, native to the payload's
+; architecture like the window) repeats the window's own lookup: exit code 0
+; usable, 10 not usable. When that check cannot run at all, the documented
+; registration decides.
+Function CheckWebView2
+  nsExec::ExecToStack '"$INSTDIR\dispatchqd.exe" webview2-status'
+  Pop $R1
+  Pop $R2
+  ${If} $R1 == "0"
+    StrCpy $R1 "yes"
+  ${ElseIf} $R1 == "10"
+    StrCpy $R1 "no"
+  ${Else}
+    DetailPrint "The WebView2 check did not run (exit code $R1): $R2"
+    Call ReadWebView2Registration
+    ${If} $R0 == ""
+      StrCpy $R1 "no"
+      StrCpy $R2 "No WebView2 Runtime registration was found (the window's own check did not run)."
+    ${Else}
+      StrCpy $R1 "yes"
+      StrCpy $R2 "WebView2 Runtime $R0 is registered (the window's own check did not run)."
     ${EndIf}
-    DetailPrint "WebView2 installer result: $1"
-    Call ReadWebView2Version
-    ${If} $0 == ""
-      DetailPrint "The WebView2 Runtime is still missing"
-      MessageBox MB_OK|MB_ICONEXCLAMATION "The Microsoft Edge WebView2 Runtime could not be installed (installer result: $1), so the DispatchQ window will not open yet. The background service and the dispatchq command work without it.$\r$\n$\r$\nInstall the Evergreen runtime from https://developer.microsoft.com/microsoft-edge/webview2/ (it needs an internet connection; an organisation may have to allow it), then start DispatchQ again." /SD IDOK
-    ${EndIf}
-!else
-    MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ needs the Microsoft Edge WebView2 Runtime, which was not found. Windows 11 includes it. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and start DispatchQ again." /SD IDOK
-!endif
   ${EndIf}
+  DetailPrint "$R2"
+FunctionEnd
+
+; EnsureWebView2 installs the runtime only when the window would not find a
+; usable one. The installation of DispatchQ continues either way: the daemon
+; and CLI do not need WebView2, only the window does. The bootstrapper's exit
+; code alone decides nothing: the check runs again afterwards, and only a
+; runtime that is still not usable is reported, with the exit code (decimal
+; and hex) and what the check found.
+Function EnsureWebView2
+  Call CheckWebView2
+  ${If} $R1 == "yes"
+    Return
+  ${EndIf}
+!ifdef BOOTSTRAPPER
+  DetailPrint "Installing the Microsoft Edge WebView2 Runtime (needed for the DispatchQ window)"
+  File "/oname=$PLUGINSDIR\webview2-bootstrapper.exe" "${STAGE}\webview2-bootstrapper.exe"
+  ClearErrors
+  ExecWait '"$PLUGINSDIR\webview2-bootstrapper.exe" /silent /install' $1
+  ${If} ${Errors}
+    StrCpy $1 "could not be started"
+  ${Else}
+    IntFmt $R3 "0x%08X" $1
+    StrCpy $1 "exit code $1, $R3"
+  ${EndIf}
+  DetailPrint "WebView2 installer result: $1"
+  Call CheckWebView2
+  ${If} $R1 != "yes"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "The Microsoft Edge WebView2 Runtime is still not usable after its installer ran (installer result: $1), so the DispatchQ window will not open yet. The background service and the dispatchq command work without it.$\r$\n$\r$\nWhat setup found: $R2$\r$\n$\r$\nInstall the Evergreen runtime from https://developer.microsoft.com/microsoft-edge/webview2/ (it needs an internet connection; an organisation may have to allow it), then start DispatchQ again. To check again later, run dispatchqd webview2-status in a new terminal." /SD IDOK
+  ${EndIf}
+!else
+  MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ needs the Microsoft Edge WebView2 Runtime, which the window will not find:$\r$\n$\r$\n$R2$\r$\n$\r$\nWindows 11 includes it. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and start DispatchQ again." /SD IDOK
+!endif
 FunctionEnd
 
 Section "DispatchQ" SecMain

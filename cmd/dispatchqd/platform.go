@@ -56,6 +56,9 @@ type platform struct {
 	// anything when another installation owns the data directory. Nil where
 	// there is no such installer.
 	stopInstallation func(dir string, out io.Writer) error
+	// webView2Status writes whether the window will find a usable WebView2
+	// Runtime and reports it. Nil where the window does not use WebView2.
+	webView2Status func(out io.Writer) (available bool, err error)
 	// selfUpdate tells whether a downloaded release installs on this system.
 	selfUpdate bool
 }

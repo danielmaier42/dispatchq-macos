@@ -12,12 +12,16 @@ Requirements
     Windows 11 on an ARM PC (for example Snapdragon): the ARM64 installer. The x64
     installer also works there, emulated. Windows 10 may work, it is untested.
     The ARM64 installer refuses to run on a non-ARM PC.
-  - Microsoft Edge WebView2 Runtime. Windows 11 includes it; the installer installs
-    it when it is missing and the installer carries the bootstrapper. If that
-    install fails (no internet, blocked by policy), the installer says so with the
-    bootstrapper's result and the download link, and finishes: the background
-    service and the dispatchq command work, the window opens once the runtime is
-    installed.
+  - Microsoft Edge WebView2 Runtime. Windows 11 includes it. The installer checks
+    it the way the window finds it (dispatchqd webview2-status) and runs the bundled
+    bootstrapper only when the window would not find a usable runtime. If the
+    runtime is still not usable afterwards (no internet, blocked by policy), the
+    installer says so with the bootstrapper's result (decimal and hex), what the
+    check found and the download link, and finishes: the background service and
+    the dispatchq command work, the window opens once the runtime is installed.
+    The check's findings are also in the installer's "Show details" list; run
+    dispatchqd webview2-status in a new terminal to repeat it (it only reads the
+    registry and prints the runtime folders with your profile folder shortened).
   - A provider CLI you already use: Claude Code, Codex or OpenCode, installed natively
     and signed in. WSL is not needed. Optionally a provider can run inside a WSL 2
     Linux distribution instead (see "Providers in WSL" below); that CLI is installed
@@ -88,6 +92,9 @@ What works and what does not (first version)
 
 First-start checklist
   [ ] The installer finished and the DispatchQ window shows the dashboard.
+  [ ] On a PC with the runtime (every Windows 11 PC), setup showed no WebView2
+      warning and "Show details" has a "WebView2 Runtime available" line without a
+      bootstrapper run. dispatchqd webview2-status prints the same.
   [ ] Settings > Providers shows your CLI as ready (a missing CLI says so).
   [ ] Add a task in a scratch folder with a one-line prompt and run it now; the run
       appears in History with output.

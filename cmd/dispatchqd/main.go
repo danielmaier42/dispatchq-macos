@@ -63,8 +63,22 @@ func main() {
 	platformInit(os.Args[1:])
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "dispatchqd:", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+// exitWebView2Missing is the exit code of webview2-status when the window
+// will not find a usable WebView2 Runtime. Any other failure exits with 1, so
+// the installer can tell a missing runtime from a check that did not run.
+const exitWebView2Missing = 10
+
+var errWebView2Missing = errors.New("webview2-status: the DispatchQ window will not find a usable WebView2 Runtime")
+
+func exitCode(err error) int {
+	if errors.Is(err, errWebView2Missing) {
+		return exitWebView2Missing
+	}
+	return 1
 }
 
 func run(args []string) error {
@@ -84,6 +98,8 @@ func run(args []string) error {
 		return cmdUninstall(newPlatform(system.Real{}))
 	case "stop-installation":
 		return cmdStopInstallation(newPlatform(system.Real{}), args[1:], os.Stdout)
+	case "webview2-status":
+		return cmdWebView2Status(newPlatform(system.Real{}), args[1:], os.Stdout)
 	default:
 		fmt.Println("usage: dispatchqd run [--interval 5s] | install | uninstall | --version")
 		return fmt.Errorf("unknown command %q", args[0])
@@ -473,6 +489,28 @@ func cmdStopInstallation(p platform, args []string, out io.Writer) error {
 		return errors.New("stop-installation: --dir must name the installation folder as an absolute path")
 	}
 	return p.stopInstallation(filepath.Clean(*dir), out)
+}
+
+// cmdWebView2Status is run by the Windows installer before and after the
+// WebView2 bootstrapper, and by hand to check a PC: it prints whether the
+// window will find a usable WebView2 Runtime and the registrations behind the
+// answer, and fails with errWebView2Missing when it will not. It changes
+// nothing.
+func cmdWebView2Status(p platform, args []string, out io.Writer) error {
+	if p.webView2Status == nil {
+		return fmt.Errorf("webview2-status: %w", errUnsupported)
+	}
+	if len(args) != 0 {
+		return errors.New("webview2-status takes no arguments")
+	}
+	ok, err := p.webView2Status(out)
+	if err != nil {
+		return fmt.Errorf("webview2-status: %w", err)
+	}
+	if !ok {
+		return errWebView2Missing
+	}
+	return nil
 }
 
 func cmdUninstall(p platform) error {

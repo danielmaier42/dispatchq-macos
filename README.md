@@ -229,7 +229,11 @@ on 64-bit Windows, including Windows 11 on ARM, where its programs run emulated.
 The installer is per user (no administrator rights), unsigned (SmartScreen
 asks you to confirm), installs under `%LOCALAPPDATA%\Programs\DispatchQ`,
 registers the daemon to start at every sign-in, adds the CLI to your user
-`PATH`, and installs the Microsoft Edge WebView2 Runtime when it is missing.
+`PATH`, and installs the Microsoft Edge WebView2 Runtime only when the window
+would not find a usable one: `dispatchqd webview2-status` repeats the window's
+own lookup (it only reads the registry). When the runtime is still not usable
+after Microsoft's bootstrapper, setup shows the bootstrapper's result and what
+the check found, and finishes the rest of the installation.
 Uninstall it from Settings > Apps, the Start menu, or `dispatchq uninstall`
 (`/PURGE` also deletes `%APPDATA%\dispatchq`). Installing, upgrading and
 uninstalling stop only this installation's window and the daemon that has your
@@ -1172,9 +1176,13 @@ dispatchqd run [--interval 5s] [--no-wake] [--addr 127.0.0.1:10765]
 dispatchqd install      # install & start the LaunchAgent (autostart at login)
 dispatchqd uninstall    # stop & remove the LaunchAgent
 dispatchqd --version
+dispatchqd webview2-status   # Windows: will the window find a usable WebView2 Runtime?
 ```
 
-The installer runs `install` for you; you rarely need these directly.
+The installer runs `install` for you; you rarely need these directly. On Windows,
+`webview2-status` prints one line with the answer and the registry entries behind
+it (profile folders shortened) and exits 0 when the runtime is usable, 10 when it
+is not.
 
 ### `dispatchq` — the control CLI
 

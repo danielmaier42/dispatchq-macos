@@ -22,6 +22,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/notify"
 	"github.com/danielmaier42/claudeq/internal/store"
 	"github.com/danielmaier42/claudeq/internal/system"
+	"github.com/danielmaier42/claudeq/internal/webview2"
 )
 
 // exeSuffix is the extension of an executable next to this one.
@@ -108,7 +109,16 @@ func newPlatform(r system.Runner) platform {
 		osVersion:        osVersion(r),
 		stopStrayDaemons: killStrayDaemons,
 		stopInstallation: stopInstallation,
+		webView2Status:   webView2Status,
 	}
+}
+
+// webView2Status repeats the window's own WebView2 lookup (the daemon and the
+// window are built for the same architecture) and prints what it found, with
+// the user's profile folders shortened.
+func webView2Status(out io.Writer) (bool, error) {
+	st := webview2.ProbeSystem()
+	return st.Available, st.Write(out, webview2.SystemSanitizer())
 }
 
 // registerToastApp gives the per-user Start menu shortcut DispatchQ's

@@ -489,6 +489,11 @@ func (h *Host) WorkDir(ctx context.Context, stored string) (string, error) {
 // Probe implements provider.Prober: combined output, bounded like a native
 // probe.
 func (h *Host) Probe(ctx context.Context, c provider.Command) ([]byte, error) {
+	// Starting a stopped distribution can take longer than a probe may; that
+	// first contact has its own bound, and the probe's starts after it.
+	if _, err := h.svc.target(ctx, h.ex); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(ctx, provider.ProbeTimeout)
 	defer cancel()
 	var out lockedBuffer

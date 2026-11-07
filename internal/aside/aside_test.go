@@ -54,6 +54,9 @@ func (a *stubAdapter) ParseAside(out []byte) (provider.Aside, error) {
 	if strings.HasPrefix(string(out), "!") {
 		return provider.Aside{}, errors.New("unreadable answer")
 	}
+	if strings.HasPrefix(string(out), "refused:") {
+		return provider.Aside{}, &provider.AccountBlockedError{Block: provider.BlockCreditExhausted, Detail: string(out)}
+	}
 	return provider.Aside{Text: string(out)}, nil
 }
 
@@ -205,5 +208,18 @@ func TestAskRunsOutsideAnyProject(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(dirs[0]); err != nil || len(entries) != 0 {
 		t.Fatalf("the aside directory is not empty (%v, %v)", entries, err)
+	}
+}
+
+// TestAskNamesARefusalBehindAFailedExit: the CLI exits non-zero when the API
+// refuses a request for credit, but its envelope says why, and that is what a
+// ping has to learn rather than a bare exit status.
+func TestAskNamesARefusalBehindAFailedExit(t *testing.T) {
+	a := &stubAdapter{caps: provider.Capabilities{Asides: true}, binary: "/bin/stub"}
+	r, inst := newRunner(t, a, "refused:Credit balance is too low", errors.New("exit status 1"))
+	_, err := r.Ask(context.Background(), inst, provider.AsideRequest{Text: "ping"})
+	var blocked *provider.AccountBlockedError
+	if !errors.As(err, &blocked) || blocked.Block != provider.BlockCreditExhausted {
+		t.Fatalf("error = %v, want the credit refusal", err)
 	}
 }

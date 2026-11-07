@@ -15,8 +15,8 @@ import {cn} from '@/lib/utils'
 import {
   blockText,
   byName,
-  creditUnknown,
-  creditUnknownHint,
+  creditHint,
+  creditText,
   leftLevel,
   limitStatusText,
   newestReading,
@@ -83,7 +83,7 @@ export function AllowanceStrip({
         >
           <span className="truncate text-[12px] text-muted-foreground">{readText(newest, now)}</span>
         </Tooltip>
-        <Tooltip content="Ask every provider for its allowance again. Readings younger than half a minute are reused.">
+        <Tooltip content="Ask every provider for its allowance again, and ping every account on an API key to prove its credit. Readings younger than half a minute are reused.">
           <Button variant="ghost" size="sm" className="ml-auto" onClick={onRefresh} disabled={reading}>
             <RefreshCw className={cn(reading && 'animate-spin')} />
             {reading ? 'Reading…' : 'Read now'}
@@ -193,16 +193,16 @@ function ProviderLine({
       ) : (
         // Without windows the reason takes their place: muted where there is
         // simply nothing to show, in warning colour only for a failed read.
-        <Tooltip content={creditUnknown(p) ? creditUnknownHint : undefined}>
+        <Tooltip content={l.api_key ? creditHint : undefined}>
           <p
             className={cn(
               bothWindows,
               'truncate text-[12.5px]',
               failed ? 'text-warning-text' : 'text-muted-foreground',
             )}
-            tabIndex={creditUnknown(p) ? 0 : undefined}
+            tabIndex={l.api_key ? 0 : undefined}
           >
-            {limitStatusText(l, now)}
+            {creditText(p, now) || limitStatusText(l, now)}
           </p>
         </Tooltip>
       )}

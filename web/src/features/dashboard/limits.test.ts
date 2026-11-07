@@ -4,7 +4,7 @@ import {
   blockText,
   byName,
   creditGone,
-  creditUnknown,
+  creditText,
   leftLevel,
   limitStatusText,
   newestReading,
@@ -55,7 +55,7 @@ describe('limits', () => {
     expect(noLimits(l)).toBe(true)
     expect(readFailed(l)).toBe(false)
     expect(limitStatusText(l)).toBe("Credit balance unknown: an API key's balance cannot be read")
-    expect(creditUnknown(entry(l))).toBe(true)
+    expect(creditText(entry(l))).toBe("Credit balance unknown: an API key's balance cannot be read")
     expect(creditGone(entry(l))).toBe(false)
     expect(blockText(entry(l))).toBe('')
   })
@@ -66,7 +66,6 @@ describe('limits', () => {
       blocked: {until: '2026-11-05T23:00:00Z', reason: 'credit_exhausted' as const},
     }
     expect(creditGone(p)).toBe(true)
-    expect(creditUnknown(p)).toBe(false)
     expect(blockText(p, t)).toBe('No credit left')
   })
   it('a bare billing refusal does not claim the credit is gone', () => {
@@ -77,6 +76,35 @@ describe('limits', () => {
     }
     expect(creditGone(p)).toBe(false)
     expect(blockText(p, t)).toMatch(/^Billing refused: the credit is used up or a spend limit was reached/)
+    expect(blockText(p, t)).toMatch(/press Read now\.$/)
+  })
+  it('names the latest credit proof of an API-key account', () => {
+    const t = Date.parse('2026-11-05T22:00:00Z')
+    const base = entry({state: 'unsupported', api_key: true, checked_at: ''})
+    expect(
+      creditText({...base, credit: {status: 'ok', checked_at: '2026-11-05T19:00:00Z', source: 'ping'}}, t),
+    ).toBe('Credit OK · the ping answered 3 h ago.')
+    expect(
+      creditText(
+        {...base, credit: {status: 'credit_exhausted', checked_at: '2026-11-05T21:50:00Z', source: 'run'}},
+        t,
+      ),
+    ).toBe('No credit left · a run was refused 10 min ago.')
+    expect(
+      creditText(
+        {
+          ...base,
+          credit: {
+            status: 'ok',
+            checked_at: '2026-11-04T22:00:00Z',
+            source: 'ping',
+            ping_failed: 'no network',
+          },
+        },
+        t,
+      ),
+    ).toMatch(/Last ping failed: no network$/)
+    expect(creditText(entry({state: 'ok', checked_at: ''}), t)).toBe('')
   })
   it('an ordinary limit is no account block', () => {
     const p = {...entry({state: 'ok', checked_at: ''}), blocked: {until: '2026-11-05T23:00:00Z'}}

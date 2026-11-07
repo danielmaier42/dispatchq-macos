@@ -74,6 +74,35 @@ func (e *Engine) SetNotifier(n notify.Notifier) { e.notifier = n }
 // not call it.
 func (e *Engine) SetRunFinished(f func(providerID string)) { e.runFinished = f }
 
+// SetCreditSeen registers f to be told what a run proved about its account's
+// credit: answered for a run that succeeded, or the account block a run was
+// refused with (a used-up credit balance, a billing refusal), and when the run
+// ended. Runs that prove neither are not reported. f is called on the
+// finishing run's goroutine and should only record what it is told.
+func (e *Engine) SetCreditSeen(f func(providerID string, block provider.Block, answered bool, at time.Time)) {
+	e.creditSeen = f
+}
+
+// AccountBlockHold is how long BlockAccount closes a gate: longer than any
+// interval a ping is due in, so the gate never reopens on its own clock. Only
+// a ping that gets an answer reopens it (LiftAccountBlock).
+const AccountBlockHold = 7 * 24 * time.Hour
+
+// BlockAccount closes a provider's gate for an account block that only a
+// billing change lifts, such as a used-up credit balance. Unlike a refused
+// run's fixed hour it does not reopen by itself: a used-up balance does not
+// refill, and reopening would only hand the next task to an account that
+// refuses it.
+func (e *Engine) BlockAccount(providerID string, block provider.Block) {
+	e.gates.For(providerID).BlockBecause(e.clock.Now().Add(AccountBlockHold), string(block))
+}
+
+// LiftAccountBlock reopens a gate an account block closed, once a ping proved
+// the account answers again. A gate closed by an ordinary limit stays closed.
+func (e *Engine) LiftAccountBlock(providerID string) {
+	e.gates.For(providerID).Lift(string(provider.BlockCreditExhausted), string(provider.BlockBillingRefused))
+}
+
 // SetLimits gives the engine each provider's last allowance reading, which is
 // what a pool picks its member by. f should answer from memory: it is asked on
 // the scheduler's pass. Without it every pool member counts as unread, and a
@@ -149,6 +178,7 @@ type Engine struct {
 	wakeErr         atomic.Pointer[string] // exposed to the API (thread-safe)
 	notifier        notify.Notifier
 	runFinished     func(providerID string)
+	creditSeen      func(providerID string, block provider.Block, answered bool, at time.Time)
 	limits          func(ctx context.Context, inst provider.Instance) (provider.Limits, bool)
 
 	runCtx    context.Context
@@ -1337,9 +1367,23 @@ func (e *Engine) finish(t task.Task, providerID string, rec store.Run, res provi
 	if e.runFinished != nil && providerID != "" {
 		e.runFinished(providerID)
 	}
+	if e.creditSeen != nil && providerID != "" {
+		switch {
+		case rec.Status == store.StatusSuccess:
+			e.creditSeen(providerID, "", true, finished)
+		case rec.Status == store.StatusRateLimited && creditBlock(res.Block):
+			e.creditSeen(providerID, res.Block, false, finished)
+		}
+	}
 
 	// Notify outside any lock so channel I/O never blocks other finishing runs.
 	e.notifyOutcome(t, rec, res.FinalOutput)
+}
+
+// creditBlock reports an account block that is about the account's credit,
+// which is what a ping can check again.
+func creditBlock(b provider.Block) bool {
+	return b == provider.BlockCreditExhausted || b == provider.BlockBillingRefused
 }
 
 // clipOutput cuts a final answer to what a run record may carry, reporting

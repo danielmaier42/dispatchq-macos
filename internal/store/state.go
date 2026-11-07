@@ -62,6 +62,23 @@ type State struct {
 	// so this is what turns "not installed" into one alert instead of one per
 	// tick — and it outlives a daemon restart, which an in-memory memo would not.
 	NotifiedProviderHealth map[string]string `json:"notified_provider_health,omitempty"`
+	// CreditChecks maps a provider id to what is known about the prepaid credit
+	// of an account on an API key: whether the last ping or run got an answer or
+	// was refused for credit. It outlives a restart, so an account known to be
+	// out of credit does not get the next task handed to it again.
+	CreditChecks map[string]CreditCheck `json:"credit_checks,omitempty"`
+}
+
+// CreditCheck is the latest proof of an API-key account's credit.
+type CreditCheck struct {
+	// Status is "ok" when the account answered, otherwise the provider.Block it
+	// was refused with ("credit_exhausted", "billing_refused").
+	Status string `json:"status"`
+	// CheckedAt is when that answer or refusal came.
+	CheckedAt time.Time `json:"checked_at"`
+	// Source says what produced it: "ping" for dispatchq's own one-word test
+	// request, "run" for a task's run on the account.
+	Source string `json:"source"`
 }
 
 func newState() *State {
@@ -97,6 +114,9 @@ func (s *State) ensureMaps() {
 	}
 	if s.NotifiedProviderHealth == nil {
 		s.NotifiedProviderHealth = map[string]string{}
+	}
+	if s.CreditChecks == nil {
+		s.CreditChecks = map[string]CreditCheck{}
 	}
 }
 
@@ -140,6 +160,7 @@ func (s *State) KeepGroups(keep map[string]bool) {
 // removed and later re-added does not inherit the old one's notification memo.
 func (s *State) ForgetProvider(providerID string) {
 	delete(s.NotifiedProviderHealth, providerID)
+	delete(s.CreditChecks, providerID)
 }
 
 // PendingResume is an interrupted session waiting to continue.

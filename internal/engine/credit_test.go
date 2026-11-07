@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -177,5 +178,66 @@ func TestACreditRefusalWalksTheFallbackChain(t *testing.T) {
 				t.Fatalf("ran on %q then %q, want api0 then api1", reqs[0].Provider.ID, reqs[1].Provider.ID)
 			}
 		})
+	}
+}
+
+// TestRunsReportTheirCreditAndAnAccountBlockHoldsUntilLifted: a refused run
+// and a successful one tell the credit observer what they proved, and an
+// account block stays closed past the refused run's fixed hour until a ping
+// lifts it.
+func TestRunsReportTheirCreditAndAnAccountBlockHoldsUntilLifted(t *testing.T) {
+	start := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	fc := clock.NewFake(start)
+	refuse := true
+	r := &stub{result: func(req executor.Request, _ int) provider.Result {
+		if refuse {
+			return provider.Result{Status: store.StatusRateLimited, SessionID: req.SessionID, RetryAfter: time.Hour, Block: provider.BlockCreditExhausted}
+		}
+		return provider.Result{Status: store.StatusSuccess, SessionID: req.SessionID}
+	}}
+	e, st := newTestEngine(t, r, fc)
+	type seen struct {
+		id       string
+		block    provider.Block
+		answered bool
+		at       time.Time
+	}
+	var mu sync.Mutex
+	var got []seen
+	e.SetCreditSeen(func(id string, b provider.Block, answered bool, at time.Time) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, seen{id, b, answered, at})
+	})
+	saveTasks(t, st, asapTask("a", false))
+	if err := e.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	e.WaitIdle()
+	mu.Lock()
+	if len(got) != 1 || got[0] != (seen{store.DefaultProviderID, provider.BlockCreditExhausted, false, start}) {
+		t.Fatalf("credit seen = %+v, want one refusal", got)
+	}
+	mu.Unlock()
+
+	e.BlockAccount(store.DefaultProviderID, provider.BlockCreditExhausted)
+	fc.Advance(2 * time.Hour)
+	if e.gateOpen(store.DefaultProviderID) {
+		t.Fatal("the account block reopened on its own after the run's hour")
+	}
+	e.LiftAccountBlock(store.DefaultProviderID)
+	if !e.gateOpen(store.DefaultProviderID) {
+		t.Fatal("LiftAccountBlock did not reopen the gate")
+	}
+
+	refuse = false
+	if err := e.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	e.WaitIdle()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 2 || got[1] != (seen{store.DefaultProviderID, "", true, start.Add(2 * time.Hour)}) {
+		t.Fatalf("credit seen = %+v, want the success reported", got)
 	}
 }

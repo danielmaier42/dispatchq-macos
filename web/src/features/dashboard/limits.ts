@@ -54,18 +54,30 @@ export const noLimits = (l: ProviderLimits) => l.state === 'unsupported'
 // readFailed is a reading that should have worked and did not.
 export const readFailed = (l: ProviderLimits) => l.state === 'unavailable'
 
-// creditGone is a provider whose API credit balance is proven used up: a run
-// was refused with "Credit balance is too low" and its gate is still closed.
-// That is the only way the balance becomes known (see creditUnknown).
+// creditGone is a provider whose API credit balance is proven used up: a ping
+// or a run was refused with "Credit balance is too low" and its gate is still
+// closed, which it stays until a ping gets an answer (see creditText).
 export const creditGone = (p: LimitsEntry) => p.blocked?.reason === 'credit_exhausted'
 
-// creditUnknown is an API-key account whose balance nobody has proven empty:
-// the balance cannot be read, so it may be ample or nearly gone.
-export const creditUnknown = (p: LimitsEntry) => !!p.limits.api_key && !creditGone(p)
+export const creditHint =
+  'An API key spends prepaid credit, and Anthropic offers no way to read that balance. ' +
+  'DispatchQ proves it instead: a one-word ping once a day, and every run on the account. ' +
+  'An account refused for credit takes no work until a ping gets an answer; after topping it up, press Read now.'
 
-export const creditUnknownHint =
-  'An API key spends prepaid credit, and Anthropic offers no way to read that balance without an admin key. ' +
-  'DispatchQ only learns it is used up when a run is refused with "Credit balance is too low"; then this line says so.'
+// creditText is an API-key account's latest credit proof, in place of the
+// balance nobody can read; empty for any other account.
+export function creditText(p: LimitsEntry, now = Date.now()): string {
+  const c = p.credit
+  if (!p.limits.api_key) return ''
+  if (!c) return p.limits.reason || 'Credit not checked yet'
+  if (!c.status) return `Credit not checked yet. Last ping failed: ${c.ping_failed}`
+  const by = c.source === 'run' ? 'a run' : 'the ping'
+  const when = relTime(c.checked_at, now)
+  const failed = c.ping_failed ? ` Last ping failed: ${c.ping_failed}` : ''
+  if (c.status === 'ok') return `Credit OK · ${by} answered ${when}.${failed}`
+  if (c.status === 'credit_exhausted') return `${NO_CREDIT} · ${by} was refused ${when}.${failed}`
+  return `Billing refused · ${by} was refused ${when}.${failed}`
+}
 
 // blockText says what an account block means and when the provider is tried
 // again; empty for a provider that is not blocked by one. A used-up credit
@@ -74,10 +86,10 @@ export function blockText(p: LimitsEntry, now = Date.now()): string {
   const b = p.blocked
   if (!b?.reason) return ''
   if (b.reason === 'credit_exhausted') return NO_CREDIT
-  const retry = Date.parse(b.until) > now ? `tried again ${relTime(b.until, now)}` : 'tried again now'
   if (b.reason === 'billing_refused') {
-    return `Billing refused: the credit is used up or a spend limit was reached. Check the Anthropic Console; ${retry}.`
+    return 'Billing refused: the credit is used up or a spend limit was reached. Check the Anthropic Console, then press Read now.'
   }
+  const retry = Date.parse(b.until) > now ? `tried again ${relTime(b.until, now)}` : 'tried again now'
   return `Claude subscription access is disabled by the organisation; ${retry}.`
 }
 

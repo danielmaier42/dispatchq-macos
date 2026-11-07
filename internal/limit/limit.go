@@ -7,6 +7,7 @@
 package limit
 
 import (
+	"slices"
 	"sync"
 	"time"
 
@@ -19,6 +20,9 @@ type Gate struct {
 
 	mu           sync.Mutex
 	blockedUntil time.Time // zero => open
+	// plainUntil is the latest block without a reason: an ordinary limit's
+	// reset, which Lift must leave standing.
+	plainUntil time.Time
 	// reason names what closed the gate when that was more than a used-up
 	// allowance window (a provider.Block); it is only read while blocked.
 	reason string
@@ -48,6 +52,23 @@ func (g *Gate) BlockBecause(until time.Time, reason string) {
 	}
 	if reason != "" {
 		g.reason = reason
+	} else if until.After(g.plainUntil) {
+		g.plainUntil = until
+	}
+}
+
+// Lift ends an account block whose reason is one of reasons, once something
+// proved the account takes work again (a ping that got an answer). An ordinary
+// limit that also closed the gate keeps it closed until its own reset.
+func (g *Gate) Lift(reasons ...string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.reason == "" || !slices.Contains(reasons, g.reason) {
+		return
+	}
+	g.reason, g.blockedUntil = "", time.Time{}
+	if g.now().Before(g.plainUntil) {
+		g.blockedUntil = g.plainUntil
 	}
 }
 

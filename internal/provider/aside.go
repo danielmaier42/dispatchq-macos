@@ -79,3 +79,16 @@ func (a Aside) JSON() []byte {
 	}
 	return nil
 }
+
+// AccountBlockedError is an aside the account refused before any work was
+// done, for a reason a run would be refused for too: a used-up credit balance,
+// say. It is how a ping learns what only a refused run could tell before.
+type AccountBlockedError struct {
+	Block Block
+	// Detail is the harness's own words for the refusal.
+	Detail string
+}
+
+func (e *AccountBlockedError) Error() string {
+	return "the account refused the request: " + e.Detail
+}

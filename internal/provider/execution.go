@@ -107,8 +107,15 @@ func CheckExecution(reg *Registry, e Execution) error {
 	if err := CheckDistroName(e.Distro); err != nil {
 		return err
 	}
-	if e.User != "" && !wslUserRe.MatchString(e.User) {
-		return fmt.Errorf("Linux user %q is not a valid user name", e.User)
+	return CheckWSLUser(e.User)
+}
+
+// CheckWSLUser reports whether u can name a Linux user; empty is the
+// distribution's default user. Like the distribution, it reaches wsl.exe as an
+// argument of its own, so this refuses what could read as an option.
+func CheckWSLUser(u string) error {
+	if u != "" && !wslUserRe.MatchString(u) {
+		return fmt.Errorf("Linux user %q is not a valid user name", u)
 	}
 	return nil
 }

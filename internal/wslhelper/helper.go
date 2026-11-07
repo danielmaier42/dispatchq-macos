@@ -136,8 +136,12 @@ func errResult(err error) wslproto.Result {
 	return wslproto.Result{Error: err.Error(), NotFound: errors.Is(err, os.ErrNotExist)}
 }
 
-// home is the current user's home directory.
+// home is the current user's home directory. wsl.exe sets HOME for the user
+// it runs as; the user database is the fallback.
 func (h *Helper) home() string {
+	if d := os.Getenv("HOME"); strings.HasPrefix(d, "/") {
+		return d
+	}
 	if u, err := user.Current(); err == nil && u.HomeDir != "" {
 		return u.HomeDir
 	}

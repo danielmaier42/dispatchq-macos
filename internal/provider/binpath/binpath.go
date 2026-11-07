@@ -4,6 +4,8 @@
 package binpath
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,23 +51,68 @@ func CurrentWindowsCandidates(name string, extraHomeDirs ...string) []string {
 	return WindowsCandidates(name, home, os.Getenv("APPDATA"), os.Getenv("LOCALAPPDATA"), extraHomeDirs...)
 }
 
-// IsExecutableFile reports whether p is a file the OS can run. Unix decides by
-// the permission bits; Windows has none and decides by the extension, so a
-// stray text file named like the CLI does not pass.
-func IsExecutableFile(p string) bool {
+// runnableWindowsExts are the extensions Windows can start as a provider CLI:
+// a native binary, or a batch shim that [CommandContext] knows how to start
+// without handing an argument to cmd.exe as syntax. Broader than
+// [WindowsExts], which only lists what an install is searched for.
+var runnableWindowsExts = []string{".exe", ".cmd", ".bat"}
+
+// hostOS is the platform whose rules [CheckExecutable] applies. Only
+// [UseOSRulesForTest] changes it.
+var hostOS = runtime.GOOS
+
+var (
+	// ErrIsDirectory is returned by [CheckExecutable] for a directory.
+	ErrIsDirectory = errors.New("it is a directory")
+	// ErrNotExecutable is returned by [CheckExecutable] for a file the
+	// platform will not run.
+	ErrNotExecutable = errors.New("it is not executable")
+)
+
+// CheckExecutable reports why p cannot be run as a provider CLI, or nil when
+// it can. Unix decides by the permission bits. Windows has none (a file's mode
+// never carries an execute bit there) and decides by the extension, so a stray
+// text file named like the CLI does not pass. A failed stat is returned as it
+// is; callers that show the reason redact it.
+func CheckExecutable(p string) error {
 	fi, err := os.Stat(p)
-	if err != nil || fi.IsDir() {
-		return false
+	if err != nil {
+		return err
 	}
-	if runtime.GOOS == "windows" {
-		return hasWindowsExt(p)
-	}
-	return fi.Mode()&0o111 != 0
+	return checkMode(fi, p, hostOS)
 }
 
-func hasWindowsExt(p string) bool {
+func checkMode(fi os.FileInfo, p, goos string) error {
+	switch {
+	case fi.IsDir():
+		return ErrIsDirectory
+	case goos == "windows":
+		if !hasExt(p, runnableWindowsExts) {
+			return fmt.Errorf("%w: Windows runs only .exe, .cmd and .bat files", ErrNotExecutable)
+		}
+	case fi.Mode()&0o111 == 0:
+		return ErrNotExecutable
+	}
+	return nil
+}
+
+// IsExecutableFile reports whether p is a file the OS can run; see
+// [CheckExecutable].
+func IsExecutableFile(p string) bool { return CheckExecutable(p) == nil }
+
+// UseOSRulesForTest makes [CheckExecutable] apply goos's rules until the
+// returned function is called. It lets a test on one platform drive an
+// adapter's readiness check through another platform's rules; it must not be
+// used outside tests or from parallel tests.
+func UseOSRulesForTest(goos string) (restore func()) {
+	prev := hostOS
+	hostOS = goos
+	return func() { hostOS = prev }
+}
+
+func hasExt(p string, exts []string) bool {
 	ext := filepath.Ext(p)
-	for _, e := range WindowsExts {
+	for _, e := range exts {
 		if equalFold(ext, e) {
 			return true
 		}

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 // fakeProber answers the adapter's probes from a script keyed by the first
@@ -274,6 +275,52 @@ func TestCheckHealthToleratesNoiseAroundTheStatus(t *testing.T) {
 			}, p)
 			if h.State != provider.HealthReady {
 				t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
+			}
+		})
+	}
+}
+
+// TestCheckHealthAppliesThePlatformExecutableRule drives the readiness check
+// through both platforms' rules. Windows reports no execute bit on any file, so
+// a real claude.exe used to be refused as "not executable" while the CLI ran
+// fine from a terminal.
+func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
+	file := func(name string, mode os.FileMode) func(t *testing.T) string {
+		return func(t *testing.T) string {
+			p := filepath.Join(t.TempDir(), name)
+			if err := os.WriteFile(p, []byte("x"), mode); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+			return p
+		}
+	}
+	tests := []struct {
+		name   string
+		goos   string
+		path   func(t *testing.T) string
+		want   provider.HealthState
+		reason string
+	}{
+		{name: "windows exe without execute bits", goos: "windows", path: file("claude.exe", 0o600), want: provider.HealthReady},
+		{name: "windows npm cmd shim", goos: "windows", path: file("claude.CMD", 0o600), want: provider.HealthReady},
+		{name: "windows bat launcher", goos: "windows", path: file("claude.bat", 0o600), want: provider.HealthReady},
+		{name: "windows text file", goos: "windows", path: file("claude.txt", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows extensionless file", goos: "windows", path: file("claude", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows directory", goos: "windows", path: func(t *testing.T) string { return t.TempDir() }, want: provider.HealthNotInstalled, reason: "directory"},
+		{name: "windows missing file", goos: "windows", path: func(t *testing.T) string { return filepath.Join(t.TempDir(), "claude.exe") }, want: provider.HealthNotInstalled, reason: "cannot be run"},
+		{name: "unix exe name without execute bits", goos: "linux", path: file("claude.exe", 0o644), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "unix file with execute bits", goos: "darwin", path: file("claude", 0o755), want: provider.HealthReady},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := tc.path(t)
+			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
+			h := newAdapter("").CheckHealth(context.Background(), provider.Instance{ID: "claude", Kind: provider.KindClaudeCode, BinaryPath: bin, Enabled: true}, loggedIn())
+			if h.State != tc.want {
+				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
+			}
+			if !strings.Contains(h.Reason, tc.reason) {
+				t.Fatalf("reason = %q, want it to mention %q", h.Reason, tc.reason)
 			}
 		})
 	}

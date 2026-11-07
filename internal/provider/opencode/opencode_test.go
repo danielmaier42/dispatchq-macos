@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 func newAdapter(detected string) *Adapter {
@@ -279,5 +281,51 @@ func TestOperatorEnvironmentTravelsWithTheCommand(t *testing.T) {
 	}
 	if want := []string{"OPENROUTER_API_KEY=sk-secret"}; !reflect.DeepEqual(cmd.Env, want) {
 		t.Fatalf("env = %q, want %q", cmd.Env, want)
+	}
+}
+
+// TestCheckHealthAppliesThePlatformExecutableRule drives the readiness check
+// through both platforms' rules. Windows reports no execute bit on any file, so
+// a real opencode.exe used to be refused as "not executable" while the CLI ran
+// fine from a terminal.
+func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
+	file := func(name string, mode os.FileMode) func(t *testing.T) string {
+		return func(t *testing.T) string {
+			p := filepath.Join(t.TempDir(), name)
+			if err := os.WriteFile(p, []byte("x"), mode); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+			return p
+		}
+	}
+	tests := []struct {
+		name   string
+		goos   string
+		path   func(t *testing.T) string
+		want   provider.HealthState
+		reason string
+	}{
+		{name: "windows exe without execute bits", goos: "windows", path: file("opencode.exe", 0o600), want: provider.HealthReady},
+		{name: "windows npm cmd shim", goos: "windows", path: file("opencode.CMD", 0o600), want: provider.HealthReady},
+		{name: "windows bat launcher", goos: "windows", path: file("opencode.bat", 0o600), want: provider.HealthReady},
+		{name: "windows text file", goos: "windows", path: file("opencode.txt", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows extensionless file", goos: "windows", path: file("opencode", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows directory", goos: "windows", path: func(t *testing.T) string { return t.TempDir() }, want: provider.HealthNotInstalled, reason: "directory"},
+		{name: "windows missing file", goos: "windows", path: func(t *testing.T) string { return filepath.Join(t.TempDir(), "opencode.exe") }, want: provider.HealthNotInstalled, reason: "cannot be run"},
+		{name: "unix exe name without execute bits", goos: "linux", path: file("opencode.exe", 0o644), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "unix file with execute bits", goos: "darwin", path: file("opencode", 0o755), want: provider.HealthReady},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := tc.path(t)
+			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
+			h := newAdapter("").CheckHealth(context.Background(), instance(bin), &fakeProber{out: map[string][]byte{"--version": []byte("1.18.30\n")}})
+			if h.State != tc.want {
+				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
+			}
+			if !strings.Contains(h.Reason, tc.reason) {
+				t.Fatalf("reason = %q, want it to mention %q", h.Reason, tc.reason)
+			}
+		})
 	}
 }

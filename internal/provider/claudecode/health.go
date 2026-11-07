@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 // ResolveBinary implements provider.Adapter: the instance's configured path
@@ -144,16 +145,11 @@ func (a *Adapter) env(inst provider.Instance) []string {
 	return inst.Environ(base...)
 }
 
-// executableFile reports why a path cannot be run, or nil when it can.
+// executableFile reports why a path cannot be run, or nil when it can. The
+// platform rule lives in binpath; only the reason is redacted here.
 func executableFile(p string) error {
-	fi, err := os.Stat(p)
-	switch {
-	case err != nil:
+	if err := binpath.CheckExecutable(p); err != nil {
 		return fmt.Errorf("%s", redact(err.Error()))
-	case fi.IsDir():
-		return fmt.Errorf("it is a directory")
-	case fi.Mode()&0o111 == 0:
-		return fmt.Errorf("it is not executable")
 	}
 	return nil
 }

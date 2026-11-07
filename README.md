@@ -1915,7 +1915,7 @@ report or a wish into a GitHub issue without you having to write one.
 
 1. Say what is wrong, or what DispatchQ should be able to do — in whatever
    language you think in. The page offers a few examples to start from; picking
-   one only fills the message box.
+   one only fills the message box. **↵** sends; **⇧↵** starts a new line.
 2. Claude reads it and either asks one short clarifying question (at most twice,
    and only when the report cannot be acted on as it stands) or goes straight to
    a draft. This runs on the provider you chose under Settings → Assistant →

@@ -130,6 +130,12 @@ Section "DispatchQ" SecMain
   File "${STAGE}\dispatchq.ico"
   File "${STAGE}\LICENSE"
   File "${STAGE}\path-helper.ps1"
+  ; The Linux helper for providers that run in WSL, for both processor
+  ; architectures; only the one matching a distribution is ever started.
+  SetOutPath "$INSTDIR\wsl"
+  File "${STAGE}\wsl\dispatchq-wsl-linux-amd64"
+  File "${STAGE}\wsl\dispatchq-wsl-linux-arm64"
+  SetOutPath "$INSTDIR"
   ; Earlier PoC builds installed first-start notes; drop a leftover copy.
   Delete "$INSTDIR\INSTALL-WINDOWS.txt"
   WriteUninstaller "$INSTDIR\Uninstall DispatchQ.exe"
@@ -192,6 +198,9 @@ Section "Uninstall"
   ; Installed by earlier PoC builds.
   Delete "$INSTDIR\INSTALL-WINDOWS.txt"
   Delete "$INSTDIR\path-helper.ps1"
+  Delete "$INSTDIR\wsl\dispatchq-wsl-linux-amd64"
+  Delete "$INSTDIR\wsl\dispatchq-wsl-linux-arm64"
+  RMDir "$INSTDIR\wsl"
   Delete "$INSTDIR\Uninstall DispatchQ.exe"
   RMDir "$INSTDIR"
 

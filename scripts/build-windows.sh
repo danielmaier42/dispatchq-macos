@@ -149,6 +149,26 @@ for exe in dispatchqapp dispatchqd dispatchq; do
   [ "$got" = "$WIN_MACHINE" ] || { echo "build-windows: $exe.exe has PE machine $got, expected $WIN_MACHINE" >&2; exit 1; }
 done
 
+# The Linux helper for providers that run in WSL. Both architectures ship in
+# every installer: the distribution's processor decides which one runs, not the
+# installer's (an x64 installer also runs on Windows on Arm, whose distributions
+# are arm64). The daemon checks the ELF machine again before starting one.
+mkdir -p "$STAGE/wsl"
+for arch in amd64 arm64; do
+  GOOS=linux GOARCH="$arch" CGO_ENABLED=0 \
+    go build -trimpath -ldflags "$LDFLAGS" -o "$STAGE/wsl/dispatchq-wsl-linux-$arch" "$ROOT/cmd/dispatchq-wsl"
+done
+elf_machine() { # prints the e_machine of a 64-bit little-endian ELF file, in hex
+  [ "$(head -c 4 "$1" | od -An -tx1 | tr -d ' \n')" = "7f454c46" ] || return 1
+  [ "$(od -An -tx1 -j4 -N2 "$1" | tr -d ' \n')" = "0201" ] || return 1
+  od -An -tx1 -j18 -N2 "$1" | awk '{print $2 $1}'
+}
+for pair in amd64:003e arm64:00b7; do
+  arch="${pair%%:*}" want="${pair##*:}"
+  got="$(elf_machine "$STAGE/wsl/dispatchq-wsl-linux-$arch" || echo unreadable)"
+  [ "$got" = "$want" ] || { echo "build-windows: dispatchq-wsl-linux-$arch has ELF machine $got, expected $want" >&2; exit 1; }
+done
+
 cp "$ROOT/LICENSE" "$STAGE/LICENSE"
 cp "$ROOT/scripts/windows/path-helper.ps1" "$STAGE/path-helper.ps1"
 
@@ -184,6 +204,7 @@ cat > "$OUT/BUILD-INFO.json" <<JSON
   "go": "${GO_VERSION#go}",
   "target": "windows/$WIN_GOARCH",
   "payload_pe_machine": "0x$WIN_MACHINE",
+  "wsl_helpers_elf_machine": {"amd64": "0x3e", "arm64": "0xb7"},
   "installer_stub": "NSIS $(makensis -VERSION) x86 (32-bit)",
   "c_toolchain": "$TOOLCHAIN",
   "installer": "$SETUP",

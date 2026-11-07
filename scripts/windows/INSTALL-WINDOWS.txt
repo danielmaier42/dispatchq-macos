@@ -15,7 +15,9 @@ Requirements
   - Microsoft Edge WebView2 Runtime. Windows 11 includes it; the installer installs
     it when it is missing and the installer carries the bootstrapper.
   - A provider CLI you already use: Claude Code, Codex or OpenCode, installed natively
-    (not inside WSL) and signed in.
+    and signed in. WSL is not needed. Optionally a provider can run inside a WSL 2
+    Linux distribution instead (see "Providers in WSL" below); that CLI is installed
+    and signed in inside Linux.
 
 Install
   1. Double-click DispatchQ-<version>-windows-<x64|arm64>-setup.exe. No administrator rights
@@ -29,9 +31,34 @@ What gets installed
   - dispatchqd.exe     the background service; starts at every sign-in (registry value
                        HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DispatchQ)
   - dispatchq.exe      the command line; the install folder is added to your user PATH
+  - wsl\dispatchq-wsl-linux-amd64, wsl\dispatchq-wsl-linux-arm64
+                       Linux helpers, started only for a provider set to run in WSL
   - Start menu folder DispatchQ with the app and the uninstaller
   - Your data lives in %APPDATA%\dispatchq (tasks, history, settings, logs).
     The daemon's own log is %APPDATA%\dispatchq\dispatchqd.log.
+
+Providers in WSL (optional, untested on real WSL)
+  Settings > Providers > Add provider > Runs in: Linux (WSL). The choice is fixed once the
+  provider exists; a Windows provider and a Linux provider of the same CLI can sit side by
+  side. Nothing starts wsl.exe unless such a provider exists or you open that choice.
+  Check on the PC:
+  1. Without WSL installed: the daemon starts, native providers run, and Task Manager
+     shows no wsl.exe. "Runs in: Linux (WSL)" says WSL isn't installed.
+  2. With WSL 2: the distribution list appears; "Find the CLI in Linux" finds
+     ~/.local/bin/claude, never a Windows claude.exe; readiness says "Not logged in"
+     until you run "claude auth login" inside Linux, then Ready.
+  3. Cancel a running WSL job that started "sleep 600" children: "ps -ef" in Linux
+     shows none left; other Linux programs and the distribution keep running.
+  4. End dispatchqd.exe in Task Manager during a WSL run: within about 15 seconds the
+     Linux tree is gone (or the next daemon start removes it). Note which happened.
+  5. From a WSL run: "$DISPATCHQ_BIN" queue / publish --file ./out.md / notify work and
+     the artifact opens on Windows. With [interop] enabled=false in /etc/wsl.conf the
+     run still works and the CLI start fails with an interop message.
+  6. Folders: C:\repo and \\wsl.localhost\<distro>\home\you\repo on a Linux and on a
+     Windows provider; a pool of both skips the member that cannot open the folder.
+  7. A second Linux user (Linux user field) and a non-existent one (clear error).
+  8. ARM64 PC: the arm64 helper runs in an arm64 distribution (also from the x64
+     installer).
 
 Uninstall
   - Settings > Apps > Installed apps > DispatchQ > Uninstall, or the Start menu entry

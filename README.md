@@ -246,7 +246,48 @@ It reuses the same daemon, queue and dashboard. What differs on Windows:
 | Script jobs | run as PowerShell; a `#!` line is refused |
 | Keep awake | held while a run is active (the display may still sleep) |
 | Folder and save dialogs | the native Windows dialogs, opened by the daemon through PowerShell |
-| Not available | native notifications (Pushover, ntfy and webhooks work), wake from sleep, continue in a terminal, in-app update check and uninstall button, appearance pinning |
+| Providers in WSL | optional, per provider (see below); a PC without WSL is unaffected |
+| Not available | native notifications (Pushover, ntfy and webhooks work), wake from sleep, continue in a terminal, in-app update check and uninstall button, appearance pinning, script jobs in WSL |
+
+### Providers in WSL (optional)
+
+A provider can run inside a Linux distribution of the Windows Subsystem for
+Linux instead of in Windows. It is a property of one provider, chosen when you
+add it (Settings > Providers > Add provider > Runs in: Linux (WSL), or
+`dispatchq provider add ID --kind claude-code --wsl-distro Ubuntu [--wsl-user dm]`)
+and fixed afterwards: to run elsewhere, add another provider. So a Windows
+Claude and a Linux Claude sit side by side with their own sessions, readiness
+and limits, and a task, pool or fallback picks between them like any two
+providers.
+
+**Native Windows stays the default and needs no WSL.** Every existing and new
+provider runs in Windows unless you choose Linux for it. Nothing starts
+`wsl.exe` at start-up, for scheduling, readiness, models, limits or asides of a
+Windows provider; the dashboard asks for the distribution list only after you
+pick Linux. A test installs the WSL service with a recording fake `wsl.exe`
+and fails if a native provider's readiness, models, run, aside or folder check
+starts it. On macOS the choice does not exist.
+
+| | Linux (WSL) provider |
+| --- | --- |
+| Login and settings | the Linux ones: install the CLI and run `claude auth login` (or the Codex or OpenCode login) inside Linux as that user; nothing is copied between Windows and Linux |
+| Paths | binary and configuration directory are Linux paths (`~` is the Linux home); empty binary finds the CLI on the Linux login `PATH`, never a Windows `.exe` |
+| Task folders | stored as Windows sees them: `C:\repo` (opened as `/mnt/c/repo`, slower) or `\\wsl.localhost\Ubuntu\home\you\repo` (fast). A Linux path typed for a task that runs in exactly one distribution is stored as that share. A pool or fallback skips a provider that cannot open the task's folder; a provider named directly that cannot is refused when the task is saved |
+| How it runs | `wsl.exe --distribution D [--user U] --cd / --exec <helper> <operation>`, with nothing else on the command line. The program's arguments, environment (including API keys) and input go to DispatchQ's Linux helper as frames on its standard input, never on a command line, in a file or in `WSLENV` |
+| Helper | `dispatchq-wsl`, a static Linux program shipped for x86-64 and arm64 in both installers; the distribution's own processor picks it (an x64 installer on Windows on Arm still runs arm64 distributions), and its ELF machine is checked before it starts |
+| Cancel and watchdog | the helper stops the whole Linux process tree, then the Windows side ends `wsl.exe` |
+| Daemon gone | the helper stops the tree when its channel closes or when it hears nothing for 15 s (the daemon pings every 3 s). If the helper itself was killed, the next daemon start stops the trees of this installation whose helper is provably gone, checked by process start time; nothing else in Linux is touched, and DispatchQ never stops a distribution or WSL |
+| Follow-up jobs, artifacts, notifications | the run calls DispatchQ for Windows through WSL interop (`$DISPATCHQ_BIN`); Linux paths given to `--dir` and `--file` become Windows ones. No network port is opened. With interop off in the distribution, runs work but these calls fail |
+| Not supported | script jobs in WSL (scripts run in Windows; call `wsl.exe` from one), WSL 1 (warned), drive mounting off (the helper cannot be reached; the error says so) |
+
+Nothing of this has run on a real WSL installation yet. The transport, the
+helper's process-tree handling, cancel, daemon-death and clean-up are tested on
+macOS by running the real helper code behind a fake `wsl.exe` with real
+processes; whether `wsl.exe` forwards end of file and exit codes as documented,
+and how long a distribution takes to start, are checked on the PC
+([`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt), "Providers in
+WSL"). An older build ignores a provider's `[providers.execution]` table and
+would drop it when it rewrites the configuration; no released build has one.
 
 Platform layer: the Windows edition builds on the contributor's platform
 abstraction from [PR 159](https://github.com/danielmaier42/dispatchq-app/pull/159)

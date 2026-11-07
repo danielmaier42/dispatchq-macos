@@ -32,6 +32,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/aside"
 	"github.com/danielmaier42/claudeq/internal/assistant"
 	"github.com/danielmaier42/claudeq/internal/clock"
+	"github.com/danielmaier42/claudeq/internal/credit"
 	"github.com/danielmaier42/claudeq/internal/engine"
 	"github.com/danielmaier42/claudeq/internal/executor"
 	"github.com/danielmaier42/claudeq/internal/feedback"
@@ -226,6 +227,35 @@ func cmdRun(args []string) error {
 	// harness questions of dispatchq's own (see internal/aside); all go through
 	// the one runner, so they cannot drift apart in how they invoke a provider.
 	asides := &aside.Runner{Registry: registry}
+	// An API key's credit cannot be read, so it is proven: by a daily one-word
+	// ping and by every run. An account proven out of credit stays closed, also
+	// across a restart, until a ping gets an answer again.
+	credits := &credit.Monitor{
+		Store: st, Ask: asides, APIKey: limits.APIKey,
+		List: func() ([]provider.Instance, error) {
+			set, err := app.Providers(st)
+			if err != nil {
+				return nil, err
+			}
+			return set.All(), nil
+		},
+		Block: eng.BlockAccount, Lift: eng.LiftAccountBlock,
+		Logf: func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "dispatchqd: "+format+"\n", args...)
+		},
+	}
+	if err := credits.Restore(); err != nil {
+		fmt.Fprintln(os.Stderr, "dispatchqd:", err)
+	}
+	eng.SetCreditSeen(credits.RunSeen)
+	// The pings need to know which accounts are on an API key, which the first
+	// allowance reading finds out; the timer above takes it at once.
+	go func() {
+		if err := limits.RefreshAll(ctx); err != nil && ctx.Err() == nil {
+			fmt.Fprintln(os.Stderr, "dispatchqd: provider limits:", err)
+		}
+		credits.Run(ctx, provider.DefaultLimitsInterval)
+	}()
 	osVer := osVersion(system.Real{})
 	// The assistant runs the CLI that ships next to this daemon, the same one
 	// every run gets as DISPATCHQ_BIN, and tells the model where it is.
@@ -248,7 +278,7 @@ func cmdRun(args []string) error {
 			Feedback:     feedback.New(asides), OSVersion: osVer,
 			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st, CLI: cli, Runtime: rt}, cli, rt),
 			Review:    &review.Reviewer{Ask: asides},
-			Registry:  registry, Providers: checker, Limits: limits,
+			Registry:  registry, Providers: checker, Limits: limits, Credits: credits,
 			Uninstall: openUninstaller,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,

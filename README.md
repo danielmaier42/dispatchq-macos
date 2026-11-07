@@ -444,18 +444,26 @@ first. The window opens on the Dashboard:
   only the urgency value, without a running-task count; it turns
   green while the provider is above it. It is read without spending any usage
   (see [How much is left](#how-much-is-left)); the strip says how old the
-  reading is and **Read now** asks again. An account on an API key shows
-  *Credit balance unknown*: its prepaid credit cannot be read, so DispatchQ
-  claims neither that it has no limit nor that it has credit left. Once a run on
-  it is refused with *Credit balance is too low*, the line turns red and says
-  *No credit left* and nothing more. DispatchQ keeps trying the provider
-  quietly in the background, so no retry time is shown; the banner on top
-  reads only *No credit left*, and a rate limit on another provider keeps its
-  own banner beside it. A
-  billing refusal that does not name the credit balance (a spend limit set on
-  the account, say) pauses the provider the same way and reads *Billing
-  refused*. Settings and `dispatchq provider limits` keep showing *Credit
-  balance unknown*: only the running daemon knows that a run was refused.
+  reading is and **Read now** asks again. An account on an API key has no
+  balance anyone can read, so DispatchQ proves its credit instead: once a day
+  it sends the account a one-word ping (*Reply with the single word pong*, on
+  Haiku, a fraction of a cent when it answers and nothing when it is refused),
+  and every run on the account counts as a proof too. A ping that cannot reach
+  the account at all (no network at login, say) is no test and is tried again
+  an hour later. The line says what the
+  latest proof found and when: *Credit OK · the ping answered 3 h ago*, or
+  *No credit left · a run was refused 10 min ago*. Until the first ping it
+  reads *Credit balance unknown*. An account refused with *Credit balance is
+  too low* turns red and says *No credit left*; it takes no work until a ping
+  gets an answer again, also across a restart of the app, and its tasks go to
+  the next pool member or fallback at once. The next day's ping checks it
+  again; after topping up the credit, **Read now** pings every API-key account
+  at once and unlocks the account straight away. Opening the Dashboard and
+  **⌘R** do not ping. The banner on top reads only *No credit left*, and a rate
+  limit on another provider keeps its own banner beside it. A billing refusal
+  that does not name the credit balance (a spend limit set on the account,
+  say) pauses the provider the same way and reads *Billing refused*.
+  `dispatchq provider limits` shows the same latest proof.
   Right under it, the **Pool** card puts every
   [pool](#provider-pools) on one line, its members in the order a run started
   now would take them. Below that, cards in a fixed order: what is
@@ -748,11 +756,11 @@ per token through the API instead of drawing on the login's plan.
   `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` — use the configuration
   directory) and names starting with `DISPATCHQ_` or `CLAUDEQ_`.
 - **Limits and Usage.** A Claude provider with an `ANTHROPIC_API_KEY` (or
-  `ANTHROPIC_AUTH_TOKEN`) shows *Credit balance unknown* instead of plan
-  windows: the windows of a login it may also hold are not what it spends, and
-  the key's prepaid credit balance cannot be read. A used-up balance only shows
-  once a run is refused for it; then the provider pauses for an hour (see
-  [When the limit is reached](#when-the-limit-is-reached)). Its runs are
+  `ANTHROPIC_AUTH_TOKEN`) shows its credit proof instead of plan windows: the
+  windows of a login it may also hold are not what it spends, and the key's
+  prepaid credit balance cannot be read. DispatchQ pings it once a day and on
+  **Read now**; an account refused for credit pauses until a ping gets an
+  answer (see [When the limit is reached](#when-the-limit-is-reached)). Its runs are
   counted in Usage like any other, with the cost Claude Code reports, which for a
   key is what is actually billed. Subscription runs show the API-equivalent cost.
 
@@ -882,7 +890,7 @@ Reading them costs no tokens and none of the allowance.
 |---------|-----------------------------|---------------|
 | Claude | The usage endpoint Claude Code's own `/usage` screen reads, called with the login the CLI stored for that provider's configuration directory | 5 hours, week |
 | Codex | The CLI's own `codex app-server`, asked `account/rateLimits/read` with the provider's `CODEX_HOME` | whichever windows the account reports, one or two (5 hours, week) |
-| Claude on an API key | nothing: the prepaid credit balance of an `ANTHROPIC_API_KEY` cannot be read without an admin key | none, shown as *Credit balance unknown*; on the Dashboard *No credit left* once a run was refused for it |
+| Claude on an API key | nothing: the prepaid credit balance of an `ANTHROPIC_API_KEY` cannot be read without an admin key, so a daily one-word ping (and **Read now**) proves it | none; the latest proof instead, *Credit OK* or *No credit left*, with its time (*Credit balance unknown* before the first ping) |
 | opencode | nothing; it runs whatever backend it is pointed at | none, shown as *No limit* |
 
 The daemon reads them **when the Dashboard opens**, on **View → Refresh**
@@ -2017,8 +2025,11 @@ that.
   to spend, so the provider pauses exactly as it does on a limit — and its
   fallback takes the work. The pause is an hour, because such a block lifts
   through an admin or a billing change, never by waiting a few minutes; no reset
-  time is invented for it. The run says so instead of reading as a plain
-  failure.
+  time is invented for it. For an API key whose credit is used up or refused
+  for billing, the pause lasts until a ping gets an answer: the daily one, or
+  the one **Read now** on the Dashboard sends after a top-up. It is kept in
+  `state.json`, so a restart does not hand the account the next task. The run
+  says so instead of reading as a plain failure.
 - **A fallback provider skips the wait.** If the blocked provider names one (see
   [When the limit is reached](#when-the-limit-is-reached)), its tasks run there
   meanwhile — from the start, since a session belongs to the account that issued
@@ -2059,7 +2070,7 @@ Everything lives under `~/Library/Application Support/dispatchq` (override with 
 | `artifacts/<id>/<file>` | The published files themselves (snapshots copied at publish time). |
 | `notifications.json` | Outbox of notifications sent with `dispatchq notify`, waiting for the daemon to deliver them (normally empty). |
 | `inbox.json` | The last 200 notifications the daemon sent (title, message, kind, what each points at, read flag), as listed in the Notifications view. |
-| `state.json` | Machine bookkeeping: read/unread flags (runs and artifacts), which artifacts have been notified about, cron anchors, pending-resume sessions, the provider health you were last told about, which queue groups are folded shut, dismissed update version, the What's new edition you closed, whether the ClaudeQ rename check is done. |
+| `state.json` | Machine bookkeeping: read/unread flags (runs and artifacts), which artifacts have been notified about, cron anchors, pending-resume sessions, the provider health you were last told about, the latest credit proof of each API-key account (ping or run, answered or refused), which queue groups are folded shut, dismissed update version, the What's new edition you closed, whether the ClaudeQ rename check is done. |
 | `dispatchqd.out.log` / `dispatchqd.err.log` | Daemon stdout/stderr. |
 | `../claudeq` | After an update from ClaudeQ: a link from the old data folder to this one (see [Coming from ClaudeQ](#coming-from-claudeq)). |
 | `.lock` / `.daemon.lock` | Lock files, both empty of interest. `.lock` serializes config/state writes between the daemon and a `dispatchq` command; `.daemon.lock` holds the running daemon's pid and is what makes a second daemon on the same store refuse to start. Both are released when the holding process exits, so neither needs clearing by hand. |

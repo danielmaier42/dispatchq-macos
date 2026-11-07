@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -160,5 +161,35 @@ func TestParseAsideReportsTheHarnessesOwnFailure(t *testing.T) {
 func TestClaudeCodeClaimsAsides(t *testing.T) {
 	if !New().Capabilities().Asides {
 		t.Fatal("Claude Code implements asides, so it must claim the capability")
+	}
+}
+
+// TestParseAsideNamesACreditRefusal: an API key without credit answers a ping
+// with the envelope Claude Code prints for an empty account, and that has to
+// read as the account block, not as just another error.
+func TestParseAsideNamesACreditRefusal(t *testing.T) {
+	a := &Adapter{}
+	for _, tc := range []struct {
+		out  string
+		want provider.Block
+	}{
+		{`{"type":"result","subtype":"success","is_error":true,"result":"Credit balance is too low","terminal_reason":"api_error","api_error_status":400}`, provider.BlockCreditExhausted},
+		{`{"type":"result","subtype":"success","is_error":true,"result":"billing_error: your request was refused"}`, provider.BlockBillingRefused},
+	} {
+		_, err := a.ParseAside([]byte(tc.out))
+		var blocked *provider.AccountBlockedError
+		if !errors.As(err, &blocked) || blocked.Block != tc.want {
+			t.Fatalf("ParseAside(%s) = %v, want block %q", tc.out, err, tc.want)
+		}
+	}
+	for _, out := range []string{
+		`{"is_error":true,"result":"out of turns"}`,
+		`{"is_error":true,"result":"Could not reach the billing service, try again"}`,
+	} {
+		_, err := a.ParseAside([]byte(out))
+		var blocked *provider.AccountBlockedError
+		if errors.As(err, &blocked) {
+			t.Fatalf("an ordinary error read as an account block: %v", err)
+		}
 	}
 }

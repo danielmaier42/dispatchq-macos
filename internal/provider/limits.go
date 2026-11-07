@@ -182,6 +182,17 @@ func (m *LimitMonitor) Cached(inst Instance) (Limits, bool) {
 	return l, ok && len(l.Windows) > 0
 }
 
+// APIKey reports whether the last reading of inst found an account on an API
+// key. known is false until a reading said either way: a failed read or a
+// disabled instance says nothing about how the account logs in.
+func (m *LimitMonitor) APIKey(inst Instance) (apiKey, known bool) {
+	l, ok := m.cached(inst)
+	if !ok {
+		return false, false
+	}
+	return l.APIKey, l.APIKey || l.State == LimitsOK
+}
+
 // RefreshID reads the limits of the instance with this id now, regardless of
 // how recent the last reading is. The engine calls it when a run on that
 // instance ends, which is exactly when the figures have moved.

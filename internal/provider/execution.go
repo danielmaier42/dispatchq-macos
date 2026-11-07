@@ -86,7 +86,7 @@ func (e Execution) stored() *store.ProviderExecution {
 }
 
 // ErrWSLUnsupported is returned for a WSL instance where WSL cannot exist.
-var ErrWSLUnsupported = errors.New("Linux (WSL) providers exist only in DispatchQ for Windows")
+var ErrWSLUnsupported = errors.New("providers that run in Linux (WSL) exist only in DispatchQ for Windows")
 
 // wslUserRe is the shape of a Linux user name useradd accepts by default.
 var wslUserRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}\$?$`)
@@ -115,7 +115,7 @@ func CheckExecution(reg *Registry, e Execution) error {
 // argument of its own, so this refuses what could read as an option.
 func CheckWSLUser(u string) error {
 	if u != "" && !wslUserRe.MatchString(u) {
-		return fmt.Errorf("Linux user %q is not a valid user name", u)
+		return fmt.Errorf("%q is not a valid Linux user name", u)
 	}
 	return nil
 }

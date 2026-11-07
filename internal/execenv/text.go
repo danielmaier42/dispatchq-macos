@@ -59,11 +59,12 @@ func lines(s string) []string {
 
 // firstLine is the first non-empty line, for an error message.
 func firstLine(b []byte) string {
-	for _, l := range lines(decodeWSL(b)) {
-		if r := []rune(l); len(r) > 200 {
-			return string(r[:200]) + "…"
-		}
-		return l
+	ls := lines(decodeWSL(b))
+	if len(ls) == 0 {
+		return ""
 	}
-	return ""
+	if r := []rune(ls[0]); len(r) > 200 {
+		return string(r[:200]) + "…"
+	}
+	return ls[0]
 }

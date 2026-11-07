@@ -3,14 +3,14 @@ package codex
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"path"
+	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
-	toml "github.com/pelletier/go-toml/v2"
 )
 
 // configFileLimit bounds a configuration file read from another environment.

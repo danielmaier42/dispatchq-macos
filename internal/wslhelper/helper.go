@@ -448,10 +448,10 @@ func (h *Helper) runEnv(hdr wslproto.Header) []string {
 }
 
 func (h *Helper) workDir(cwd string) (string, error) {
-	switch {
-	case cwd == wslproto.CwdHome:
+	switch cwd {
+	case wslproto.CwdHome:
 		return h.home(), nil
-	case cwd == wslproto.CwdAside:
+	case wslproto.CwdAside:
 		d := path.Join(h.home(), ".cache", "dispatchq", "aside")
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return "", fmt.Errorf("preparing %s: %w", d, err)

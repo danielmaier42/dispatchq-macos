@@ -236,8 +236,11 @@ func (s *Service) bootstrap(ctx context.Context, e provider.Execution) (*target,
 	}
 	out, err = s.output(ctx, execArgs(e, "/usr/bin/wslpath", "-u", win)...)
 	linux := strings.TrimSpace(decodeWSL(out))
-	if err != nil || !strings.HasPrefix(linux, "/") {
-		return nil, fmt.Errorf("%s can't reach DispatchQ's helper at %s. Windows drives are probably not mounted there ([automount] enabled=false in /etc/wsl.conf); turn drive mounting on, or run this provider in Windows: %v", where(e), win, err)
+	if err == nil && !strings.HasPrefix(linux, "/") {
+		err = fmt.Errorf("wslpath answered %q", linux)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s can't reach DispatchQ's helper at %s. Windows drives are probably not mounted there ([automount] enabled=false in /etc/wsl.conf); turn drive mounting on, or run this provider in Windows: %w", where(e), win, err)
 	}
 	t := &target{helper: linux, arch: arch, expiresAt: time.Now().Add(targetTTL)}
 	info, err := s.call(ctx, e, t, wslproto.Header{Op: wslproto.OpInfo})

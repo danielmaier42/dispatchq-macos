@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
@@ -138,12 +137,4 @@ func (r *Runner) newID() string {
 		return r.NewID()
 	}
 	return randid.UUID()
-}
-
-func shorten(s string, n int) string {
-	s = strings.TrimSpace(s)
-	if len(s) <= n {
-		return s
-	}
-	return strings.TrimSpace(s[:n]) + "…"
 }

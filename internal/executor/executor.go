@@ -195,6 +195,19 @@ const wslSystemPrompt = `
 
 This run is inside a Linux system of the Windows Subsystem for Linux (WSL). "$DISPATCHQ_BIN" is DispatchQ for Windows, started through WSL's Windows interop; it accepts Linux paths for --dir and --file and turns them into Windows ones. If starting it fails with an exec format or interop error, Windows interop is off in this Linux system: say so in your final answer instead of retrying.`
 
+// WSL keeps POSIX shell syntax, but its store and notification owner is Windows.
+// Keep these replacements separate from the native PowerShell instructions.
+var wslRewrites = []string{
+	"dispatchq stores its data in the directory named by the DISPATCHQ_HOME environment variable (falling back to ~/Library/Application Support/dispatchq when unset).",
+	"The Windows daemon owns DispatchQ's data. DISPATCHQ_HOME names its Windows directory; do not invent a Linux-home fallback. For direct file access, translate that supplied Windows path with wslpath first. Use the provided Windows CLI bridge for queue operations.",
+	"(macOS Notification Center, and whichever",
+	"(Windows notifications, and whichever",
+	"no find /, find ~, rg --files ~, or mdfind without -onlyin. Such a sweep walks into Music, Photos, cloud-synced folders (~/Library/CloudStorage) and network volumes, and macOS answers with a privacy prompt that names DispatchQ, blocks the run until someone clicks, and looks to the operator as if DispatchQ were reading their private data. Find tools with command -v or their known install locations,",
+	"no find /, find ~, rg --files ~, or recursive sweeps of whole mounted Windows drives. Such a sweep crosses Linux files, Windows user folders, cloud-synced folders and network mounts; it may download files on demand, stall the run or read unrelated private data. Find tools with command -v or their known Linux install locations,",
+}
+
+var wslBuiltinSystemPrompt = strings.NewReplacer(wslRewrites...).Replace(builtinSystemPrompt) + wslSystemPrompt
+
 // powerShellRewrites turn the built-in prompt, written for a POSIX shell on
 // macOS, into what a native Windows run needs: PowerShell calls of the CLI,
 // Windows' data directory and notification center, and a disk-sweep warning
@@ -235,7 +248,7 @@ var hostGOOS = runtime.GOOS
 // POSIX systems get builtinSystemPrompt unchanged.
 func builtinPromptFor(h provider.Host) string {
 	if h != nil && !h.Execution().IsNative() {
-		return builtinSystemPrompt + wslSystemPrompt
+		return wslBuiltinSystemPrompt
 	}
 	if hostGOOS == "windows" {
 		return windowsBuiltinSystemPrompt

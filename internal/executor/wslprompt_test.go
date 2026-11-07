@@ -20,7 +20,7 @@ func TestSystemPromptNamesWSLOnlyForWSLRuns(t *testing.T) {
 			t.Errorf("native prompt changed for custom %q", custom)
 		}
 		got := systemPromptFor(wslStubHost{}, custom)
-		if !strings.Contains(got, wslSystemPrompt) || !strings.HasPrefix(got, builtinSystemPrompt) || !strings.HasSuffix(got, custom) {
+		if !strings.Contains(got, wslSystemPrompt) || !strings.HasPrefix(got, wslBuiltinSystemPrompt) || !strings.HasSuffix(got, custom) {
 			t.Errorf("WSL prompt for custom %q is wrong", custom)
 		}
 	}
@@ -38,6 +38,14 @@ func TestPowerShellRewritesMatchThePrompt(t *testing.T) {
 	for i := 0; i < len(powerShellRewrites); i += 2 {
 		if !strings.Contains(builtinSystemPrompt, powerShellRewrites[i]) {
 			t.Errorf("built-in prompt no longer contains %q; Windows runs would keep the macOS text", powerShellRewrites[i])
+		}
+	}
+}
+
+func TestWSLRewritesMatchThePrompt(t *testing.T) {
+	for i := 0; i < len(wslRewrites); i += 2 {
+		if !strings.Contains(builtinSystemPrompt, wslRewrites[i]) {
+			t.Errorf("built-in prompt no longer contains WSL rewrite %q", wslRewrites[i])
 		}
 	}
 }
@@ -70,7 +78,7 @@ func TestNativeWindowsPromptIsPowerShell(t *testing.T) {
 // the WSL notes, never the PowerShell one.
 func TestWSLRunOnWindowsKeepsThePOSIXPrompt(t *testing.T) {
 	withHostGOOS(t, "windows")
-	if got := systemPromptFor(wslStubHost{}, ""); got != builtinSystemPrompt+wslSystemPrompt {
+	if got := systemPromptFor(wslStubHost{}, ""); got != wslBuiltinSystemPrompt {
 		t.Error("WSL prompt on a Windows host is not the POSIX prompt plus the WSL notes")
 	}
 }

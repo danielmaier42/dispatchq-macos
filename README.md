@@ -282,7 +282,7 @@ starts it. On macOS the choice does not exist.
 | Helper | `dispatchq-wsl`, a static Linux program shipped for x86-64 and arm64 in both installers; the distribution's own processor picks it (an x64 installer on Windows on Arm still runs arm64 distributions), and its ELF machine is checked before it starts |
 | Cancel and watchdog | the helper stops the whole Linux process tree, then the Windows side ends `wsl.exe` |
 | Daemon gone | the helper stops the tree when its channel closes or when it hears nothing for 15 s (the daemon pings every 3 s). If the helper itself was killed, the next daemon start stops the trees of this installation whose helper is provably gone, checked by process start time; nothing else in Linux is touched, and DispatchQ never stops a distribution or WSL |
-| Follow-up jobs, artifacts, notifications | the run calls DispatchQ for Windows through WSL interop (`$DISPATCHQ_BIN`); Linux paths given to `--dir` and `--file` become Windows ones. No network port is opened. With interop off in the distribution, runs work but these calls fail |
+| Follow-up jobs, artifacts, notifications | the run calls DispatchQ for Windows through WSL interop (`$DISPATCHQ_BIN`); Linux paths given to `--dir` and `--file` become Windows ones. The run's guidance uses Linux shell commands; `DISPATCHQ_HOME` belongs to the Windows daemon and must be translated with `wslpath` for direct file access. No network port is opened. With interop off in the distribution, runs work but these calls fail |
 | Not supported | script jobs in WSL (scripts run in Windows; call `wsl.exe` from one), WSL 1 (warned), drive mounting off (the helper cannot be reached; the error says so) |
 
 Nothing of this has run on a real WSL installation yet. The transport, the

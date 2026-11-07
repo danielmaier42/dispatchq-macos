@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"mime"
 	"net/http"
 
 	"github.com/danielmaier42/claudeq/internal/assistant"
@@ -92,4 +93,46 @@ func (s *server) assistantTarget(job string) (provider.Instance, string, string)
 		return provider.Instance{}, "", name + " has no CLI installed; install it or choose another assistant provider in Settings"
 	}
 	return res.Instance, cfg.Settings.AssistantModel, ""
+}
+
+// assistantCLIRequest is a run_cli proposal the operator confirmed.
+type assistantCLIRequest struct {
+	Argv []string `json:"argv"`
+}
+
+// assistantCLIResult is what the command printed.
+type assistantCLIResult struct {
+	Output string `json:"output"`
+}
+
+// assistantCLI runs a dispatchq command the operator confirmed on an assistant
+// card. The assistant checks it against the CLI reference again, so only a
+// command the reference describes, without credentials, ever runs, and it runs
+// as a program with arguments, never through a shell. It carries the same
+// guards as uninstall: a page elsewhere in the browser must not be able to
+// run commands here.
+func (s *server) assistantCLI(w http.ResponseWriter, r *http.Request) {
+	if !loopbackHost(r.Host) {
+		writeErr(w, http.StatusForbidden, errors.New("commands are only accepted on 127.0.0.1"))
+		return
+	}
+	if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct != "application/json" {
+		writeErr(w, http.StatusUnsupportedMediaType, errors.New("expected a JSON body"))
+		return
+	}
+	if s.d.Assistant == nil {
+		writeErr(w, http.StatusServiceUnavailable, errors.New("the assistant is not available"))
+		return
+	}
+	var req assistantCLIRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	out, err := s.d.Assistant.RunCLI(r.Context(), req.Argv)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, assistantCLIResult{Output: out})
 }

@@ -109,17 +109,17 @@ func TestLookups(t *testing.T) {
 		label      string
 		want, lack []string
 	}{
-		{Lookup{LookupTask, "nightly-abc"}, "Read task nightly-abc", []string{"Prompt:\nWrite the report.", "run `run-2`", "run `run-1`"}, nil},
-		{Lookup{LookupTask, "nope"}, "Read task nope", []string{"No task with id \"nope\""}, nil},
-		{Lookup{LookupRun, "run-2"}, "Read run run-2", []string{"Final output:\nReport written.", "Reading the repo.", "[tool] Bash", "plain line", "artifact `art-1`"}, nil},
-		{Lookup{LookupRuns, "failed"}, "Listed runs \"failed\"", []string{"run-1"}, []string{"run-2"}},
-		{Lookup{LookupRuns, "nightly"}, "Listed runs \"nightly\"", []string{"run-1", "run-2"}, nil},
-		{Lookup{LookupRuns, "zzz"}, "Listed runs \"zzz\"", []string{"No run matches"}, nil},
-		{Lookup{LookupArtifact, "art-1"}, "Read artifact art-1", []string{"Weekly", "All green & fine."}, []string{"<h1>", "x{}"}},
-		{Lookup{LookupArtifacts, "weekly"}, "Listed artifacts \"weekly\"", []string{"art-1"}, nil},
-		{Lookup{LookupArtifacts, ""}, "Listed artifacts (newest)", []string{"art-1"}, nil},
-		{Lookup{LookupUsage, "7"}, "Checked usage", []string{"claude: 2 runs, $0.42", "failed 1", "success 1"}, nil},
-		{Lookup{"shell", "rm"}, "Unknown lookup shell", []string{"no lookup called"}, nil},
+		{Lookup{Tool: LookupTask, Arg: "nightly-abc"}, "Read task nightly-abc", []string{"Prompt:\nWrite the report.", "run `run-2`", "run `run-1`"}, nil},
+		{Lookup{Tool: LookupTask, Arg: "nope"}, "Read task nope", []string{"No task with id \"nope\""}, nil},
+		{Lookup{Tool: LookupRun, Arg: "run-2"}, "Read run run-2", []string{"Final output:\nReport written.", "Reading the repo.", "[tool] Bash", "plain line", "artifact `art-1`"}, nil},
+		{Lookup{Tool: LookupRuns, Arg: "failed"}, "Listed runs \"failed\"", []string{"run-1"}, []string{"run-2"}},
+		{Lookup{Tool: LookupRuns, Arg: "nightly"}, "Listed runs \"nightly\"", []string{"run-1", "run-2"}, nil},
+		{Lookup{Tool: LookupRuns, Arg: "zzz"}, "Listed runs \"zzz\"", []string{"No run matches"}, nil},
+		{Lookup{Tool: LookupArtifact, Arg: "art-1"}, "Read artifact art-1", []string{"Weekly", "All green & fine."}, []string{"<h1>", "x{}"}},
+		{Lookup{Tool: LookupArtifacts, Arg: "weekly"}, "Listed artifacts \"weekly\"", []string{"art-1"}, nil},
+		{Lookup{Tool: LookupArtifacts, Arg: ""}, "Listed artifacts (newest)", []string{"art-1"}, nil},
+		{Lookup{Tool: LookupUsage, Arg: "7"}, "Checked usage", []string{"claude: 2 runs, $0.42", "failed 1", "success 1"}, nil},
+		{Lookup{Tool: "shell", Arg: "rm"}, "Unknown lookup shell", []string{"no lookup called"}, nil},
 	} {
 		label, text := src.Lookup(ctx, tc.l)
 		if label != tc.label {

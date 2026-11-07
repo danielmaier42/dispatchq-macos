@@ -206,6 +206,7 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/uninstall", s.uninstall)
 	mux.HandleFunc("GET /api/assistant", s.getAssistant)
 	mux.HandleFunc("POST /api/assistant/turn", s.assistantTurn)
+	mux.HandleFunc("POST /api/assistant/cli", s.assistantCLI)
 	mux.HandleFunc("GET /api/feedback", s.getFeedback)
 	mux.HandleFunc("POST /api/feedback/turn", s.feedbackTurn)
 	mux.HandleFunc("POST /api/feedback/url", s.feedbackURL)

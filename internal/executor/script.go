@@ -26,6 +26,12 @@ import (
 // defaultShell runs a script that does not name its own interpreter.
 const defaultShell = "/bin/sh"
 
+// RunsScripts reports whether this build can run a script job on goos (a
+// runtime.GOOS value). runScript needs /bin/sh or a #! line, which a native
+// Windows system has neither of, so there it reports false until a Windows
+// script runner exists. The assistant reads this instead of assuming.
+func RunsScripts(goos string) bool { return goos != "windows" }
+
 // runScript executes a script task and classifies the outcome by its exit
 // status: zero is a success, anything else a failure. There is nothing to parse
 // — a script reports through its exit code, so dispatchq does not guess at its

@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -225,6 +226,13 @@ func cmdRun(args []string) error {
 	// harness questions of dispatchq's own (see internal/aside); all go through
 	// the one runner, so they cannot drift apart in how they invoke a provider.
 	asides := &aside.Runner{Registry: registry}
+	osVer := osVersion(system.Real{})
+	// The assistant runs the CLI that ships next to this daemon, the same one
+	// every run gets as DISPATCHQ_BIN, and tells the model where it is.
+	cliBin := resolveQueueBin()
+	cli := assistant.ExecCLI{Bin: cliBin}
+	rt := assistant.PlatformRuntime(runtime.GOOS, osVer(), executor.RunsScripts(runtime.GOOS))
+	rt.Version, rt.CLIPath, rt.DataDir = version.String(), cliBin, st.Home()
 
 	httpSrv := &http.Server{
 		Addr: *addr,
@@ -237,8 +245,8 @@ func cmdRun(args []string) error {
 			LimitedUntil: eng.LimitedUntil, BlockedProviders: eng.BlockedProviders, BlockReasons: eng.BlockReasons,
 			Holds: eng.Holds, RunningOn: eng.RunningOn,
 			NotifyStatus: notify.MacAuthorization,
-			Feedback:     feedback.New(asides), OSVersion: osVersion(system.Real{}),
-			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st}),
+			Feedback:     feedback.New(asides), OSVersion: osVer,
+			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st, CLI: cli, Runtime: rt}, cli, rt),
 			Review:    &review.Reviewer{Ask: asides},
 			Registry:  registry, Providers: checker, Limits: limits,
 			Uninstall: openUninstaller,

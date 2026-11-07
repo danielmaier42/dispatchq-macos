@@ -5,7 +5,7 @@ import {setPaused} from '@/features/settings/actions'
 import {openAddTask, openTaskEditor} from '@/features/task-editor/store'
 import {del, errorMessage, get, post, put} from '@/lib/api'
 import {invalidate, keys, queryClient} from '@/lib/queries'
-import type {AssistantAction, AssistantTaskDraft, QueueTask, TaskInput} from '@/lib/types'
+import type {AssistantAction, AssistantCLIResult, AssistantTaskDraft, QueueTask, TaskInput} from '@/lib/types'
 import {setCard, type Card} from './store'
 
 const NAVIGATION = new Set(['open_view', 'open_run', 'open_artifact', 'open_task'])
@@ -50,18 +50,39 @@ export async function runNavigation(a: AssistantAction) {
 }
 
 // draftInput turns the assistant's draft into the body the task form would
-// send. Only what the draft sets is included.
+// send. Only what the draft sets is included; a switch set to false is set.
 function draftInput(d: AssistantTaskDraft): Partial<TaskInput> {
   const out: Partial<TaskInput> = {}
-  for (const [k, v] of Object.entries(d)) if (v) (out as Record<string, unknown>)[k] = v
+  for (const [k, v] of Object.entries(d))
+    if (k !== 'clear' && v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))
+      (out as Record<string, unknown>)[k] = v
   return out
 }
 
 // merged is a task with an update_task draft applied, as PUT expects it whole.
-// A task runs on a provider or a pool, so naming a provider leaves the pool.
+// It follows `dispatchq edit`: a task runs on a provider or a pool, so naming
+// one leaves the other, and turning a job into a script drops what only a
+// model has.
 function merged(t: QueueTask, d: AssistantTaskDraft): QueueTask {
-  const next = {...t, ...draftInput(d)} as QueueTask
+  const next = {...t} as QueueTask
+  for (const k of d.clear ?? []) {
+    if (k === 'group') next.group = ''
+    else delete next[k]
+  }
+  // Naming a provider or a pool drops the old model unless the draft names one,
+  // so a model is never carried onto another harness.
+  if (d.provider || d.pool) delete next.model
+  Object.assign(next, draftInput(d))
   if (d.provider) delete next.pool
+  if (d.pool) delete next.provider
+  if (d.kind === 'script') {
+    delete next.provider
+    delete next.pool
+    delete next.model
+    delete next.reasoning_effort
+    next.permissions = 'default'
+    next.backfill = false
+  }
   return next
 }
 
@@ -69,14 +90,15 @@ function merged(t: QueueTask, d: AssistantTaskDraft): QueueTask {
 export async function confirmCard(entryId: number, index: number, card: Card) {
   setCard(entryId, index, {state: 'busy', error: undefined})
   try {
-    await apply(card.action)
-    setCard(entryId, index, {state: 'done'})
+    const output = await apply(card.action)
+    setCard(entryId, index, {state: 'done', output})
   } catch (e) {
     setCard(entryId, index, {state: 'failed', error: errorMessage(e)})
   }
 }
 
-async function apply(a: AssistantAction) {
+// apply carries out one proposal; a run_cli returns what the command printed.
+async function apply(a: AssistantAction): Promise<string | undefined> {
   const id = a.id ?? ''
   switch (a.type) {
     case 'add_task': {
@@ -114,6 +136,14 @@ async function apply(a: AssistantAction) {
     case 'resume_all':
       await setPaused(a.type === 'pause_all')
       return
+    case 'run_cli': {
+      // The daemon checks the command against the CLI reference again and
+      // runs it as a program, never through a shell.
+      const r = await post<AssistantCLIResult>('/api/assistant/cli', {argv: a.argv ?? []})
+      // A command can change anything the app shows.
+      void queryClient.invalidateQueries()
+      return r.output
+    }
   }
 }
 

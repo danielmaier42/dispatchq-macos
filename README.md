@@ -320,8 +320,8 @@ macOS by running the real helper code behind a fake `wsl.exe` with real
 processes; whether `wsl.exe` forwards end of file and exit codes as documented,
 and how long a distribution takes to start, are checked on the PC
 ([`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt), "Providers in
-WSL"). An older build ignores a provider's `[providers.execution]` table and
-would drop it when it rewrites the configuration; no released build has one.
+WSL"). A build older than 2.1.0 ignores a provider's `[providers.execution]`
+table and drops it when it rewrites the configuration.
 
 Platform layer: the Windows beta builds on a platform abstraction layer
 (`cmd/dispatchqd/platform.go`) that keeps operating-system specifics out of the
@@ -2262,7 +2262,8 @@ checks that the three programs carry the target's machine type.
 
 ## Architecture
 
-A headless Go daemon owns all state and logic; a thin WKWebView app is the only
+A headless Go daemon owns all state and logic; a thin WKWebView app on macOS or
+WebView2 app on Windows is the only
 UI, talking to the daemon over loopback. Runs go through a **provider adapter**:
 the daemon knows a task runs on a configured provider instance with a model and
 an access mode, and the adapter for that provider owns the rest. The Claude Code

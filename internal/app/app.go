@@ -57,6 +57,10 @@ var ErrUnknownDependency = errors.New("unknown job")
 // ErrInvalidDependency reports a job that exists but cannot be waited for.
 var ErrInvalidDependency = errors.New("cannot be waited for")
 
+// CheckDependencies is the check AddTask runs on t's dependencies, for a caller
+// that vets a task before it is added (the assistant's proposals).
+func CheckDependencies(s *store.Store, t task.Task) error { return checkDependencies(s, t) }
+
 // checkDependencies refuses a task that waits for a job dispatchq has never heard
 // of: it would wait for good, which in an unattended queue means a deliverable
 // that silently never appears.

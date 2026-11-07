@@ -194,7 +194,7 @@ func (s *Service) Turn(ctx context.Context, inst provider.Instance, model string
 		for _, l := range limit(ans.Lookups, maxLookupsPerRound) {
 			label, out := s.src.Lookup(ctx, l)
 			steps = append(steps, label)
-			fmt.Fprintf(&res, "\n### %s %s\n%s\n", l.Tool, strings.TrimSpace(l.Arg+" "+strings.Join(l.Argv, " ")), out)
+			fmt.Fprintf(&res, "\n### %s %s\n%s\n", l.Tool, strings.TrimSpace(l.Arg+" "+strings.Join(shownArgv(l.Argv), " ")), out)
 		}
 		if round == maxLookupRounds {
 			res.WriteString("\n[System note: no further lookups are possible for this message. Answer now with what you have.]")

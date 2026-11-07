@@ -111,7 +111,14 @@ type TaskDraft struct {
 	Backfill        *bool    `json:"backfill,omitempty"`
 	DependsOn       []string `json:"depends_on,omitempty"`
 	IncludeResults  *bool    `json:"include_results,omitempty"`
+	// Clear names settings update_task empties, as `dispatchq edit --group ""`
+	// does. An empty string elsewhere in the draft means "not set", because a
+	// schema-bound model fills fields it does not mean to change with "".
+	Clear []string `json:"clear,omitempty"`
 }
+
+// Clearable are the settings Clear may name.
+var Clearable = []string{"group", "provider", "pool", "model", "reasoning_effort"}
 
 // empty reports whether the draft sets nothing.
 func (d TaskDraft) empty() bool {
@@ -156,6 +163,7 @@ var schema = `{"type":"object","properties":{` +
 	`"quiet_history":{"type":"boolean"},` +
 	`"backfill":{"type":"boolean"},` +
 	`"depends_on":` + stringList + `,` +
-	`"include_results":{"type":"boolean"}}}},` +
+	`"include_results":{"type":"boolean"},` +
+	`"clear":{"type":"array","items":` + enum(Clearable) + `}}}},` +
 	`"required":["type"]}}},` +
 	`"required":["reply"]}`

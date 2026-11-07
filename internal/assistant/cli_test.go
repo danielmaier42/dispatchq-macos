@@ -10,7 +10,9 @@ import (
 	"testing"
 
 	"github.com/danielmaier42/claudeq/internal/cliref"
+	"github.com/danielmaier42/claudeq/internal/provider"
 	"github.com/danielmaier42/claudeq/internal/store"
+	"github.com/danielmaier42/claudeq/internal/task"
 )
 
 // Every command of the CLI is served somehow, and decided on purpose: a new
@@ -319,6 +321,8 @@ func TestCheckAppliesEveryTaskField(t *testing.T) {
 	src, dir := fixture(t)
 	cfg, _ := src.Store.LoadConfig()
 	cfg.Pools = append(cfg.Pools, store.Pool{ID: "night", Members: []store.PoolMember{{Provider: "claude"}}})
+	cfg.Tasks = append(cfg.Tasks, task.Task{ID: "once-abc", Name: "Once", Prompt: "p", WorkingDir: dir,
+		Trigger: task.TriggerASAP, Enabled: true, Permissions: task.PermissionsDefault})
 	if err := src.Store.SaveConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +331,7 @@ func TestCheckAppliesEveryTaskField(t *testing.T) {
 		ID: "follow-up", Name: "Follow-up", Kind: "agent", Prompt: "p", WorkingDir: dir, FixedAt: "2026-11-08T03:00:00+01:00",
 		Group: "Night", Pool: "night", Model: "opus", ReasoningEffort: "high", Permissions: "skip",
 		Parallel: &yes, NotifyOnResult: &yes, QuietHistory: &no, Backfill: &yes,
-		DependsOn: []string{"nightly-abc"}, IncludeResults: &yes,
+		DependsOn: []string{"once-abc"}, IncludeResults: &yes,
 	}
 	for _, tc := range []struct {
 		name    string
@@ -339,7 +343,7 @@ func TestCheckAppliesEveryTaskField(t *testing.T) {
 		{"provider and pool", Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, Pool: "night", Provider: "claude"}}, "not both"},
 		{"script with a model", Action{Type: ActionAddTask, Task: &TaskDraft{Kind: "script", Prompt: "echo", WorkingDir: dir, Model: "opus"}}, "cannot set model"},
 		{"script with skip", Action{Type: ActionAddTask, Task: &TaskDraft{Kind: "script", Prompt: "echo", WorkingDir: dir, Permissions: "skip"}}, "cannot skip"},
-		{"missing dependency", Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, DependsOn: []string{"gone"}}}, `no job "gone"`},
+		{"missing dependency", Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, DependsOn: []string{"gone"}}}, `unknown job "gone"`},
 		{"results without dependency", Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, IncludeResults: &yes}}, "needs depends_on"},
 		{"taken id", Action{Type: ActionAddTask, Task: &TaskDraft{ID: "nightly-abc", Prompt: "p", WorkingDir: dir}}, "already is a task"},
 		{"disable by update", Action{Type: ActionUpdateTask, ID: "nightly-abc", Task: &TaskDraft{Enabled: &no}}, ""},
@@ -357,5 +361,89 @@ func TestCheckAppliesEveryTaskField(t *testing.T) {
 	out, _ := src.Check(context.Background(), []Action{{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir}}})
 	if out[0].Task.Kind != "agent" {
 		t.Errorf("a draft without a kind is not shown as an agent job: %+v", out[0].Task)
+	}
+}
+
+// Review findings: what a refused or looked-up command shows never carries a
+// credential, whatever form the model wrote it in.
+func TestCredentialsNeverShown(t *testing.T) {
+	src, _ := fixture(t)
+	src.CLI = &fakeCLI{}
+	out, err := src.Check(context.Background(), []Action{
+		{Type: ActionRunCLI, Argv: []string{"dispatchq", "settings", "--pushover-token=SECRET1"}},
+		{Type: ActionRunCLI, Argv: []string{"/Applications/DispatchQ.app/Contents/MacOS/dispatchq", "provider", "edit", "claude", "--env", "KEY=SECRET2"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range out {
+		if shown := a.Command + strings.Join(a.Argv, " ") + a.Problem; strings.Contains(shown, "SECRET") {
+			t.Errorf("card shows a credential: %+v", a)
+		}
+	}
+	label, text := src.Lookup(context.Background(), Lookup{Tool: LookupCLI, Argv: []string{"dispatchq", "settings", "--ntfy-token", "SECRET3"}})
+	if strings.Contains(label+text, "SECRET") {
+		t.Errorf("lookup shows a credential: %q / %q", label, text)
+	}
+
+	ask := &stubAsker{answers: []provider.Aside{
+		validated(`{"reply":"","lookups":[{"tool":"cli","arg":"","argv":["settings","--webhook-url","https://h/SECRET4"]}]}`),
+		validated(`{"reply":"ok"}`),
+	}}
+	r, err := New(ask, src, nil, Runtime{}).Turn(context.Background(), claude, "", Request{Text: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(r.Steps, " ")+ask.reqs[1].Text, "SECRET") {
+		t.Errorf("a credential went back into the steps or the conversation: %q / %q", r.Steps, ask.reqs[1].Text)
+	}
+}
+
+func TestTaskDraftFollowsDispatchqEdit(t *testing.T) {
+	src, dir := fixture(t)
+	cfg, _ := src.Store.LoadConfig()
+	cfg.Tasks[0].Model, cfg.Tasks[0].Group, cfg.Tasks[0].Provider = "opus", "Night", "claude"
+	cfg.Tasks = append(cfg.Tasks, task.Task{ID: "done-once", Name: "Once", Prompt: "p", WorkingDir: dir,
+		Trigger: task.TriggerASAP, Enabled: true, Permissions: task.PermissionsDefault})
+	if err := src.Store.SaveConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	// A finished one-shot job, gone from the queue, is found in the history.
+	if err := src.Store.AppendRun(store.Run{RunID: "r-done", TaskID: "finished-job", Status: store.StatusSuccess}); err != nil {
+		t.Fatal(err)
+	}
+	no := false
+	var applied task.Task
+	check := func(a Action) Action {
+		t.Helper()
+		out, err := src.Check(context.Background(), []Action{a})
+		if err != nil || len(out) != 1 {
+			t.Fatalf("Check: %+v, %v", out, err)
+		}
+		return out[0]
+	}
+
+	d := &TaskDraft{Provider: "claude"}
+	applied, _ = findTask(cfg.Tasks, "nightly-abc")
+	if p := d.applyTo(&applied, cfg, berlin); p != "" || applied.Model != "" {
+		t.Errorf("a new provider kept the old model: %q, %+v", p, applied)
+	}
+	d = &TaskDraft{Clear: []string{"group", "model"}}
+	applied, _ = findTask(cfg.Tasks, "nightly-abc")
+	if p := d.applyTo(&applied, cfg, berlin); p != "" || applied.Group != "" || applied.Model != "" {
+		t.Errorf("clear left settings: %q, %+v", p, applied)
+	}
+
+	if a := check(Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, Enabled: &no}}); !strings.Contains(a.Problem, "always queued enabled") {
+		t.Errorf("a disabled new task was not refused: %q", a.Problem)
+	}
+	if a := check(Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, DependsOn: []string{"finished-job"}}}); a.Problem != "" {
+		t.Errorf("a finished job in the history could not be waited for: %q", a.Problem)
+	}
+	if a := check(Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, DependsOn: []string{"nightly-abc"}}}); !strings.Contains(a.Problem, "schedule") {
+		t.Errorf("waiting for a recurring job was not refused: %q", a.Problem)
+	}
+	if a := check(Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, DependsOn: []string{"gone"}}}); a.Problem == "" {
+		t.Error("waiting for an unknown job was not refused")
 	}
 }

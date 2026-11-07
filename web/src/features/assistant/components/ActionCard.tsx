@@ -162,6 +162,7 @@ function TaskDetails({draft, full}: {draft: AssistantTaskDraft; full: boolean}) 
   if (draft.permissions === 'skip') rows.push(['Permissions', 'May do anything'])
   else if (draft.permissions === 'default' && !full) rows.push(['Permissions', 'Default'])
   if (draft.depends_on?.length) rows.push(['Waits for', draft.depends_on.join(', ')])
+  if (draft.clear?.length) rows.push(['Cleared', draft.clear.join(', ')])
   const switches: [keyof AssistantTaskDraft, string][] = [
     ['enabled', 'Enabled'],
     ['parallel', 'Parallel'],

@@ -215,3 +215,22 @@ describe('full CLI parity on cards', () => {
     for (const k of ['provider', 'pool', 'model', 'reasoning_effort']) expect(body).not.toHaveProperty(k)
   })
 })
+
+describe('update semantics follow dispatchq edit', () => {
+  it('drops the old model when the provider changes and clears what the draft names', async () => {
+    api.post.mockResolvedValueOnce(
+      reply({actions: [{type: 'update_task', id: 't1', task: {provider: 'codex', clear: ['group']}}]}),
+    )
+    await say('move it to codex, out of its group')
+    const entry = useAssistant.getState().entries.at(-1)!
+    api.get.mockResolvedValueOnce([
+      {id: 't1', name: 'T', prompt: 'p', trigger: 'asap', provider: 'claude', model: 'opus', group: 'Night'},
+    ])
+    api.put.mockResolvedValueOnce({})
+    await confirmCard(entry.id, 0, entry.cards![0])
+    const body = api.put.mock.calls[0][1]
+    expect(body).toMatchObject({provider: 'codex', group: ''})
+    expect(body).not.toHaveProperty('model')
+    expect(body).not.toHaveProperty('clear')
+  })
+})

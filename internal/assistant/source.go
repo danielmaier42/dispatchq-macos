@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielmaier42/claudeq/internal/app"
 	"github.com/danielmaier42/claudeq/internal/cliref"
 	"github.com/danielmaier42/claudeq/internal/store"
 	"github.com/danielmaier42/claudeq/internal/task"
@@ -248,7 +249,7 @@ func (s *StoreSource) Lookup(ctx context.Context, l Lookup) (string, string) {
 
 func (s *StoreSource) lookupCLI(ctx context.Context, argv []string) (string, string) {
 	p, err := checkCLI(argv, true)
-	label := "Ran dispatchq " + oneLine(strings.Join(argv, " "), 120)
+	label := "Ran dispatchq " + oneLine(strings.Join(shownArgv(argv), " "), 120)
 	if err != nil {
 		return label, "Not run: " + err.Error()
 	}
@@ -684,6 +685,20 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 					a.Task.Kind = string(task.KindAgent)
 				}
 				a.Problem = a.Task.applyTo(&t, cfg, loc)
+				if a.Problem == "" && a.Task.Enabled != nil && !*a.Task.Enabled {
+					// The queue files every new task enabled; a disabled
+					// one is an add and then an update, never a task that
+					// could start in between.
+					a.Problem = "A new task is always queued enabled; add it, then disable it."
+				}
+				if a.Problem == "" && len(a.Task.Clear) > 0 {
+					a.Problem = "A new task has nothing to clear."
+				}
+				if a.Problem == "" {
+					if err := app.CheckDependencies(s.Store, t); err != nil {
+						a.Problem = err.Error()
+					}
+				}
 				a.Label = t.Name
 			}
 			a.ID, a.View = "", ""
@@ -694,7 +709,7 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 			if err != nil {
 				// A refused command is shown as it was proposed, without
 				// any credential in it, and cannot be run from the card.
-				a.Argv = cliref.Redact(a.Argv)
+				a.Argv = shownArgv(a.Argv)
 				a.Command = "dispatchq " + strings.Join(a.Argv, " ")
 				a.Problem = err.Error()
 				break
@@ -774,8 +789,21 @@ func (d *TaskDraft) applyTo(t *task.Task, cfg store.Config, loc *time.Location) 
 	if d.Group != "" {
 		t.Group = d.Group
 	}
-	if d.Model != "" {
-		t.Model = d.Model
+	for _, c := range d.Clear {
+		switch c {
+		case "group":
+			t.Group = ""
+		case "provider":
+			t.Provider = ""
+		case "pool":
+			t.Pool = ""
+		case "model":
+			t.Model = ""
+		case "reasoning_effort":
+			t.ReasoningEffort = ""
+		default:
+			return strconv.Quote(c) + " cannot be cleared."
+		}
 	}
 	if d.ReasoningEffort != "" {
 		t.ReasoningEffort = d.ReasoningEffort
@@ -786,17 +814,23 @@ func (d *TaskDraft) applyTo(t *task.Task, cfg store.Config, loc *time.Location) 
 	if d.Provider != "" && d.Pool != "" {
 		return "A task runs on a provider or on a pool, not both."
 	}
+	// Like `dispatchq edit`: naming a provider or a pool leaves the other, and
+	// drops the old model unless the draft names one, so a Claude model is
+	// never carried onto another harness.
 	if d.Provider != "" {
 		if !slices.ContainsFunc(cfg.Providers, func(p store.Provider) bool { return p.ID == d.Provider }) {
 			return "There is no provider " + strconv.Quote(d.Provider) + "."
 		}
-		t.Provider, t.Pool = d.Provider, ""
+		t.Provider, t.Pool, t.Model = d.Provider, "", ""
 	}
 	if d.Pool != "" {
 		if !slices.ContainsFunc(cfg.Pools, func(p store.Pool) bool { return p.ID == d.Pool }) {
 			return "There is no pool " + strconv.Quote(d.Pool) + "."
 		}
-		t.Pool, t.Provider = d.Pool, ""
+		t.Pool, t.Provider, t.Model = d.Pool, "", ""
+	}
+	if d.Model != "" {
+		t.Model = d.Model
 	}
 	for _, sw := range []struct {
 		from *bool
@@ -812,11 +846,6 @@ func (d *TaskDraft) applyTo(t *task.Task, cfg store.Config, loc *time.Location) 
 	if len(d.DependsOn) > 0 {
 		if !isNew && !slices.Equal(d.DependsOn, t.DependsOn) {
 			return "Dependencies are fixed when a task is queued."
-		}
-		for _, dep := range d.DependsOn {
-			if _, ok := findTask(cfg.Tasks, dep); !ok {
-				return "There is no job " + strconv.Quote(dep) + " to wait for."
-			}
 		}
 		t.DependsOn = d.DependsOn
 	}

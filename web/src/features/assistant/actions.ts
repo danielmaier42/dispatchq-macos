@@ -54,7 +54,7 @@ export async function runNavigation(a: AssistantAction) {
 function draftInput(d: AssistantTaskDraft): Partial<TaskInput> {
   const out: Partial<TaskInput> = {}
   for (const [k, v] of Object.entries(d))
-    if (v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))
+    if (k !== 'clear' && v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))
       (out as Record<string, unknown>)[k] = v
   return out
 }
@@ -64,7 +64,15 @@ function draftInput(d: AssistantTaskDraft): Partial<TaskInput> {
 // one leaves the other, and turning a job into a script drops what only a
 // model has.
 function merged(t: QueueTask, d: AssistantTaskDraft): QueueTask {
-  const next = {...t, ...draftInput(d)} as QueueTask
+  const next = {...t} as QueueTask
+  for (const k of d.clear ?? []) {
+    if (k === 'group') next.group = ''
+    else delete next[k]
+  }
+  // Naming a provider or a pool drops the old model unless the draft names one,
+  // so a model is never carried onto another harness.
+  if (d.provider || d.pool) delete next.model
+  Object.assign(next, draftInput(d))
   if (d.provider) delete next.pool
   if (d.pool) delete next.provider
   if (d.kind === 'script') {

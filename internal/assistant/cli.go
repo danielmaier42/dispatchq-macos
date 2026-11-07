@@ -86,10 +86,7 @@ const secretHandoff = "Credentials never pass through the assistant: enter them 
 // against what the assistant may do with it: a lookup only reads, an action
 // only runs what has no action of its own.
 func checkCLI(argv []string, lookup bool) (cliref.Parsed, error) {
-	argv = slices.Clone(argv)
-	if len(argv) > 0 && (argv[0] == "dispatchq" || strings.HasSuffix(argv[0], "/dispatchq") || strings.HasSuffix(argv[0], `\dispatchq.exe`)) {
-		argv = argv[1:]
-	}
+	argv = withoutProgram(argv)
 	// A command the assistant serves otherwise says so first, whatever its
 	// flags: `edit ID` is update_task even before it has any.
 	if c, _, ok := cliref.Lookup(argv); ok {
@@ -120,6 +117,20 @@ func checkCLI(argv []string, lookup bool) (cliref.Parsed, error) {
 	}
 	return p, nil
 }
+
+// withoutProgram drops a leading program name the model may have written.
+func withoutProgram(argv []string) []string {
+	argv = slices.Clone(argv)
+	if len(argv) > 0 && (argv[0] == "dispatchq" || strings.HasSuffix(argv[0], "/dispatchq") ||
+		strings.HasSuffix(argv[0], `\dispatchq`) || strings.HasSuffix(argv[0], `\dispatchq.exe`)) {
+		argv = argv[1:]
+	}
+	return argv
+}
+
+// shownArgv is a command line as it may be shown or repeated: without the
+// program name and without any credential in it.
+func shownArgv(argv []string) []string { return cliref.Redact(withoutProgram(argv)) }
 
 func onlyJSON(p cliref.Parsed) bool {
 	for _, f := range p.Flags {

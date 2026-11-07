@@ -700,7 +700,11 @@ export interface AssistantTaskDraft {
   backfill?: boolean
   depends_on?: string[]
   include_results?: boolean
+  // update_task: settings to empty, as `dispatchq edit --group ""` does.
+  clear?: AssistantClearable[]
 }
+
+export type AssistantClearable = 'group' | 'provider' | 'pool' | 'model' | 'reasoning_effort'
 
 // open_* happen at once; every other type is a proposal the operator confirms.
 export type AssistantActionType =

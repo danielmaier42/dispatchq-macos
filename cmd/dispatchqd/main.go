@@ -231,7 +231,7 @@ func cmdRun(args []string) error {
 	// every run gets as DISPATCHQ_BIN, and tells the model where it is.
 	cliBin := resolveQueueBin()
 	cli := assistant.ExecCLI{Bin: cliBin}
-	rt := assistant.PlatformRuntime(runtime.GOOS, osVer())
+	rt := assistant.PlatformRuntime(runtime.GOOS, osVer(), executor.RunsScripts(runtime.GOOS))
 	rt.Version, rt.CLIPath, rt.DataDir = version.String(), cliBin, st.Home()
 
 	httpSrv := &http.Server{
@@ -246,7 +246,7 @@ func cmdRun(args []string) error {
 			Holds: eng.Holds, RunningOn: eng.RunningOn,
 			NotifyStatus: notify.MacAuthorization,
 			Feedback:     feedback.New(asides), OSVersion: osVer,
-			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st, CLI: cli}, cli, rt),
+			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st, CLI: cli, Runtime: rt}, cli, rt),
 			Review:    &review.Reviewer{Ask: asides},
 			Registry:  registry, Providers: checker, Limits: limits,
 			Uninstall: openUninstaller,

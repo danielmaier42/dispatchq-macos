@@ -90,7 +90,7 @@ func TestMinuteNotificationScriptEndToEnd(t *testing.T) {
 			"name": "Minütliche Test-Notification", "kind": "script", "prompt": script, "cron": "* * * * *",
 		}}},
 	})
-	rt := PlatformRuntime("darwin", "15.6")
+	rt := PlatformRuntime("darwin", "15.6", true)
 	rt.CLIPath, rt.DataDir = bin, home
 	ask := &promptCheckingAsker{t: t, answer: string(draft), needs: []string{
 		"dispatchq notify [--title T] [--message M] [--url U]",

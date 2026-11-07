@@ -32,24 +32,31 @@ type Runtime struct {
 	CLIPath string
 	// DataDir is where DispatchQ keeps its data.
 	DataDir string
-	// Shell is how script jobs run.
+	// Shell is this system's shell: how script jobs run, and how a command
+	// is written for the operator or an agent job.
 	Shell Shell
+	// NoScripts says this DispatchQ cannot run script jobs on this system.
+	NoScripts bool
 	// NativeNotifications names the system's own notification center, empty
 	// when DispatchQ cannot post there on this system.
 	NativeNotifications string
 }
 
 // PlatformRuntime is the runtime the daemon describes for an operating system
-// (a runtime.GOOS value). The caller adds the paths and the version.
-func PlatformRuntime(goos, osVersion string) Runtime {
+// (a runtime.GOOS value). runsScripts is what the executor reports for it. The
+// caller adds the paths and the version.
+func PlatformRuntime(goos, osVersion string, runsScripts bool) Runtime {
+	var rt Runtime
 	switch goos {
 	case "darwin":
-		return Runtime{OS: strings.TrimSpace("macOS " + osVersion), Shell: ShellPOSIX, NativeNotifications: "macOS Notification Center"}
+		rt = Runtime{OS: strings.TrimSpace("macOS " + osVersion), Shell: ShellPOSIX, NativeNotifications: "macOS Notification Center"}
 	case "windows":
-		return Runtime{OS: strings.TrimSpace("Windows " + osVersion), Shell: ShellPowerShell}
+		rt = Runtime{OS: strings.TrimSpace("Windows " + osVersion), Shell: ShellPowerShell}
 	default:
-		return Runtime{OS: strings.TrimSpace(goos + " " + osVersion), Shell: ShellPOSIX}
+		rt = Runtime{OS: strings.TrimSpace(goos + " " + osVersion), Shell: ShellPOSIX}
 	}
+	rt.NoScripts = !runsScripts
+	return rt
 }
 
 // cliCall is how a script job calls the CLI, and an example that sends a
@@ -77,13 +84,19 @@ func (rt Runtime) environment() string {
 		b.WriteString("- The dispatchq command line was not found next to the app: run_cli and cli lookups fail, and a script cannot rely on it. Say so instead of inventing a path.\n")
 	}
 	call, example := rt.cliCall()
-	if rt.Shell == ShellPowerShell {
-		b.WriteString("- A script job (kind \"script\") is PowerShell, run in the task's working directory with no window and no input. Write PowerShell, never Bash; Windows paths and $env:NAME variables.\n")
-		b.WriteString("- This is not a Mac: never suggest macOS tools such as osascript, open or pbcopy, and never macOS paths.\n")
-	} else {
+	switch {
+	case rt.NoScripts:
+		b.WriteString("- This DispatchQ cannot run script jobs (kind \"script\") on this system: never propose one. A job that must run commands is an agent job; say so when the operator asks for a script.\n")
+	case rt.Shell == ShellPowerShell:
+		b.WriteString("- A script job (kind \"script\") is PowerShell, run in the task's working directory with no window and no input.\n")
+	default:
 		b.WriteString("- A script job (kind \"script\") is written to a file and run by /bin/sh, or by the interpreter its #! line names, in the task's working directory with no terminal and no input. Write POSIX sh unless a #! line says otherwise.\n")
 	}
-	fmt.Fprintf(&b, "- Inside every job DISPATCHQ_BIN holds the CLI's absolute path. A script calls the CLI as %s, never a bare dispatchq (it is not on the job's PATH). For example, a notification with the current time:\n    %s\n", call, example)
+	if rt.Shell == ShellPowerShell {
+		b.WriteString("- Commands on this system are PowerShell, never Bash; Windows paths and $env:NAME variables.\n")
+		b.WriteString("- This is not a Mac: never suggest macOS tools such as osascript, open or pbcopy, and never macOS paths.\n")
+	}
+	fmt.Fprintf(&b, "- Inside every job DISPATCHQ_BIN holds the CLI's absolute path. A job calls the CLI as %s, never a bare dispatchq (it is not on the job's PATH). For example, a notification with the current time:\n    %s\n", call, example)
 	b.WriteString("- Quote every value the shell must not split or expand: names, messages, paths with spaces, quotes or non-ASCII text.\n")
 	b.WriteString("- Notify through dispatchq notify, never through a system tool of your own choosing.\n")
 	if rt.NativeNotifications != "" {

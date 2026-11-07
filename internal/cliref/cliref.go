@@ -436,6 +436,22 @@ func (p Parsed) String() string {
 	return strings.Join(words, " ")
 }
 
+// PowerShell is the command line as typed in PowerShell, each word quoted
+// that PowerShell would otherwise read differently.
+func (p Parsed) PowerShell() string {
+	words := []string{"dispatchq"}
+	for _, w := range p.Argv() {
+		// PowerShell may drop a bare -- before a native command sees it.
+		if w == "" || w == "--" || strings.IndexFunc(w, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("-_./=:", r)
+		}) >= 0 {
+			w = QuotePowerShell(w)
+		}
+		words = append(words, w)
+	}
+	return strings.Join(words, " ")
+}
+
 // QuotePOSIX quotes s for a POSIX shell, leaving plain words alone.
 func QuotePOSIX(s string) string {
 	plain := func(r rune) bool {

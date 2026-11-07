@@ -30,6 +30,9 @@ type StoreSource struct {
 	CLI CLI
 	// Now is the clock; nil uses time.Now. Its location is the operator's.
 	Now func() time.Time
+	// Runtime is the machine: its shell writes a card's command, and a
+	// script job is refused where none can run.
+	Runtime Runtime
 }
 
 // How much of the state every message carries. The overview is a map, not the
@@ -670,6 +673,9 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 			if keep {
 				a.Label = t.Name
 				a.Problem = a.Task.applyTo(&t, cfg, loc)
+				if a.Problem == "" {
+					a.Problem = s.scriptProblem(t)
+				}
 			}
 			a.View = ""
 		case ActionAddTask:
@@ -690,6 +696,9 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 					// one is an add and then an update, never a task that
 					// could start in between.
 					a.Problem = "A new task is always queued enabled; add it, then disable it."
+				}
+				if a.Problem == "" {
+					a.Problem = s.scriptProblem(t)
 				}
 				if a.Problem == "" && len(a.Task.Clear) > 0 {
 					a.Problem = "A new task has nothing to clear."
@@ -715,6 +724,9 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 				break
 			}
 			a.Argv, a.Command = p.Argv(), p.String()
+			if s.Runtime.Shell == ShellPowerShell {
+				a.Command = p.PowerShell()
+			}
 			a.Danger = p.Command.Access == cliref.Destructive
 			a.Label = p.Command.Help
 		case ActionPauseAll:
@@ -750,6 +762,31 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 // applied (so the app files exactly what was checked), and reports why the
 // result could not be filed, "" when it can. It follows `dispatchq edit`:
 // turning a job into a script drops what only a model has, and naming a
+// sets reports whether the draft names a value for the setting Clear calls c.
+func (d *TaskDraft) sets(c string) bool {
+	switch c {
+	case "group":
+		return d.Group != ""
+	case "provider":
+		return d.Provider != ""
+	case "pool":
+		return d.Pool != ""
+	case "model":
+		return d.Model != ""
+	case "reasoning_effort":
+		return d.ReasoningEffort != ""
+	}
+	return false
+}
+
+// scriptProblem refuses a script job where this DispatchQ cannot run one.
+func (s *StoreSource) scriptProblem(t task.Task) string {
+	if t.IsScript() && s.Runtime.NoScripts {
+		return "This DispatchQ cannot run script jobs on this system; make it an agent job."
+	}
+	return ""
+}
+
 // provider leaves a pool and the other way round.
 func (d *TaskDraft) applyTo(t *task.Task, cfg store.Config, loc *time.Location) string {
 	isNew := t.ID == "draft"
@@ -788,6 +825,11 @@ func (d *TaskDraft) applyTo(t *task.Task, cfg store.Config, loc *time.Location) 
 	}
 	if d.Group != "" {
 		t.Group = d.Group
+	}
+	for _, c := range d.Clear {
+		if d.sets(c) {
+			return "A draft cannot both set and clear " + c + "."
+		}
 	}
 	for _, c := range d.Clear {
 		switch c {

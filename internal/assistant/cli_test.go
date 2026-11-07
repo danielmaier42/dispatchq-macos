@@ -119,7 +119,7 @@ func TestSchemaOffersEveryDraftField(t *testing.T) {
 }
 
 func TestSystemPromptCarriesTheWholeCLI(t *testing.T) {
-	rt := PlatformRuntime("darwin", "15.6")
+	rt := PlatformRuntime("darwin", "15.6", true)
 	rt.CLIPath = "/Applications/DispatchQ.app/Contents/MacOS/dispatchq"
 	p := systemPrompt(rt)
 	for _, c := range cliref.Commands() {
@@ -153,7 +153,7 @@ func TestSystemPromptCarriesTheWholeCLI(t *testing.T) {
 }
 
 func TestSystemPromptFollowsThePlatform(t *testing.T) {
-	win := PlatformRuntime("windows", "11")
+	win := PlatformRuntime("windows", "11", true)
 	win.CLIPath = `C:\Program Files\DispatchQ\dispatchq.exe`
 	p := systemPrompt(win)
 	for _, want := range []string{
@@ -171,7 +171,7 @@ func TestSystemPromptFollowsThePlatform(t *testing.T) {
 		}
 	}
 
-	mac := PlatformRuntime("darwin", "15.6")
+	mac := PlatformRuntime("darwin", "15.6", true)
 	mac.CLIPath = "/Users/a b/Dispatch Q.app/Contents/MacOS/dispatchq"
 	if p := systemPrompt(mac); !strings.Contains(p, `'/Users/a b/Dispatch Q.app/Contents/MacOS/dispatchq'`) {
 		t.Error("a CLI path with spaces is not quoted for the shell")
@@ -447,5 +447,44 @@ func TestTaskDraftFollowsDispatchqEdit(t *testing.T) {
 	}
 	if a := check(Action{Type: ActionAddTask, Task: &TaskDraft{Prompt: "p", WorkingDir: dir, DependsOn: []string{"gone"}}}); a.Problem == "" {
 		t.Error("waiting for an unknown job was not refused")
+	}
+}
+
+// Second review: what the executor cannot run is never proposed, a draft never
+// both sets and clears a setting, and a card's command reads right in the
+// system's shell.
+func TestRuntimeLimitsAndShellOnCards(t *testing.T) {
+	win := PlatformRuntime("windows", "11", false)
+	win.CLIPath = `C:\Program Files\DispatchQ\dispatchq.exe`
+	p := systemPrompt(win)
+	if !strings.Contains(p, "cannot run script jobs") || strings.Contains(p, "is PowerShell, run in") {
+		t.Error("a system without a script runner is offered script jobs")
+	}
+	if !strings.Contains(p, "PowerShell, never Bash") || !strings.Contains(p, "never suggest macOS tools such as osascript") {
+		t.Error("an agent job on Windows lost its PowerShell guidance")
+	}
+
+	src, dir := fixture(t)
+	src.Runtime = win
+	src.CLI = &fakeCLI{}
+	out, err := src.Check(context.Background(), []Action{
+		{Type: ActionAddTask, Task: &TaskDraft{Kind: "script", Prompt: "echo", WorkingDir: dir}},
+		{Type: ActionUpdateTask, ID: "nightly-abc", Task: &TaskDraft{Kind: "script", Prompt: "echo"}},
+		{Type: ActionUpdateTask, ID: "nightly-abc", Task: &TaskDraft{Group: "nightly", Clear: []string{"group"}}},
+		{Type: ActionRunCLI, Argv: []string{"notify", "--title", "Build", "--message", "It's done"}},
+	})
+	if err != nil || len(out) != 4 {
+		t.Fatalf("Check: %+v, %v", out, err)
+	}
+	for i := range 2 {
+		if !strings.Contains(out[i].Problem, "cannot run script jobs") {
+			t.Errorf("script job %d not refused: %q", i, out[i].Problem)
+		}
+	}
+	if !strings.Contains(out[2].Problem, "both set and clear group") {
+		t.Errorf("set and clear of one setting not refused: %q", out[2].Problem)
+	}
+	if got, want := out[3].Command, `dispatchq notify --title=Build '--message=It''s done'`; got != want {
+		t.Errorf("Windows card command = %q, want %q", got, want)
 	}
 }

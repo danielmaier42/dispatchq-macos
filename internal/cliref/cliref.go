@@ -386,6 +386,11 @@ func Check(argv []string, allowSecrets bool) (Parsed, error) {
 		return Parsed{}, fmt.Errorf("%s takes %s", c.Name(), argText(c.Args))
 	}
 	for i, v := range p.Args {
+		// Argv puts the arguments before the flags without a "--", so one
+		// that looks like a flag would be read as one.
+		if strings.HasPrefix(v, "-") {
+			return Parsed{}, fmt.Errorf("%s cannot start with -: %q", c.Args[i].Name, v)
+		}
 		if c.Args[i].Path && !filepath.IsAbs(v) {
 			return Parsed{}, fmt.Errorf("%s must be an absolute path, not %q", c.Args[i].Name, v)
 		}

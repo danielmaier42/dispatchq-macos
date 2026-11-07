@@ -45,6 +45,7 @@ func TestCheckNormalizesAndRefuses(t *testing.T) {
 		{"provider", "edit", "x", "--env", "K=V"},
 		{"import", "relative.dispatchq"},
 		{"pool", "edit", "night"},
+		{"provider", "enable", "--", "-h"},
 	} {
 		if _, err := Check(argv, false); err == nil {
 			t.Errorf("Check(%q) accepted", argv)

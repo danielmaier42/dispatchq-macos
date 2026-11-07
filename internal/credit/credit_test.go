@@ -186,7 +186,7 @@ func TestARefusalOutlivesARestart(t *testing.T) {
 
 func TestRunsProveCreditOfKnownAPIKeysOnly(t *testing.T) {
 	f := newFixture(t, nil, nil)
-	f.m.RunSeen("plan", "", true)
+	f.m.RunSeen("plan", "", true, *f.now)
 	if checks, _ := f.m.Checks(); len(checks) != 0 {
 		t.Fatalf("checks = %v, want none for an account no ping knows", checks)
 	}
@@ -194,7 +194,7 @@ func TestRunsProveCreditOfKnownAPIKeysOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	*f.now = f.now.Add(time.Hour)
-	f.m.RunSeen("api1", provider.BlockCreditExhausted, false)
+	f.m.RunSeen("api1", provider.BlockCreditExhausted, false, *f.now)
 	if b, ok := f.gates.get("api1"); !ok || b != provider.BlockCreditExhausted {
 		t.Fatalf("api1 gate = %q/%v, want closed after a refused run", b, ok)
 	}
@@ -204,7 +204,7 @@ func TestRunsProveCreditOfKnownAPIKeysOnly(t *testing.T) {
 	}
 }
 
-func TestAFailedPingProvesNothingAndWaitsADay(t *testing.T) {
+func TestAFailedPingProvesNothingAndIsRetriedWithinTheHour(t *testing.T) {
 	f := newFixture(t, nil, map[string]error{"api0": errors.New("exec: claude: not found")})
 	ctx := context.Background()
 	if err := f.m.PingDue(ctx); err != nil {
@@ -219,12 +219,47 @@ func TestAFailedPingProvesNothingAndWaitsADay(t *testing.T) {
 	if checks, _ := f.m.Checks(); func() bool { _, ok := checks["api0"]; return ok }() {
 		t.Fatal("a failed ping must not be recorded as a proof")
 	}
-	*f.now = f.now.Add(time.Hour)
+	*f.now = f.now.Add(30 * time.Minute)
 	if err := f.m.PingDue(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if f.ask.count("api0") != 1 {
-		t.Fatalf("api0 pings = %d, want the failed ping retried only the next day", f.ask.count("api0"))
+		t.Fatalf("api0 pings = %d, want no retry within the hour", f.ask.count("api0"))
+	}
+	// The ping never reached the account, so the day's test is still owed.
+	f.ask.answers["api0"] = nil
+	*f.now = f.now.Add(30 * time.Minute)
+	if err := f.m.PingDue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if f.ask.count("api0") != 2 || f.m.Failure("api0") != "" {
+		t.Fatalf("api0 pings = %d failure %q, want the retry an hour later to answer", f.ask.count("api0"), f.m.Failure("api0"))
+	}
+}
+
+// TestALateRunRefusalDoesNotUndoANewerPing: a run refused before the top-up
+// that is only reported after Read now's ping answered changes nothing.
+func TestALateRunRefusalDoesNotUndoANewerPing(t *testing.T) {
+	f := newFixture(t, nil, nil)
+	ctx := context.Background()
+	refusedAt := *f.now
+	*f.now = f.now.Add(time.Minute)
+	f.m.PingAll(ctx, []provider.Instance{{ID: "api0", Kind: "claude-code", Enabled: true}})
+	f.m.RunSeen("api0", provider.BlockCreditExhausted, false, refusedAt)
+	if _, ok := f.gates.get("api0"); ok {
+		t.Fatal("an older run refusal closed the gate a newer ping opened")
+	}
+	checks, _ := f.m.Checks()
+	if c := checks["api0"]; c.Status != StatusOK || c.Source != SourcePing {
+		t.Fatalf("api0 check = %+v, want the ping's answer kept", c)
+	}
+}
+
+func TestARunOnAnAPIKeyCountsBeforeAnyPing(t *testing.T) {
+	f := newFixture(t, nil, nil)
+	f.m.RunSeen("api0", provider.BlockCreditExhausted, false, *f.now)
+	if b, ok := f.gates.get("api0"); !ok || b != provider.BlockCreditExhausted {
+		t.Fatalf("api0 gate = %q/%v, want closed by the refused run", b, ok)
 	}
 }
 

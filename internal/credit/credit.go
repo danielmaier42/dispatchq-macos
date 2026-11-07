@@ -35,12 +35,17 @@ const (
 // or was refused, so a balance that ran dry is known before the next night's
 // queue is handed to it. An account refused for credit stays closed until the
 // next day's ping gets an answer; after a top-up, the Dashboard's Read now
-// pings at once. A ping that failed for another reason (no network, a CLI that
-// did not start) waits for the next day too.
+// pings at once.
 const Interval = 24 * time.Hour
 
+// FailedRetry is when a ping that never reached the account is tried again:
+// one that failed for no network at login, or a CLI that did not start. It
+// was no test, so the day's test is still owed; it costs nothing either.
+const FailedRetry = time.Hour
+
 // PingTimeout bounds one ping: the CLI starts, sends one request and exits.
-const PingTimeout = 90 * time.Second
+// Read now waits on it, so it is kept short.
+const PingTimeout = 45 * time.Second
 
 // PingText is what a ping says. The answer is not read: that the account
 // answered at all is the proof.
@@ -83,6 +88,9 @@ type Monitor struct {
 	failedAt map[string]time.Time
 	failure  map[string]string
 	pinging  map[string]*sync.Mutex
+	// recording serialises record, so a proof and the gate it sets cannot
+	// interleave with an older one's.
+	recording sync.Mutex
 }
 
 func (m *Monitor) now() time.Time {
@@ -131,34 +139,67 @@ func (m *Monitor) Failure(id string) string {
 	return m.failure[id]
 }
 
-// RunSeen records what a run proved about its account's credit. It only
-// touches accounts a ping already knows as API-key accounts, so a run on a
-// subscription leaves no credit entry behind.
-func (m *Monitor) RunSeen(id string, block provider.Block, answered bool) {
-	st, err := m.Store.LoadState()
-	if err != nil {
-		m.logf("credit: %v", err)
-		return
-	}
-	if _, known := st.CreditChecks[id]; !known {
+// RunSeen records what a run that ended at proved about its account's
+// credit. It only touches API-key accounts, so a run on a subscription leaves
+// no credit entry behind.
+func (m *Monitor) RunSeen(id string, block provider.Block, answered bool, at time.Time) {
+	if !m.knownAPIKey(id) {
 		return
 	}
 	status := StatusOK
 	if !answered {
 		status = string(block)
 	}
-	m.record(id, status, SourceRun)
+	m.record(id, status, SourceRun, at)
 }
 
-// record persists a proof and opens or closes the gate to match it.
-func (m *Monitor) record(id, status, source string) {
-	c := store.CreditCheck{Status: status, CheckedAt: m.now(), Source: source}
+// knownAPIKey reports whether id is an account on an API key: one a proof
+// exists for, or one the allowance reading found to be.
+func (m *Monitor) knownAPIKey(id string) bool {
+	checks, err := m.Checks()
+	if err != nil {
+		m.logf("credit: %v", err)
+		return false
+	}
+	if _, ok := checks[id]; ok {
+		return true
+	}
+	insts, err := m.List()
+	if err != nil {
+		m.logf("credit: list providers: %v", err)
+		return false
+	}
+	for _, inst := range insts {
+		if inst.ID == id {
+			apiKey, _ := m.APIKey(inst)
+			return apiKey
+		}
+	}
+	return false
+}
+
+// record persists a proof made at at and opens or closes the gate to match
+// it. A proof older than the one already kept changes nothing: a run that was
+// refused before a top-up must not undo the ping that answered after it.
+func (m *Monitor) record(id, status, source string, at time.Time) {
+	m.recording.Lock()
+	defer m.recording.Unlock()
+	c := store.CreditCheck{Status: status, CheckedAt: at, Source: source}
+	stale := false
 	if err := m.Store.UpdateState(func(st *store.State) error {
+		if prev, ok := st.CreditChecks[id]; ok && prev.CheckedAt.After(at) {
+			stale = true
+			return nil
+		}
 		st.CreditChecks[id] = c
 		return nil
 	}); err != nil {
 		m.logf("credit: save check of %s: %v", id, err)
 	}
+	if stale {
+		return
+	}
+	m.setFailure(id, "")
 	switch {
 	case status == StatusOK && m.Lift != nil:
 		m.Lift(id)
@@ -202,11 +243,9 @@ func (m *Monitor) Ping(ctx context.Context, inst provider.Instance) {
 	var blocked *provider.AccountBlockedError
 	switch {
 	case err == nil:
-		m.setFailure(inst.ID, "")
-		m.record(inst.ID, StatusOK, SourcePing)
+		m.record(inst.ID, StatusOK, SourcePing, m.now())
 	case errors.As(err, &blocked) && blocked.Block != provider.BlockOrgDisallowed:
-		m.setFailure(inst.ID, "")
-		m.record(inst.ID, string(blocked.Block), SourcePing)
+		m.record(inst.ID, string(blocked.Block), SourcePing, m.now())
 	case ctx.Err() != nil && errors.Is(context.Cause(ctx), context.Canceled):
 		// The caller went away (the Dashboard was closed mid-read): that says
 		// nothing about the account.
@@ -284,12 +323,12 @@ func (m *Monitor) loop(ctx context.Context, tick <-chan time.Time) {
 	}
 }
 
-// retryPending reports a ping of id that failed less than Interval ago.
+// retryPending reports a ping of id that failed less than FailedRetry ago.
 func (m *Monitor) retryPending(id string, now time.Time) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	at, ok := m.failedAt[id]
-	return ok && now.Before(at.Add(Interval))
+	return ok && now.Before(at.Add(FailedRetry))
 }
 
 func (m *Monitor) setFailure(id, reason string) {

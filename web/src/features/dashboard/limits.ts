@@ -70,6 +70,7 @@ export function creditText(p: LimitsEntry, now = Date.now()): string {
   const c = p.credit
   if (!p.limits.api_key) return ''
   if (!c) return p.limits.reason || 'Credit not checked yet'
+  if (!c.status) return `Credit not checked yet. Last ping failed: ${c.ping_failed}`
   const by = c.source === 'run' ? 'a run' : 'the ping'
   const when = relTime(c.checked_at, now)
   const failed = c.ping_failed ? ` Last ping failed: ${c.ping_failed}` : ''
@@ -89,7 +90,6 @@ export function blockText(p: LimitsEntry, now = Date.now()): string {
     return 'Billing refused: the credit is used up or a spend limit was reached. Check the Anthropic Console, then press Read now.'
   }
   const retry = Date.parse(b.until) > now ? `tried again ${relTime(b.until, now)}` : 'tried again now'
-
   return `Claude subscription access is disabled by the organisation; ${retry}.`
 }
 

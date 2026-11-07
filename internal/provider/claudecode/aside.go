@@ -93,15 +93,16 @@ func (a *Adapter) ParseAside(out []byte) (provider.Aside, error) {
 }
 
 // refusalBlock names the account block an aside's error text reports: the API's
-// own "Credit balance is too low", or a billing refusal that does not say why.
-// The json envelope carries only the message, not the error name a run's
-// stream has, so the words are all there is to go by.
+// own "Credit balance is too low", or the billing error's name. The json
+// envelope carries only the message, not the error field a run's stream has,
+// so the words are all there is to go by, and only these exact ones count: a
+// message that merely mentions billing must not close an account for a day.
 func refusalBlock(detail string) provider.Block {
 	lower := strings.ToLower(detail)
 	switch {
 	case strings.Contains(lower, creditExhaustedText):
 		return provider.BlockCreditExhausted
-	case strings.Contains(lower, "billing"):
+	case strings.Contains(lower, creditExhaustedError):
 		return provider.BlockBillingRefused
 	}
 	return ""

@@ -34,7 +34,8 @@ type limitsView struct {
 }
 
 // creditView is a store.CreditCheck as the dashboard shows it, with why the
-// latest ping got no answer at all, when it did not.
+// latest ping got no answer at all, when it did not. Status is empty when that
+// failed ping is all there is.
 type creditView struct {
 	store.CreditCheck
 	PingFailed string `json:"ping_failed,omitempty"`
@@ -122,8 +123,13 @@ func (s *server) listLimits(w http.ResponseWriter, r *http.Request) {
 	reasons := s.blockReasons()
 	for i, inst := range insts {
 		v := limitsView{ID: inst.ID, Name: inst.Label(), Default: inst.ID == set.DefaultID(), Limits: limits[i]}
-		if c, ok := credits[inst.ID]; ok {
-			v.Credit = &creditView{CreditCheck: c, PingFailed: s.d.Credits.Failure(inst.ID)}
+		if s.d.Credits != nil {
+			c, ok := credits[inst.ID]
+			// A failed first ping has no proof to go with, but still has to
+			// say why the line has nothing to show.
+			if failed := s.d.Credits.Failure(inst.ID); ok || failed != "" {
+				v.Credit = &creditView{CreditCheck: c, PingFailed: failed}
+			}
 		}
 		if until, ok := blocked[inst.ID]; ok {
 			v.Blocked = &blockView{Until: until, Reason: reasons[inst.ID]}

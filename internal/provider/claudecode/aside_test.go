@@ -182,9 +182,14 @@ func TestParseAsideNamesACreditRefusal(t *testing.T) {
 			t.Fatalf("ParseAside(%s) = %v, want block %q", tc.out, err, tc.want)
 		}
 	}
-	_, err := a.ParseAside([]byte(`{"is_error":true,"result":"out of turns"}`))
-	var blocked *provider.AccountBlockedError
-	if errors.As(err, &blocked) {
-		t.Fatalf("an ordinary error read as an account block: %v", err)
+	for _, out := range []string{
+		`{"is_error":true,"result":"out of turns"}`,
+		`{"is_error":true,"result":"Could not reach the billing service, try again"}`,
+	} {
+		_, err := a.ParseAside([]byte(out))
+		var blocked *provider.AccountBlockedError
+		if errors.As(err, &blocked) {
+			t.Fatalf("an ordinary error read as an account block: %v", err)
+		}
 	}
 }

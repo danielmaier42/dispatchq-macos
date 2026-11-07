@@ -67,9 +67,10 @@ func (e *Engine) SetRunFinished(f func(providerID string)) { e.runFinished = f }
 
 // SetCreditSeen registers f to be told what a run proved about its account's
 // credit: answered for a run that succeeded, or the account block a run was
-// refused with (a used-up credit balance, a billing refusal). Runs that prove
-// neither are not reported. f must not block, like SetRunFinished's.
-func (e *Engine) SetCreditSeen(f func(providerID string, block provider.Block, answered bool)) {
+// refused with (a used-up credit balance, a billing refusal), and when the run
+// ended. Runs that prove neither are not reported. f is called on the
+// finishing run's goroutine and should only record what it is told.
+func (e *Engine) SetCreditSeen(f func(providerID string, block provider.Block, answered bool, at time.Time)) {
 	e.creditSeen = f
 }
 
@@ -89,7 +90,9 @@ func (e *Engine) BlockAccount(providerID string, block provider.Block) {
 
 // LiftAccountBlock reopens a gate an account block closed, once a ping proved
 // the account answers again. A gate closed by an ordinary limit stays closed.
-func (e *Engine) LiftAccountBlock(providerID string) { e.gates.For(providerID).Lift() }
+func (e *Engine) LiftAccountBlock(providerID string) {
+	e.gates.For(providerID).Lift(string(provider.BlockCreditExhausted), string(provider.BlockBillingRefused))
+}
 
 // SetLimits gives the engine each provider's last allowance reading, which is
 // what a pool picks its member by. f should answer from memory: it is asked on
@@ -166,7 +169,7 @@ type Engine struct {
 	wakeErr         atomic.Pointer[string] // exposed to the API (thread-safe)
 	notifier        notify.Notifier
 	runFinished     func(providerID string)
-	creditSeen      func(providerID string, block provider.Block, answered bool)
+	creditSeen      func(providerID string, block provider.Block, answered bool, at time.Time)
 	limits          func(ctx context.Context, inst provider.Instance) (provider.Limits, bool)
 
 	runCtx    context.Context
@@ -1347,9 +1350,9 @@ func (e *Engine) finish(t task.Task, providerID string, rec store.Run, res provi
 	if e.creditSeen != nil && providerID != "" {
 		switch {
 		case rec.Status == store.StatusSuccess:
-			e.creditSeen(providerID, "", true)
+			e.creditSeen(providerID, "", true, finished)
 		case rec.Status == store.StatusRateLimited && creditBlock(res.Block):
-			e.creditSeen(providerID, res.Block, false)
+			e.creditSeen(providerID, res.Block, false, finished)
 		}
 	}
 

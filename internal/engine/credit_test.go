@@ -200,13 +200,14 @@ func TestRunsReportTheirCreditAndAnAccountBlockHoldsUntilLifted(t *testing.T) {
 		id       string
 		block    provider.Block
 		answered bool
+		at       time.Time
 	}
 	var mu sync.Mutex
 	var got []seen
-	e.SetCreditSeen(func(id string, b provider.Block, answered bool) {
+	e.SetCreditSeen(func(id string, b provider.Block, answered bool, at time.Time) {
 		mu.Lock()
 		defer mu.Unlock()
-		got = append(got, seen{id, b, answered})
+		got = append(got, seen{id, b, answered, at})
 	})
 	saveTasks(t, st, asapTask("a", false))
 	if err := e.Tick(context.Background()); err != nil {
@@ -214,7 +215,7 @@ func TestRunsReportTheirCreditAndAnAccountBlockHoldsUntilLifted(t *testing.T) {
 	}
 	e.WaitIdle()
 	mu.Lock()
-	if len(got) != 1 || got[0] != (seen{store.DefaultProviderID, provider.BlockCreditExhausted, false}) {
+	if len(got) != 1 || got[0] != (seen{store.DefaultProviderID, provider.BlockCreditExhausted, false, start}) {
 		t.Fatalf("credit seen = %+v, want one refusal", got)
 	}
 	mu.Unlock()
@@ -236,7 +237,7 @@ func TestRunsReportTheirCreditAndAnAccountBlockHoldsUntilLifted(t *testing.T) {
 	e.WaitIdle()
 	mu.Lock()
 	defer mu.Unlock()
-	if len(got) != 2 || got[1] != (seen{store.DefaultProviderID, "", true}) {
+	if len(got) != 2 || got[1] != (seen{store.DefaultProviderID, "", true, start.Add(2 * time.Hour)}) {
 		t.Fatalf("credit seen = %+v, want the success reported", got)
 	}
 }

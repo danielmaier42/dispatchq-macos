@@ -100,14 +100,26 @@ func TestLiftReopensOnlyAnAccountBlock(t *testing.T) {
 	g := New(clock.NewFake(start))
 
 	g.BlockBecause(start.Add(7*24*time.Hour), "credit_exhausted")
-	g.Lift()
+	g.Lift("billing_refused")
+	if g.Open() {
+		t.Fatal("Lift ended a block whose reason it was not given")
+	}
+	g.Lift("credit_exhausted")
 	if !g.Open() || g.Reason() != "" {
 		t.Fatalf("after Lift: open=%v reason=%q, want open and no reason", g.Open(), g.Reason())
 	}
 
 	g.Block(start.Add(time.Hour))
-	g.Lift()
+	g.Lift("credit_exhausted")
 	if g.Open() {
 		t.Fatal("Lift reopened a gate an ordinary limit closed")
+	}
+
+	// An ordinary limit that came during an account block outlives the lift.
+	g.BlockBecause(start.Add(7*24*time.Hour), "credit_exhausted")
+	g.Block(start.Add(2 * time.Hour))
+	g.Lift("credit_exhausted")
+	if got := g.BlockedUntil(); !got.Equal(start.Add(2 * time.Hour)) {
+		t.Fatalf("after Lift the gate reopens at %v, want the limit's reset", got)
 	}
 }

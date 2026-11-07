@@ -247,9 +247,7 @@ func cmdRun(args []string) error {
 	if err := credits.Restore(); err != nil {
 		fmt.Fprintln(os.Stderr, "dispatchqd:", err)
 	}
-	eng.SetCreditSeen(func(providerID string, block provider.Block, answered bool) {
-		go credits.RunSeen(providerID, block, answered)
-	})
+	eng.SetCreditSeen(credits.RunSeen)
 	// The pings need to know which accounts are on an API key, which the first
 	// allowance reading finds out; the timer above takes it at once.
 	go func() {

@@ -158,18 +158,28 @@ func (s daemonStopper) stop() ([]uint32, error) {
 			reason = err
 			continue
 		}
-		for _, p := range procs {
-			terr := p.proc.Terminate()
-			exited := p.proc.Wait(s.exitWait)
-			_ = p.proc.Close()
-			switch {
-			case exited:
-				stopped = append(stopped, p.pid)
-			case terr != nil:
-				return stopped, fmt.Errorf("stop this installation's daemon (pid %d) for %s: %w", p.pid, s.home, terr)
-			default:
-				reason = fmt.Errorf("pid %d was asked to stop but did not exit within %s", p.pid, s.exitWait)
+		err = func() error {
+			defer func() {
+				for _, p := range procs {
+					_ = p.proc.Close()
+				}
+			}()
+			for _, p := range procs {
+				terr := p.proc.Terminate()
+				exited := p.proc.Wait(s.exitWait)
+				switch {
+				case exited:
+					stopped = append(stopped, p.pid)
+				case terr != nil:
+					return fmt.Errorf("stop this installation's daemon (pid %d) for %s: %w", p.pid, s.home, terr)
+				default:
+					reason = fmt.Errorf("pid %d was asked to stop but did not exit within %s", p.pid, s.exitWait)
+				}
 			}
+			return nil
+		}()
+		if err != nil {
+			return stopped, err
 		}
 	}
 	return stopped, &unverifiedDaemonError{Home: s.home, PID: lockPID, Stopped: stopped, Reason: reason}

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielmaier42/claudeq/internal/app"
+	"github.com/danielmaier42/claudeq/internal/cliref"
 	"github.com/danielmaier42/claudeq/internal/store"
 	"github.com/danielmaier42/claudeq/internal/task"
 )
@@ -24,8 +26,13 @@ import (
 // app already uses, after the operator confirmed it.
 type StoreSource struct {
 	Store *store.Store
+	// CLI answers cli lookups; nil says the command line is not available.
+	CLI CLI
 	// Now is the clock; nil uses time.Now. Its location is the operator's.
 	Now func() time.Time
+	// Runtime is the machine: its shell writes a card's command, and a
+	// script job is refused where none can run.
+	Runtime Runtime
 }
 
 // How much of the state every message carries. The overview is a map, not the
@@ -79,6 +86,15 @@ func (s *StoreSource) Overview(context.Context) (string, error) {
 		b.WriteString(");")
 	}
 	b.WriteString("\n")
+	if len(cfg.Pools) > 0 {
+		b.WriteString("Pools:")
+		for _, p := range cfg.Pools {
+			fmt.Fprintf(&b, " %s (%d members);", p.ID, len(p.Members))
+		}
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "External notification channels: Pushover %s, ntfy %s, webhook %s\n",
+		onOff(cfg.Settings.Pushover.Enabled), onOff(cfg.Settings.Ntfy.Enabled), onOff(cfg.Settings.Webhook.Enabled))
 
 	last := lastRunByTask(runs)
 	fmt.Fprintf(&b, "\nTasks in the queue (%d):\n", len(cfg.Tasks))
@@ -198,6 +214,13 @@ func lastRunByTask(runs []store.Run) map[string]store.Run {
 	return out
 }
 
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
 func yesNo(b bool) string {
 	if b {
 		return "yes"
@@ -206,7 +229,7 @@ func yesNo(b bool) string {
 }
 
 // Lookup implements Source.
-func (s *StoreSource) Lookup(_ context.Context, l Lookup) (string, string) {
+func (s *StoreSource) Lookup(ctx context.Context, l Lookup) (string, string) {
 	arg := oneLine(l.Arg, 200)
 	switch l.Tool {
 	case LookupTask:
@@ -221,8 +244,30 @@ func (s *StoreSource) Lookup(_ context.Context, l Lookup) (string, string) {
 		return "Listed artifacts " + quoteOrAll(arg), s.lookupArtifacts(arg)
 	case LookupUsage:
 		return "Checked usage", s.lookupUsage(arg)
+	case LookupCLI:
+		return s.lookupCLI(ctx, l.Argv)
 	}
 	return "Unknown lookup " + l.Tool, "There is no lookup called " + strconv.Quote(l.Tool) + "."
+}
+
+func (s *StoreSource) lookupCLI(ctx context.Context, argv []string) (string, string) {
+	p, err := checkCLI(argv, true)
+	label := "Ran dispatchq " + oneLine(strings.Join(shownArgv(argv), " "), 120)
+	if err != nil {
+		return label, "Not run: " + err.Error()
+	}
+	label = "Ran " + p.String()
+	if s.CLI == nil {
+		return label, "The dispatchq command line is not available in this build."
+	}
+	out, err := s.CLI.Run(ctx, p.Argv())
+	if err != nil {
+		return label, "The command failed: " + err.Error()
+	}
+	if out == "" {
+		return label, "(no output)"
+	}
+	return label, out
 }
 
 func quoteOrAll(s string) string {
@@ -586,7 +631,7 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 	var out []Action
 	seen := map[string]bool{}
 	for _, a := range actions {
-		a.Label, a.Problem = "", ""
+		a.Label, a.Problem, a.Command, a.Danger = "", "", "", false
 		a.ID = strings.TrimSpace(a.ID)
 		keep := true
 		switch a.Type {
@@ -624,10 +669,13 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 			a.View, a.Task = "", nil
 		case ActionUpdateTask:
 			t, ok := findTask(cfg.Tasks, a.ID)
-			keep = ok && a.Task != nil && *a.Task != (TaskDraft{})
+			keep = ok && a.Task != nil && !a.Task.empty()
 			if keep {
 				a.Label = t.Name
 				a.Problem = a.Task.applyTo(&t, cfg, loc)
+				if a.Problem == "" {
+					a.Problem = s.scriptProblem(t)
+				}
 			}
 			a.View = ""
 		case ActionAddTask:
@@ -637,10 +685,50 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 				if a.Task.WorkingDir == "" {
 					a.Task.WorkingDir = cfg.Settings.DefaultWorkingDir
 				}
+				// The card says which kind of job it files, so an agent
+				// job is never mistaken for a script or the other way round.
+				if a.Task.Kind == "" {
+					a.Task.Kind = string(task.KindAgent)
+				}
 				a.Problem = a.Task.applyTo(&t, cfg, loc)
+				if a.Problem == "" && a.Task.Enabled != nil && !*a.Task.Enabled {
+					// The queue files every new task enabled; a disabled
+					// one is an add and then an update, never a task that
+					// could start in between.
+					a.Problem = "A new task is always queued enabled; add it, then disable it."
+				}
+				if a.Problem == "" {
+					a.Problem = s.scriptProblem(t)
+				}
+				if a.Problem == "" && len(a.Task.Clear) > 0 {
+					a.Problem = "A new task has nothing to clear."
+				}
+				if a.Problem == "" {
+					if err := app.CheckDependencies(s.Store, t); err != nil {
+						a.Problem = err.Error()
+					}
+				}
 				a.Label = t.Name
 			}
 			a.ID, a.View = "", ""
+		case ActionRunCLI:
+			a.ID, a.View, a.Task = "", "", nil
+			p, err := checkCLI(a.Argv, false)
+			keep = len(a.Argv) > 0
+			if err != nil {
+				// A refused command is shown as it was proposed, without
+				// any credential in it, and cannot be run from the card.
+				a.Argv = shownArgv(a.Argv)
+				a.Command = "dispatchq " + strings.Join(a.Argv, " ")
+				a.Problem = err.Error()
+				break
+			}
+			a.Argv, a.Command = p.Argv(), p.String()
+			if s.Runtime.Shell == ShellPowerShell {
+				a.Command = p.PowerShell()
+			}
+			a.Danger = p.Command.Access == cliref.Destructive
+			a.Label = p.Command.Help
 		case ActionPauseAll:
 			if cfg.Settings.Paused {
 				a.Problem = "All runs are already paused."
@@ -657,7 +745,7 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 		if !keep {
 			continue
 		}
-		key := a.Type + "\x00" + a.ID + "\x00" + a.View
+		key := a.Type + "\x00" + a.ID + "\x00" + a.View + "\x00" + strings.Join(a.Argv, "\x00")
 		if a.Task == nil && seen[key] {
 			continue
 		}
@@ -672,17 +760,62 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 
 // applyTo writes the draft's fields into t, normalizes the draft to what was
 // applied (so the app files exactly what was checked), and reports why the
-// result could not be filed, "" when it can.
+// result could not be filed, "" when it can. It follows `dispatchq edit`:
+// turning a job into a script drops what only a model has, and naming a
+// sets reports whether the draft names a value for the setting Clear calls c.
+func (d *TaskDraft) sets(c string) bool {
+	switch c {
+	case "group":
+		return d.Group != ""
+	case "provider":
+		return d.Provider != ""
+	case "pool":
+		return d.Pool != ""
+	case "model":
+		return d.Model != ""
+	case "reasoning_effort":
+		return d.ReasoningEffort != ""
+	}
+	return false
+}
+
+// scriptProblem refuses a script job where this DispatchQ cannot run one.
+func (s *StoreSource) scriptProblem(t task.Task) string {
+	if t.IsScript() && s.Runtime.NoScripts {
+		return "This DispatchQ cannot run script jobs on this system; make it an agent job."
+	}
+	return ""
+}
+
+// provider leaves a pool and the other way round.
 func (d *TaskDraft) applyTo(t *task.Task, cfg store.Config, loc *time.Location) string {
+	isNew := t.ID == "draft"
+	d.ID = strings.TrimSpace(d.ID)
 	d.Name = oneLine(d.Name, 80)
 	d.WorkingDir = strings.TrimSpace(d.WorkingDir)
 	d.Cron = oneLine(d.Cron, 100)
 	d.Group = oneLine(d.Group, 80)
+	if d.ID != "" {
+		if !isNew {
+			return "A task's id cannot be changed."
+		}
+		if err := task.CheckID(d.ID); err != nil {
+			return err.Error()
+		}
+		if _, taken := findTask(cfg.Tasks, d.ID); taken {
+			return "There already is a task " + strconv.Quote(d.ID) + "."
+		}
+		t.ID = d.ID
+	}
 	if d.Name != "" {
 		t.Name = d.Name
 	}
 	if d.Kind != "" {
 		t.Kind = task.Kind(d.Kind)
+		if t.IsScript() {
+			t.Provider, t.Pool, t.Model, t.ReasoningEffort = "", "", "", ""
+			t.Permissions, t.Backfill = task.PermissionsDefault, false
+		}
 	}
 	if strings.TrimSpace(d.Prompt) != "" {
 		t.Prompt = d.Prompt
@@ -693,17 +826,73 @@ func (d *TaskDraft) applyTo(t *task.Task, cfg store.Config, loc *time.Location) 
 	if d.Group != "" {
 		t.Group = d.Group
 	}
-	if d.Model != "" {
-		t.Model = d.Model
+	for _, c := range d.Clear {
+		if d.sets(c) {
+			return "A draft cannot both set and clear " + c + "."
+		}
+	}
+	for _, c := range d.Clear {
+		switch c {
+		case "group":
+			t.Group = ""
+		case "provider":
+			t.Provider = ""
+		case "pool":
+			t.Pool = ""
+		case "model":
+			t.Model = ""
+		case "reasoning_effort":
+			t.ReasoningEffort = ""
+		default:
+			return strconv.Quote(c) + " cannot be cleared."
+		}
+	}
+	if d.ReasoningEffort != "" {
+		t.ReasoningEffort = d.ReasoningEffort
 	}
 	if d.Permissions != "" {
 		t.Permissions = task.Permissions(d.Permissions)
 	}
+	if d.Provider != "" && d.Pool != "" {
+		return "A task runs on a provider or on a pool, not both."
+	}
+	// Like `dispatchq edit`: naming a provider or a pool leaves the other, and
+	// drops the old model unless the draft names one, so a Claude model is
+	// never carried onto another harness.
 	if d.Provider != "" {
 		if !slices.ContainsFunc(cfg.Providers, func(p store.Provider) bool { return p.ID == d.Provider }) {
 			return "There is no provider " + strconv.Quote(d.Provider) + "."
 		}
-		t.Provider, t.Pool = d.Provider, ""
+		t.Provider, t.Pool, t.Model = d.Provider, "", ""
+	}
+	if d.Pool != "" {
+		if !slices.ContainsFunc(cfg.Pools, func(p store.Pool) bool { return p.ID == d.Pool }) {
+			return "There is no pool " + strconv.Quote(d.Pool) + "."
+		}
+		t.Pool, t.Provider, t.Model = d.Pool, "", ""
+	}
+	if d.Model != "" {
+		t.Model = d.Model
+	}
+	for _, sw := range []struct {
+		from *bool
+		to   *bool
+	}{
+		{d.Parallel, &t.Parallel}, {d.Enabled, &t.Enabled}, {d.NotifyOnResult, &t.NotifyOnResult},
+		{d.QuietHistory, &t.QuietHistory}, {d.Backfill, &t.Backfill}, {d.IncludeResults, &t.IncludeResults},
+	} {
+		if sw.from != nil {
+			*sw.to = *sw.from
+		}
+	}
+	if len(d.DependsOn) > 0 {
+		if !isNew && !slices.Equal(d.DependsOn, t.DependsOn) {
+			return "Dependencies are fixed when a task is queued."
+		}
+		t.DependsOn = d.DependsOn
+	}
+	if t.IncludeResults && len(t.DependsOn) == 0 {
+		return "include_results needs depends_on."
 	}
 	// A schedule says which trigger it belongs to, so the model does not have
 	// to repeat it.
@@ -742,7 +931,7 @@ func (d *TaskDraft) applyTo(t *task.Task, cfg store.Config, loc *time.Location) 
 		return "The working directory must be an absolute path."
 	}
 	if info, err := os.Stat(t.WorkingDir); err != nil || !info.IsDir() {
-		return "The folder " + t.WorkingDir + " does not exist on this Mac."
+		return "The folder " + t.WorkingDir + " does not exist on this computer."
 	}
 	return ""
 }

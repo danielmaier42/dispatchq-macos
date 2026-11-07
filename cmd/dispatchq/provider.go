@@ -29,6 +29,7 @@ Usage:
                         [--config-dir PATH] [--default-model MODEL]
                         [--fallback ID] [--fallback-model MODEL]
                         [--env NAME=VALUE]...
+                        [--wsl-distro DISTRO [--wsl-user USER]]   (Windows: run inside WSL)
   dispatchq provider edit ID [--name N] [--path PATH]
                         [--config-dir PATH] [--default-model MODEL]
                         [--fallback ID|none] [--fallback-model MODEL|none]

@@ -56,7 +56,7 @@ func TestTurnAnswersAndCarriesTheState(t *testing.T) {
 	ask := &stubAsker{answers: []provider.Aside{
 		validated(`{"reply":"Geöffnet.","actions":[{"type":"open_view","view":"artifacts"}]}`),
 	}}
-	svc := New(ask, &stubSource{overview: "Tasks in the queue (0)"})
+	svc := New(ask, &stubSource{overview: "Tasks in the queue (0)"}, nil, Runtime{})
 
 	r, err := svc.Turn(context.Background(), claude, "", Request{Text: "zeig mir die artefakte", Focus: Focus{View: "queue"}})
 	if err != nil {
@@ -69,7 +69,7 @@ func TestTurnAnswersAndCarriesTheState(t *testing.T) {
 		t.Fatal("no session id")
 	}
 	req := ask.reqs[0]
-	if req.Resume || req.System != systemPrompt || req.Model != DefaultModel || !req.Continues || req.Schema == "" {
+	if req.Resume || req.System != systemPrompt(Runtime{}) || req.Model != DefaultModel || !req.Continues || req.Schema == "" {
 		t.Fatalf("first request = %+v, want a new, continuing session on the default model", req)
 	}
 	for _, want := range []string{"[DispatchQ state]\nTasks in the queue (0)", "the queue view", "[Operator]\nzeig mir die artefakte"} {
@@ -84,7 +84,7 @@ func TestTurnAnswersAndCarriesTheState(t *testing.T) {
 func TestTurnLeavesOtherHarnessesOnTheirOwnDefault(t *testing.T) {
 	ask := &stubAsker{answers: []provider.Aside{validated(`{"reply":"ok"}`)}}
 	codex := provider.Instance{ID: "codex", Kind: provider.KindCodex}
-	if _, err := New(ask, &stubSource{}).Turn(context.Background(), codex, "", Request{Text: "hi"}); err != nil {
+	if _, err := New(ask, &stubSource{}, nil, Runtime{}).Turn(context.Background(), codex, "", Request{Text: "hi"}); err != nil {
 		t.Fatal(err)
 	}
 	if ask.reqs[0].Model != "" {
@@ -99,7 +99,7 @@ func TestTurnResumesAndSkipsAnUnchangedState(t *testing.T) {
 		validated(`{"reply":"c"}`),
 	}}
 	src := &stubSource{overview: "Now: 12:00\nstate one"}
-	svc := New(ask, src)
+	svc := New(ask, src, nil, Runtime{})
 	ctx := context.Background()
 
 	r1, err := svc.Turn(ctx, claude, "opus", Request{Text: "one"})
@@ -129,7 +129,7 @@ func TestTurnResumesAndSkipsAnUnchangedState(t *testing.T) {
 func TestTurnTreatsAClockChangeAsUnchanged(t *testing.T) {
 	ask := &stubAsker{answers: []provider.Aside{validated(`{"reply":"a"}`), validated(`{"reply":"b"}`)}}
 	src := &stubSource{overview: "Now: 12:00\ntasks"}
-	svc := New(ask, src)
+	svc := New(ask, src, nil, Runtime{})
 	r, err := svc.Turn(context.Background(), claude, "", Request{Text: "one"})
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestTurnTreatsAClockChangeAsUnchanged(t *testing.T) {
 
 func TestTurnReplaysHistoryForAForgottenSession(t *testing.T) {
 	ask := &stubAsker{answers: []provider.Aside{validated(`{"reply":"ok"}`)}}
-	svc := New(ask, &stubSource{overview: "s"})
+	svc := New(ask, &stubSource{overview: "s"}, nil, Runtime{})
 	_, err := svc.Turn(context.Background(), claude, "", Request{
 		SessionID: "gone",
 		Text:      "and now?",
@@ -169,7 +169,7 @@ func TestTurnRunsLookupsBeforeAnswering(t *testing.T) {
 		validated(`{"reply":"Run r1 failed on a missing file."}`),
 	}}
 	src := &stubSource{overview: "s"}
-	svc := New(ask, src)
+	svc := New(ask, src, nil, Runtime{})
 
 	r, err := svc.Turn(context.Background(), claude, "", Request{Text: "why did it fail?"})
 	if err != nil {
@@ -193,7 +193,7 @@ func TestTurnRunsLookupsBeforeAnswering(t *testing.T) {
 func TestTurnStopsLookingUpAfterTheLastRound(t *testing.T) {
 	again := validated(`{"reply":"","lookups":[{"tool":"runs","arg":""}]}`)
 	ask := &stubAsker{answers: []provider.Aside{again, again, again, validated(`{"reply":"done","lookups":[{"tool":"runs","arg":""}]}`)}}
-	svc := New(ask, &stubSource{overview: "s"})
+	svc := New(ask, &stubSource{overview: "s"}, nil, Runtime{})
 
 	r, err := svc.Turn(context.Background(), claude, "", Request{Text: "list"})
 	if err != nil {
@@ -216,7 +216,7 @@ func TestTurnCapsLookupsPerRound(t *testing.T) {
 		validated(`{"reply":"ok"}`),
 	}}
 	src := &stubSource{overview: "s"}
-	if _, err := New(ask, src).Turn(context.Background(), claude, "", Request{Text: "x"}); err != nil {
+	if _, err := New(ask, src, nil, Runtime{}).Turn(context.Background(), claude, "", Request{Text: "x"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(src.lookups) != maxLookupsPerRound {
@@ -230,7 +230,7 @@ func TestTurnReadsAnUnvalidatedAnswer(t *testing.T) {
 		{"Just prose.", "Just prose."},
 	} {
 		ask := &stubAsker{answers: []provider.Aside{{Text: tc.text}}}
-		r, err := New(ask, &stubSource{}).Turn(context.Background(), claude, "", Request{Text: "x"})
+		r, err := New(ask, &stubSource{}, nil, Runtime{}).Turn(context.Background(), claude, "", Request{Text: "x"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -241,18 +241,18 @@ func TestTurnReadsAnUnvalidatedAnswer(t *testing.T) {
 }
 
 func TestTurnFailures(t *testing.T) {
-	if _, err := New(&stubAsker{}, &stubSource{}).Turn(context.Background(), claude, "", Request{Text: "  "}); err == nil {
+	if _, err := New(&stubAsker{}, &stubSource{}, nil, Runtime{}).Turn(context.Background(), claude, "", Request{Text: "  "}); err == nil {
 		t.Fatal("empty message accepted")
 	}
 	ask := &stubAsker{err: errors.New("limit reached")}
-	svc := New(ask, &stubSource{})
+	svc := New(ask, &stubSource{}, nil, Runtime{})
 	if _, err := svc.Turn(context.Background(), claude, "", Request{Text: "x"}); err == nil || !strings.Contains(err.Error(), "limit reached") {
 		t.Fatalf("err = %v, want the harness error", err)
 	}
 	if len(svc.sessions) != 0 {
 		t.Fatal("a failed session was kept")
 	}
-	if _, err := New(&stubAsker{answers: []provider.Aside{{}}}, &stubSource{}).Turn(context.Background(), claude, "", Request{Text: "x"}); err == nil {
+	if _, err := New(&stubAsker{answers: []provider.Aside{{}}}, &stubSource{}, nil, Runtime{}).Turn(context.Background(), claude, "", Request{Text: "x"}); err == nil {
 		t.Fatal("an empty answer was accepted")
 	}
 }
@@ -261,7 +261,7 @@ func TestTurnAdoptsTheHarnessSessionID(t *testing.T) {
 	a := validated(`{"reply":"ok"}`)
 	a.SessionID = "theirs"
 	ask := &stubAsker{answers: []provider.Aside{a, validated(`{"reply":"again"}`)}}
-	svc := New(ask, &stubSource{})
+	svc := New(ask, &stubSource{}, nil, Runtime{})
 	r, err := svc.Turn(context.Background(), claude, "", Request{Text: "x"})
 	if err != nil || r.SessionID != "theirs" {
 		t.Fatalf("reply = %+v, %v; want the harness's id", r, err)
@@ -276,7 +276,7 @@ func TestTurnAdoptsTheHarnessSessionID(t *testing.T) {
 
 func TestSessionsExpire(t *testing.T) {
 	ask := &stubAsker{answers: []provider.Aside{validated(`{"reply":"a"}`), validated(`{"reply":"b"}`)}}
-	svc := New(ask, &stubSource{})
+	svc := New(ask, &stubSource{}, nil, Runtime{})
 	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return now }
 	r, err := svc.Turn(context.Background(), claude, "", Request{Text: "x"})

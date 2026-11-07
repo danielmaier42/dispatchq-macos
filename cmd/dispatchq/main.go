@@ -36,7 +36,7 @@ Usage:
   dispatchq list [--json]
   dispatchq show   ID [--json]       (one task in full, prompt included)
   dispatchq add    --id ID --prompt P --dir DIR [--name N] [--kind agent|script]
-                 [--trigger asap|fixed|cron]
+                 [--group G] [--trigger asap|fixed|cron]
                  [--at RFC3339] [--cron EXPR] [--provider ID | --pool ID] [--model M]
                  [--reasoning-effort E] [--parallel] [--skip-permissions]
                  [--notify] [--quiet-history] [--backfill]
@@ -44,13 +44,13 @@ Usage:
                  model: no provider, no model, no allowance, never held up by a limit)
   dispatchq edit   ID                (open the whole task in $EDITOR)
   dispatchq edit   ID [--name N] [--prompt P | --prompt-file PATH] [--dir DIR]
-                 [--kind agent|script]
+                 [--kind agent|script] [--group G]
                  [--trigger asap|fixed|cron] [--at RFC3339] [--cron EXPR]
                  [--provider ID | --pool ID] [--model M] [--reasoning-effort E]
                  [--parallel=BOOL] [--enabled=BOOL] [--skip-permissions=BOOL]
                  [--notify=BOOL] [--quiet-history=BOOL] [--backfill=BOOL]
                  (only the flags you pass are changed)
-  dispatchq queue  --prompt P [--at RFC3339 | --in DUR | --cron EXPR] [--dir DIR] [--name N]
+  dispatchq queue  --prompt P [--at RFC3339 | --in DUR | --cron EXPR] [--dir DIR] [--name N] [--group G]
                  [--kind agent|script] [--provider ID | --pool ID] [--model M] [--reasoning-effort E]
                  [--parallel=BOOL] [--skip-permissions=BOOL]
                  [--notify=BOOL] [--quiet-history=BOOL] [--backfill=BOOL]
@@ -80,8 +80,11 @@ Usage:
   dispatchq read RUNID | dispatchq read-all
   dispatchq provider ...             (the harnesses tasks run on; run it for its own help)
   dispatchq pool ...                 (provider pools: one task, the best-suited account; run it for help)
-  dispatchq settings [--json] [--default-provider ID] [--heartbeat-minutes N]
-                   [--idle-timeout-minutes N] [--max-run-history N]
+  dispatchq settings [--json] [--default-provider ID] [--default-working-dir DIR]
+                   [--heartbeat-minutes N] [--idle-timeout-minutes N] [--max-run-history N]
+                   [--prompt-review=BOOL] [--prompt-review-provider ID]
+                   [--prompt-review-model M] [--assistant-provider ID] [--assistant-model M]
+                   [--artifact-notify=BOOL]
                    [--system-prompt S | --system-prompt-file PATH]
                    [--paused=BOOL] [--backfill-urgency X] [--pushover=BOOL] [--pushover-token T]
                    [--pushover-user U] [--ntfy=BOOL] [--ntfy-server S]

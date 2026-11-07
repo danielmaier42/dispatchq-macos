@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -244,6 +245,16 @@ func cmdRun(args []string) error {
 	// harness questions of dispatchq's own (see internal/aside); all go through
 	// the one runner, so they cannot drift apart in how they invoke a provider.
 	asides := &aside.Runner{Registry: registry}
+	osVer := func() string { return "" }
+	if plat.osVersion != nil {
+		osVer = plat.osVersion
+	}
+	// The assistant runs the CLI that ships next to this daemon, the same one
+	// every run gets as DISPATCHQ_BIN, and tells the model where it is.
+	cliBin := resolveQueueBin()
+	cli := assistant.ExecCLI{Bin: cliBin}
+	rt := assistant.PlatformRuntime(runtime.GOOS, osVer(), executor.RunsScripts(runtime.GOOS))
+	rt.Version, rt.CLIPath, rt.DataDir = version.String(), cliBin, st.Home()
 
 	httpSrv := &http.Server{
 		Addr: *addr,
@@ -257,7 +268,7 @@ func cmdRun(args []string) error {
 			Holds: eng.Holds, RunningOn: eng.RunningOn,
 			NotifyStatus: plat.notifyStatus,
 			Feedback:     feedback.New(asides), OSVersion: plat.osVersion,
-			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st}),
+			Assistant: assistant.New(asides, &assistant.StoreSource{Store: st, CLI: cli, Runtime: rt}, cli, rt),
 			Review:    &review.Reviewer{Ask: asides},
 			Registry:  registry, Providers: checker, Limits: limits,
 			Uninstall: plat.uninstall,

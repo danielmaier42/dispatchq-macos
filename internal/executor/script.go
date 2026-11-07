@@ -23,6 +23,12 @@ import (
 	"github.com/danielmaier42/claudeq/internal/store"
 )
 
+// RunsScripts reports whether this build can run a script job on goos (a
+// runtime.GOOS value). Every system it builds for has a script runner: /bin/sh
+// or a #! line on Unix (script_unix.go), Windows PowerShell on Windows
+// (script_windows.go). The assistant reads this instead of assuming.
+func RunsScripts(goos string) bool { return goos != "" }
+
 // runScript executes a script task and classifies the outcome by its exit
 // status: zero is a success, anything else a failure. There is nothing to parse
 // — a script reports through its exit code, so dispatchq does not guess at its

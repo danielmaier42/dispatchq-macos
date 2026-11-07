@@ -1,10 +1,10 @@
 import {Check, CircleAlert, PenLine} from 'lucide-react'
 import {useState} from 'react'
 import {Button} from '@/components/ui/button'
-import {describeSchedule} from '@/features/queue/schedule'
 import type {AssistantAction, AssistantTaskDraft} from '@/lib/types'
 import {cn} from '@/lib/utils'
 import {canEdit, confirmCard, editCard} from '../actions'
+import {taskDetailRows} from '../details'
 import {setCard, type Card} from '../store'
 
 // What each proposal is called on its card and on its confirm button.
@@ -29,10 +29,14 @@ function heading(a: AssistantAction): {title: string; confirm: string; danger?: 
       return {title: 'Pause all runs', confirm: 'Pause all'}
     case 'resume_all':
       return {title: 'Resume all runs', confirm: 'Resume'}
+    case 'run_cli':
+      return {title: capitalize(a.label || 'Run a dispatchq command'), confirm: 'Run', danger: a.danger}
     default:
       return {title: a.type, confirm: 'Confirm'}
   }
 }
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 const doneText: Partial<Record<AssistantAction['type'], string>> = {
   add_task: 'Added to the queue',
@@ -44,6 +48,7 @@ const doneText: Partial<Record<AssistantAction['type'], string>> = {
   cancel_run: 'Canceled',
   pause_all: 'All runs paused',
   resume_all: 'Runs resumed',
+  run_cli: 'Done',
 }
 
 // ActionCard is a proposal from the assistant. Nothing happens until it is
@@ -64,6 +69,11 @@ export function ActionCard({entryId, index, card}: {entryId: number; index: numb
       <div className="px-3 pt-2.5 pb-2">
         <div className="text-[13px] font-semibold">{h.title}</div>
         {a.task && <TaskDetails draft={a.task} full={a.type === 'add_task'} />}
+        {a.command && (
+          <code className="mt-1.5 block rounded-md bg-surface-2 px-2 py-1.5 font-mono text-[11.5px] break-all whitespace-pre-wrap text-foreground/85">
+            {a.command}
+          </code>
+        )}
         {a.problem && (
           <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-warning-text">
             <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
@@ -77,6 +87,11 @@ export function ActionCard({entryId, index, card}: {entryId: number; index: numb
           </p>
         )}
       </div>
+      {card.state === 'done' && card.output && (
+        <pre className="mx-3 mb-2 max-h-48 overflow-auto rounded-md bg-surface-2 px-2 py-1.5 font-mono text-[11.5px] whitespace-pre-wrap text-foreground/85">
+          {card.output}
+        </pre>
+      )}
       <div className="flex items-center gap-1.5 border-t border-border px-2.5 py-2">
         {open ? (
           <>
@@ -128,19 +143,7 @@ export function ActionCard({entryId, index, card}: {entryId: number; index: numb
 // just the changed fields for an update.
 function TaskDetails({draft, full}: {draft: AssistantTaskDraft; full: boolean}) {
   const [expanded, setExpanded] = useState(false)
-  const rows: [string, string][] = []
-  if (!full && draft.name) rows.push(['Name', draft.name])
-  if (draft.trigger || draft.cron || draft.fixed_at)
-    rows.push([
-      'When',
-      describeSchedule({trigger: draft.trigger ?? 'asap', cron: draft.cron, fixed_at: draft.fixed_at}),
-    ])
-  if (draft.working_dir) rows.push(['Folder', draft.working_dir])
-  if (draft.group) rows.push(['Group', draft.group])
-  if (draft.provider) rows.push(['Provider', draft.provider])
-  if (draft.model) rows.push(['Model', draft.model])
-  if (draft.permissions === 'skip') rows.push(['Permissions', 'May do anything'])
-  if (draft.kind === 'script') rows.push(['Kind', 'Script'])
+  const rows = taskDetailRows(draft, full)
 
   return (
     <div className="mt-1.5 space-y-1.5">

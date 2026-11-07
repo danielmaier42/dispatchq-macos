@@ -28,8 +28,11 @@ for exe in dispatchqapp dispatchqd dispatchq; do
   got="$(pe_machine "$STAGE/$exe.exe" || echo unreadable)"
   [ "$got" = "$WIN_MACHINE" ] || fail "$exe.exe has PE machine $got, expected $WIN_MACHINE"
   # -trimpath keeps -ldflags out of the Go build information, so the stamped
-  # version is checked as the literal string it puts into the program.
-  LC_ALL=C grep -aqF "v$VERSION" "$STAGE/$exe.exe" || fail "$exe.exe is not stamped with version v$VERSION"
+  # version is checked as the literal string it puts into the program. The
+  # window does not link internal/version, so it carries none.
+  if [ "$exe" != dispatchqapp ]; then
+    LC_ALL=C grep -aqF "v$VERSION" "$STAGE/$exe.exe" || fail "$exe.exe is not stamped with version v$VERSION"
+  fi
   # Go records the commit only when it builds from a plain clone (not from a
   # git worktree); when it is there it must match too. BUILD-INFO.json below
   # names the commit in every case.

@@ -6,8 +6,8 @@ import {cn} from '@/lib/utils'
 
 // Composer is the chat input: it grows with its text up to a cap, and
 // ⌘↵ sends, like the other multi-line inputs in the app (plain ↵ is a newline).
-// A quick back-and-forth (the assistant) sends on plain ↵ instead, with ⇧↵ for
-// a newline, as chat apps do.
+// A back-and-forth chat (the assistant, the feedback page) sends on plain ↵
+// instead, with ⇧↵ for a newline, as chat apps do.
 export function Composer({
   value,
   onChange,

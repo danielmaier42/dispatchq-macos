@@ -103,20 +103,42 @@ Function StopRunning
   Sleep 800
 FunctionEnd
 
-Function EnsureWebView2
+; ReadWebView2Version leaves the installed WebView2 Runtime version in $0, or
+; "" when there is none (a stale per-machine entry reads 0.0.0.0).
+Function ReadWebView2Version
   ReadRegStr $0 HKLM "SOFTWARE\WOW6432Node\${WEBVIEW2_KEY}" "pv"
   ${If} $0 == ""
     ReadRegStr $0 HKCU "${WEBVIEW2_KEY}" "pv"
   ${EndIf}
+  ${If} $0 == "0.0.0.0"
+    StrCpy $0 ""
+  ${EndIf}
+FunctionEnd
+
+; EnsureWebView2 installs the runtime when it is missing. The installation of
+; DispatchQ continues either way: the daemon and CLI do not need WebView2, only
+; the window does. When the runtime is still missing afterwards (download
+; blocked, bootstrapper refused or failed), the user is told what happened and
+; how to fix it instead of finding a window that does not open.
+Function EnsureWebView2
+  Call ReadWebView2Version
   ${If} $0 == ""
-  ${OrIf} $0 == "0.0.0.0"
 !ifdef BOOTSTRAPPER
     DetailPrint "Installing the Microsoft Edge WebView2 Runtime (needed for the DispatchQ window)"
     File "/oname=$PLUGINSDIR\webview2-bootstrapper.exe" "${STAGE}\webview2-bootstrapper.exe"
+    ClearErrors
     ExecWait '"$PLUGINSDIR\webview2-bootstrapper.exe" /silent /install' $1
-    DetailPrint "WebView2 installer exit code: $1"
+    ${If} ${Errors}
+      StrCpy $1 "could not be started"
+    ${EndIf}
+    DetailPrint "WebView2 installer result: $1"
+    Call ReadWebView2Version
+    ${If} $0 == ""
+      DetailPrint "The WebView2 Runtime is still missing"
+      MessageBox MB_OK|MB_ICONEXCLAMATION "The Microsoft Edge WebView2 Runtime could not be installed (installer result: $1), so the DispatchQ window will not open yet. The background service and the dispatchq command work without it.$\r$\n$\r$\nInstall the Evergreen runtime from https://developer.microsoft.com/microsoft-edge/webview2/ (it needs an internet connection; an organisation may have to allow it), then start DispatchQ again." /SD IDOK
+    ${EndIf}
 !else
-    MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ needs the Microsoft Edge WebView2 Runtime, which was not found. Windows 11 includes it. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and start DispatchQ again."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ needs the Microsoft Edge WebView2 Runtime, which was not found. Windows 11 includes it. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and start DispatchQ again." /SD IDOK
 !endif
   ${EndIf}
 FunctionEnd

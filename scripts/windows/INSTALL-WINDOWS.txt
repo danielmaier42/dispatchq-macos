@@ -13,7 +13,11 @@ Requirements
     installer also works there, emulated. Windows 10 may work, it is untested.
     The ARM64 installer refuses to run on a non-ARM PC.
   - Microsoft Edge WebView2 Runtime. Windows 11 includes it; the installer installs
-    it when it is missing and the installer carries the bootstrapper.
+    it when it is missing and the installer carries the bootstrapper. If that
+    install fails (no internet, blocked by policy), the installer says so with the
+    bootstrapper's result and the download link, and finishes: the background
+    service and the dispatchq command work, the window opens once the runtime is
+    installed.
   - A provider CLI you already use: Claude Code, Codex or OpenCode, installed natively
     and signed in. WSL is not needed. Optionally a provider can run inside a WSL 2
     Linux distribution instead (see "Providers in WSL" below); that CLI is installed

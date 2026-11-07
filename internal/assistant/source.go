@@ -689,10 +689,13 @@ func (s *StoreSource) Check(_ context.Context, actions []Action) ([]Action, erro
 			a.ID, a.View = "", ""
 		case ActionRunCLI:
 			a.ID, a.View, a.Task = "", "", nil
-			a.Command = "dispatchq " + strings.Join(a.Argv, " ")
 			p, err := checkCLI(a.Argv, false)
 			keep = len(a.Argv) > 0
 			if err != nil {
+				// A refused command is shown as it was proposed, without
+				// any credential in it, and cannot be run from the card.
+				a.Argv = cliref.Redact(a.Argv)
+				a.Command = "dispatchq " + strings.Join(a.Argv, " ")
 				a.Problem = err.Error()
 				break
 			}

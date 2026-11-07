@@ -310,7 +310,7 @@ func TestCheckPreparesCLICards(t *testing.T) {
 	if n := out[1]; n.Danger || n.Problem != "" || n.Command != `dispatchq notify --title=Build '--message=It'\''s done'` {
 		t.Errorf("notify card = %+v", n)
 	}
-	if s := out[2]; !strings.Contains(s.Problem, "Credentials never pass") {
+	if s := out[2]; !strings.Contains(s.Problem, "Credentials never pass") || strings.Contains(s.Command+strings.Join(s.Argv, " "), "tk_secret") {
 		t.Errorf("secret card = %+v", s)
 	}
 }

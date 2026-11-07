@@ -1,6 +1,9 @@
 package cliref
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestQuoting(t *testing.T) {
 	for in, want := range map[string]string{
@@ -8,7 +11,8 @@ func TestQuoting(t *testing.T) {
 		"two words":        "'two words'",
 		"it's":             `'it'\''s'`,
 		"$HOME":            "'$HOME'",
-		"Prüfung":          "'Prüfung'",
+		"Prüfung":          "Prüfung",
+		"Läuft's":          `'Läuft'\''s'`,
 		"":                 "''",
 	} {
 		if got := QuotePOSIX(in); got != want {
@@ -48,5 +52,13 @@ func TestCheckNormalizesAndRefuses(t *testing.T) {
 	}
 	if _, err := Check([]string{"provider", "edit", "x", "--env", "K=V"}, true); err != nil {
 		t.Errorf("a credential the caller allows was refused: %v", err)
+	}
+}
+
+func TestRedact(t *testing.T) {
+	got := Redact([]string{"settings", "--ntfy-token", "tk_1", "--pushover-user=u_2", "--ntfy-topic", "alerts"})
+	want := "settings --ntfy-token *** --pushover-user=*** --ntfy-topic alerts"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("Redact = %q", got)
 	}
 }

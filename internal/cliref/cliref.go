@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Access says what running a command does.
@@ -433,7 +434,7 @@ func (p Parsed) String() string {
 // QuotePOSIX quotes s for a POSIX shell, leaving plain words alone.
 func QuotePOSIX(s string) string {
 	plain := func(r rune) bool {
-		return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-_./=:@%+,", r)
+		return unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("-_./=:@%+,", r)
 	}
 	if s != "" && strings.IndexFunc(s, func(r rune) bool { return !plain(r) }) < 0 {
 		return s
@@ -455,4 +456,33 @@ func QuotePowerShell(s string) string {
 	}
 	b.WriteByte('\'')
 	return b.String()
+}
+
+// Redact replaces the value of every credential flag in argv, so a command
+// that was refused for carrying one can still be shown.
+func Redact(argv []string) []string {
+	c, rest, ok := Lookup(argv)
+	if !ok {
+		return argv
+	}
+	out := append([]string{}, c.Path...)
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
+		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		f, isFlag := c.Flag(name)
+		if !strings.HasPrefix(a, "-") || !isFlag || !f.Secret {
+			out = append(out, a)
+			continue
+		}
+		if hasValue {
+			out = append(out, "--"+name+"=***")
+			continue
+		}
+		out = append(out, a)
+		if i+1 < len(rest) {
+			out = append(out, "***")
+			i++
+		}
+	}
+	return out
 }

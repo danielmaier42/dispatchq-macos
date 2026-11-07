@@ -22,6 +22,11 @@ func (r *scriptRunner) Run(_ context.Context, name string, args ...string) ([]by
 	return []byte(r.out), r.err
 }
 
+// psAnswerOutput is what the dialog script writes when the user picked path.
+func psAnswerOutput(path string) string {
+	return psAnswerOpen + base64.StdEncoding.EncodeToString([]byte(path)) + psAnswerClose
+}
+
 // decodedScript recovers the script from the -EncodedCommand argument.
 func decodedScript(t *testing.T, args []string) string {
 	t.Helper()
@@ -44,7 +49,7 @@ func decodedScript(t *testing.T, args []string) string {
 
 func TestPowerShellFolderChooserDecodesTheAnswerAndRunsSTA(t *testing.T) {
 	picked := `C:\Users\Zoë O'Brien\Projekte "x"`
-	r := &scriptRunner{out: base64.StdEncoding.EncodeToString([]byte(picked)) + "\r\n"}
+	r := &scriptRunner{out: psAnswerOutput(picked) + "\r\n"}
 	got, chosen, err := PowerShellFolderChooser(r)(context.Background(), "")
 	if err != nil || !chosen || got != picked {
 		t.Fatalf("got (%q, %v, %v), want (%q, true, nil)", got, chosen, err, picked)
@@ -57,8 +62,8 @@ func TestPowerShellFolderChooserDecodesTheAnswerAndRunsSTA(t *testing.T) {
 	}
 }
 
-func TestPowerShellDialogEmptyAnswerIsACancel(t *testing.T) {
-	r := &scriptRunner{out: "\r\n"}
+func TestPowerShellDialogCancelFrameIsACancel(t *testing.T) {
+	r := &scriptRunner{out: psCancelled + "\r\n"}
 	got, chosen, err := PowerShellSaveFileDialog(r)(context.Background(), "Export", "task.dispatchq")
 	if err != nil || chosen || got != "" {
 		t.Fatalf("got (%q, %v, %v), want a cancel", got, chosen, err)
@@ -73,7 +78,7 @@ func TestPowerShellDialogFailureIsAnError(t *testing.T) {
 }
 
 func TestPowerShellDialogCarriesValuesWithoutQuoting(t *testing.T) {
-	r := &scriptRunner{}
+	r := &scriptRunner{out: psCancelled}
 	prompt, name := `Export "it's"`, `a'b"c.dispatchq`
 	if _, _, err := PowerShellSaveFileDialog(r)(context.Background(), prompt, name); err != nil {
 		t.Fatal(err)

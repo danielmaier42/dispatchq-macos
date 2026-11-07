@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -35,7 +34,7 @@ func (r launchRunner) ShowingWindows() system.Runner {
 // background command, Windows starts PowerShell with SW_HIDE and the dialog
 // never appears, so each dialog has to ask for the runner that shows windows.
 func TestNativeDialogsRunAsCommandsThatShowWindows(t *testing.T) {
-	answer := base64.StdEncoding.EncodeToString([]byte(`C:\Users\Zoë\Projekte`))
+	answer := psAnswerOutput(`C:\Users\Zoë\Projekte`)
 	for name, open := range map[string]func(system.Runner) error{
 		"PowerShell folder": func(r system.Runner) error {
 			_, _, err := PowerShellFolderChooser(r)(context.Background(), "")

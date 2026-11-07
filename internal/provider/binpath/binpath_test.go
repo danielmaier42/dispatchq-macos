@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -99,6 +100,10 @@ func TestCheckExecutableByPlatform(t *testing.T) {
 		{"linux", filepath.Join(dir, "missing"), os.ErrNotExist},
 	}
 	for _, tc := range tests {
+		if runtime.GOOS == "windows" && tc.goos != "windows" && tc.want == nil {
+			// Real Windows metadata never carries Unix execute bits.
+			continue
+		}
 		restore := UseOSRulesForTest(tc.goos)
 		err := CheckExecutable(tc.path)
 		restore()

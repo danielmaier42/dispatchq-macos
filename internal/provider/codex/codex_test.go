@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -580,6 +581,9 @@ func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && tc.goos != "windows" && tc.want == provider.HealthReady {
+				t.Skip("Windows file metadata cannot represent Unix execute bits")
+			}
 			bin := tc.path(t)
 			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
 			h := newAdapter("").CheckHealth(context.Background(), instance(bin), loggedIn())

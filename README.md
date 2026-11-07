@@ -448,7 +448,9 @@ first. The window opens on the Dashboard:
   balance anyone can read, so DispatchQ proves its credit instead: once a day
   it sends the account a one-word ping (*Reply with the single word pong*, on
   Haiku, a fraction of a cent when it answers and nothing when it is refused),
-  and every run on the account counts as a proof too. The line says what the
+  and every run on the account counts as a proof too. A ping that cannot reach
+  the account at all (no network at login, say) is no test and is tried again
+  an hour later. The line says what the
   latest proof found and when: *Credit OK · the ping answered 3 h ago*, or
   *No credit left · a run was refused 10 min ago*. Until the first ping it
   reads *Credit balance unknown*. An account refused with *Credit balance is

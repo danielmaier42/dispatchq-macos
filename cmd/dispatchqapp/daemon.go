@@ -63,17 +63,6 @@ func ensureDaemon() {
 	}
 }
 
-// requestWarm asks the daemon to provoke the macOS file-access prompt for the
-// current tasks' folders. Best-effort: any failure is silently ignored.
-func requestWarm() {
-	c := http.Client{Timeout: 3 * time.Second}
-	resp, err := c.Post(dashboardURL+"/api/fs/warm", "application/json", nil)
-	if err != nil {
-		return
-	}
-	_ = resp.Body.Close()
-}
-
 // daemonReachable reports whether a daemon already serves the dashboard. It asks
 // several times: a single 400 ms probe was too tight, and a daemon busy with a
 // tick (a provider check, a run starting) that missed it had the app start a

@@ -226,7 +226,7 @@ func TestRealPowerShellDialogScriptsShowTheirOwnerFirst(t *testing.T) {
 			if !okShow || !okActivate || !okDialog {
 				t.Fatalf("member calls %v lack $owner.Show, $owner.Activate or $d.ShowDialog", calls)
 			}
-			if !(show < activate && activate < dialog) {
+			if show >= activate || activate >= dialog {
 				t.Errorf("member calls %v: the owner must be shown and activated before the dialog opens", calls)
 			}
 			if _, ok := order["$owner.Close"]; !ok {

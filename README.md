@@ -398,7 +398,9 @@ explains it.
   development build can **Reinstall** the latest release, as long as that
   release still reads the data the build left behind.
 - **An assistant that operates DispatchQ.** Ask about runs and artifacts, have
-  it open them, or describe a job and confirm the draft. See
+  it open them, or describe a job and confirm the draft. It knows every
+  `dispatchq` command and can do whatever the command line can, each change on
+  a card you confirm. See
   [Asking DispatchQ](#asking-dispatchq).
 - **Feedback that writes itself.** Describe a bug or a wish, Claude drafts the
   GitHub issue, and you file it yourself. See [Sending feedback](#sending-feedback).
@@ -1890,15 +1892,49 @@ it declines in one line.
   dropped, and a draft whose folder does not exist on this Mac, whose cron does
   not parse or whose provider is unknown is marked and can only be edited.
 
+The assistant covers the whole [command line](#command-line-interface). A task draft
+carries every setting `dispatchq add`, `edit` and `queue` take: kind (agent or
+script), schedule, group, provider or pool, model, reasoning effort,
+permissions, parallel, notify, quiet history, backfill, enabled, and the jobs it
+waits for with their results. Everything else the CLI changes (notifications,
+publishing and exporting, moving tasks, marking runs read, providers, pools,
+settings, the update check) arrives as a card showing the exact `dispatchq`
+command; **Run** carries it out and shows what the command printed. A command
+that removes something for good gets a red button. What the CLI only reads
+(provider readiness and limits, pools and the next member, settings with the
+credentials masked, run status, artifacts) the assistant runs on its own to
+answer you. Three things stay with you: credentials (Pushover, ntfy and webhook
+secrets, a provider's `--env` variables) never pass through the chat, so it
+sends you to Settings or the terminal for them; logging a provider in; and
+uninstalling, which asks for an administrator password.
+
+The assistant knows the machine it runs on: the system, where the `dispatchq`
+CLI lives, the data directory, how a script job is run (`/bin/sh` unless its
+`#!` line names another interpreter) and which notification channels are on. So
+it writes a script job that calls the CLI correctly, quoted, without asking you
+for the syntax or a path. For example, "a script that sends *test* with the
+time every minute" becomes a script job on cron `* * * * *`:
+
+```sh
+"$DISPATCHQ_BIN" notify --title 'test' --message "test $(date '+%Y-%m-%d %H:%M:%S')"
+```
+
+It never switches a job to *may do anything* on its own and never estimates a
+cost it has not measured; a script job runs no model and costs nothing.
+
 Every message carries a compact picture of DispatchQ: the time, the pause
 switch, the providers, every queued task (without its prompt), the last runs
 and artifacts. For details the assistant asks DispatchQ, read-only: one task
 with its prompt, one run's output and log tail, a list of runs or artifacts, a
-text artifact's beginning, usage per provider. That takes one to three model
+text artifact's beginning, usage per provider, or a read-only `dispatchq`
+command. That takes one to three model
 calls per message, a few seconds each. Like the prompt review, the chat runs as
 an *aside*: no tools, no MCP servers, no project files, in an empty throwaway
 directory, so it cannot touch your machine; it knows only what DispatchQ tells
-it, and it acts only through the cards you confirm.
+it, and it acts only through the cards you confirm. A confirmed command runs
+the `dispatchq` CLI next to the app directly, as a program with its arguments
+and never through a shell, after DispatchQ checked it against the CLI's own
+reference again.
 
 It runs on the provider and model under **Settings → Assistant** (the same
 setting the Feedback page uses; *DispatchQ's choice* is Sonnet for the chat on

@@ -29,10 +29,14 @@ function heading(a: AssistantAction): {title: string; confirm: string; danger?: 
       return {title: 'Pause all runs', confirm: 'Pause all'}
     case 'resume_all':
       return {title: 'Resume all runs', confirm: 'Resume'}
+    case 'run_cli':
+      return {title: capitalize(a.label || 'Run a dispatchq command'), confirm: 'Run', danger: a.danger}
     default:
       return {title: a.type, confirm: 'Confirm'}
   }
 }
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 const doneText: Partial<Record<AssistantAction['type'], string>> = {
   add_task: 'Added to the queue',
@@ -44,6 +48,7 @@ const doneText: Partial<Record<AssistantAction['type'], string>> = {
   cancel_run: 'Canceled',
   pause_all: 'All runs paused',
   resume_all: 'Runs resumed',
+  run_cli: 'Done',
 }
 
 // ActionCard is a proposal from the assistant. Nothing happens until it is
@@ -64,6 +69,11 @@ export function ActionCard({entryId, index, card}: {entryId: number; index: numb
       <div className="px-3 pt-2.5 pb-2">
         <div className="text-[13px] font-semibold">{h.title}</div>
         {a.task && <TaskDetails draft={a.task} full={a.type === 'add_task'} />}
+        {a.command && (
+          <code className="mt-1.5 block rounded-md bg-surface-2 px-2 py-1.5 font-mono text-[11.5px] break-all whitespace-pre-wrap text-foreground/85">
+            {a.command}
+          </code>
+        )}
         {a.problem && (
           <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-warning-text">
             <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
@@ -77,6 +87,11 @@ export function ActionCard({entryId, index, card}: {entryId: number; index: numb
           </p>
         )}
       </div>
+      {card.state === 'done' && card.output && (
+        <pre className="mx-3 mb-2 max-h-48 overflow-auto rounded-md bg-surface-2 px-2 py-1.5 font-mono text-[11.5px] whitespace-pre-wrap text-foreground/85">
+          {card.output}
+        </pre>
+      )}
       <div className="flex items-center gap-1.5 border-t border-border px-2.5 py-2">
         {open ? (
           <>
@@ -130,6 +145,9 @@ function TaskDetails({draft, full}: {draft: AssistantTaskDraft; full: boolean}) 
   const [expanded, setExpanded] = useState(false)
   const rows: [string, string][] = []
   if (!full && draft.name) rows.push(['Name', draft.name])
+  if (full || draft.kind)
+    rows.push(['Kind', draft.kind === 'script' ? 'Script, runs without a model' : 'Agent job'])
+  if (draft.id) rows.push(['Id', draft.id])
   if (draft.trigger || draft.cron || draft.fixed_at)
     rows.push([
       'When',
@@ -138,9 +156,22 @@ function TaskDetails({draft, full}: {draft: AssistantTaskDraft; full: boolean}) 
   if (draft.working_dir) rows.push(['Folder', draft.working_dir])
   if (draft.group) rows.push(['Group', draft.group])
   if (draft.provider) rows.push(['Provider', draft.provider])
+  if (draft.pool) rows.push(['Pool', draft.pool])
   if (draft.model) rows.push(['Model', draft.model])
+  if (draft.reasoning_effort) rows.push(['Effort', draft.reasoning_effort])
   if (draft.permissions === 'skip') rows.push(['Permissions', 'May do anything'])
-  if (draft.kind === 'script') rows.push(['Kind', 'Script'])
+  else if (draft.permissions === 'default' && !full) rows.push(['Permissions', 'Default'])
+  if (draft.depends_on?.length) rows.push(['Waits for', draft.depends_on.join(', ')])
+  const switches: [keyof AssistantTaskDraft, string][] = [
+    ['enabled', 'Enabled'],
+    ['parallel', 'Parallel'],
+    ['notify_on_result', 'Notify'],
+    ['quiet_history', 'Quiet history'],
+    ['backfill', 'Backfill'],
+    ['include_results', 'Their results'],
+  ]
+  for (const [k, label] of switches)
+    if (typeof draft[k] === 'boolean') rows.push([label, draft[k] ? 'On' : 'Off'])
 
   return (
     <div className="mt-1.5 space-y-1.5">

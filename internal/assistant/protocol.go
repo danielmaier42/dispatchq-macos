@@ -1,12 +1,18 @@
 package assistant
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // Lookup is a detail the model asks for before it answers. The daemon answers
 // it read-only from the store; nothing a lookup does changes anything.
 type Lookup struct {
 	Tool string `json:"tool"`
 	Arg  string `json:"arg"`
+	// Argv is the dispatchq command line a cli lookup runs, without the
+	// program name: ["provider", "limits", "--json"].
+	Argv []string `json:"argv,omitempty"`
 }
 
 // The lookups the model may ask for.
@@ -17,9 +23,10 @@ const (
 	LookupArtifact  = "artifact"  // arg: artifact id; metadata and the start of a text file
 	LookupArtifacts = "artifacts" // arg: a search text ("" = newest); up to 20 artifacts
 	LookupUsage     = "usage"     // arg: days, default 7; runs, cost and outcomes per provider
+	LookupCLI       = "cli"       // argv: a read-only dispatchq command; its output
 )
 
-var lookupTools = []string{LookupTask, LookupRun, LookupRuns, LookupArtifact, LookupArtifacts, LookupUsage}
+var lookupTools = []string{LookupTask, LookupRun, LookupRuns, LookupArtifact, LookupArtifacts, LookupUsage, LookupCLI}
 
 // Action is one thing the answer does in the app.
 //
@@ -35,6 +42,14 @@ type Action struct {
 	ID string `json:"id,omitempty"`
 	// Task is the job add_task files, or the fields update_task changes.
 	Task *TaskDraft `json:"task,omitempty"`
+	// Argv is the dispatchq command line run_cli runs, without the program
+	// name. The daemon rewrites it to the form the CLI parses.
+	Argv []string `json:"argv,omitempty"`
+	// Command is Argv as a person would type it, filled in by the daemon for
+	// the card.
+	Command string `json:"command,omitempty"`
+	// Danger marks a run_cli that removes something, filled in by the daemon.
+	Danger bool `json:"danger,omitempty"`
 	// Label names what ID refers to, filled in by the daemon for the card.
 	Label string `json:"label,omitempty"`
 	// Problem says why the action cannot be confirmed as it stands, filled in
@@ -57,47 +72,71 @@ const (
 	ActionCancelRun    = "cancel_run"
 	ActionPauseAll     = "pause_all"
 	ActionResumeAll    = "resume_all"
+	// ActionRunCLI runs one dispatchq command, checked against the CLI
+	// reference, once the operator confirmed it.
+	ActionRunCLI = "run_cli"
 )
 
 var actionTypes = []string{
 	ActionOpenView, ActionOpenRun, ActionOpenArtifact, ActionOpenTask,
 	ActionAddTask, ActionUpdateTask, ActionRunNow, ActionEnableTask, ActionDisableTask,
-	ActionDeleteTask, ActionCancelRun, ActionPauseAll, ActionResumeAll,
+	ActionDeleteTask, ActionCancelRun, ActionPauseAll, ActionResumeAll, ActionRunCLI,
 }
 
 // Views are the app views open_view may open.
 var Views = []string{"dashboard", "queue", "log", "artifacts", "notifications", "usage", "feedback", "settings"}
 
-// TaskDraft is a job as the assistant writes it: the fields a person sets in
-// the task form. For update_task only the fields that change are set.
+// TaskDraft is a job as the assistant writes it: every setting `dispatchq add`,
+// `edit` and `queue` take, under the names the task API uses. For update_task
+// only the fields that change are set; a nil switch leaves it as it is.
 type TaskDraft struct {
-	Name        string `json:"name,omitempty"`
-	Kind        string `json:"kind,omitempty"`
-	Prompt      string `json:"prompt,omitempty"`
-	WorkingDir  string `json:"working_dir,omitempty"`
-	Trigger     string `json:"trigger,omitempty"`
-	FixedAt     string `json:"fixed_at,omitempty"`
-	Cron        string `json:"cron,omitempty"`
-	Group       string `json:"group,omitempty"`
-	Provider    string `json:"provider,omitempty"`
-	Model       string `json:"model,omitempty"`
-	Permissions string `json:"permissions,omitempty"`
+	ID              string   `json:"id,omitempty"`
+	Name            string   `json:"name,omitempty"`
+	Kind            string   `json:"kind,omitempty"`
+	Prompt          string   `json:"prompt,omitempty"`
+	WorkingDir      string   `json:"working_dir,omitempty"`
+	Trigger         string   `json:"trigger,omitempty"`
+	FixedAt         string   `json:"fixed_at,omitempty"`
+	Cron            string   `json:"cron,omitempty"`
+	Group           string   `json:"group,omitempty"`
+	Provider        string   `json:"provider,omitempty"`
+	Pool            string   `json:"pool,omitempty"`
+	Model           string   `json:"model,omitempty"`
+	ReasoningEffort string   `json:"reasoning_effort,omitempty"`
+	Permissions     string   `json:"permissions,omitempty"`
+	Parallel        *bool    `json:"parallel,omitempty"`
+	Enabled         *bool    `json:"enabled,omitempty"`
+	NotifyOnResult  *bool    `json:"notify_on_result,omitempty"`
+	QuietHistory    *bool    `json:"quiet_history,omitempty"`
+	Backfill        *bool    `json:"backfill,omitempty"`
+	DependsOn       []string `json:"depends_on,omitempty"`
+	IncludeResults  *bool    `json:"include_results,omitempty"`
+}
+
+// empty reports whether the draft sets nothing.
+func (d TaskDraft) empty() bool {
+	b, _ := json.Marshal(d)
+	return string(b) == "{}"
 }
 
 func enum(values []string) string {
 	return `{"type":"string","enum":["` + strings.Join(values, `","`) + `"]}`
 }
 
+const stringList = `{"type":"array","items":{"type":"string"}}`
+
 // schema constrains every model turn to the answer shape.
 var schema = `{"type":"object","properties":{` +
 	`"reply":{"type":"string"},` +
 	`"lookups":{"type":"array","items":{"type":"object","properties":{` +
-	`"tool":` + enum(lookupTools) + `,"arg":{"type":"string"}},"required":["tool","arg"]}},` +
+	`"tool":` + enum(lookupTools) + `,"arg":{"type":"string"},"argv":` + stringList + `},"required":["tool","arg"]}},` +
 	`"actions":{"type":"array","items":{"type":"object","properties":{` +
 	`"type":` + enum(actionTypes) + `,` +
 	`"view":` + enum(Views) + `,` +
 	`"id":{"type":"string"},` +
+	`"argv":` + stringList + `,` +
 	`"task":{"type":"object","properties":{` +
+	`"id":{"type":"string"},` +
 	`"name":{"type":"string"},` +
 	`"kind":{"type":"string","enum":["agent","script"]},` +
 	`"prompt":{"type":"string"},` +
@@ -107,42 +146,16 @@ var schema = `{"type":"object","properties":{` +
 	`"cron":{"type":"string"},` +
 	`"group":{"type":"string"},` +
 	`"provider":{"type":"string"},` +
+	`"pool":{"type":"string"},` +
 	`"model":{"type":"string"},` +
-	`"permissions":{"type":"string","enum":["default","skip"]}}}},` +
+	`"reasoning_effort":{"type":"string"},` +
+	`"permissions":{"type":"string","enum":["default","skip"]},` +
+	`"parallel":{"type":"boolean"},` +
+	`"enabled":{"type":"boolean"},` +
+	`"notify_on_result":{"type":"boolean"},` +
+	`"quiet_history":{"type":"boolean"},` +
+	`"backfill":{"type":"boolean"},` +
+	`"depends_on":` + stringList + `,` +
+	`"include_results":{"type":"boolean"}}}},` +
 	`"required":["type"]}}},` +
 	`"required":["reply"]}`
-
-// systemPrompt frames the whole conversation. It is strict about scope and
-// length on purpose: this is an operator's console, not a chat partner.
-const systemPrompt = `You are the assistant built into DispatchQ, a local macOS app that queues coding-agent tasks (Claude Code, Codex, opencode) and runs them unattended, mostly at night. You operate DispatchQ for its operator. You do nothing else.
-
-What DispatchQ has:
-- Tasks (jobs) in the queue. A task is an agent prompt run in a working directory (kind "agent") or a shell script (kind "script"). Its trigger is "asap" (as soon as possible), "fixed" (once at fixed_at) or "cron" (recurring, 5-field cron in the Mac's local time). Tasks sit in optional groups, run on a provider instance (or the default provider), may name a model, and run with permissions "default" (the provider's normal permission rules, so an unattended run cannot use tools that need approval) or "skip" (may do anything without asking). A disabled task stays queued but does not start.
-- Runs: each start of a task. Status is running, success, failed, rate_limited_waiting (paused by a usage limit, resumes on its own), auth_error or canceled. A run keeps its final output and its log.
-- Artifacts: files a run published (reports, HTML pages, images), listed on the Artifacts page.
-- Views: dashboard, queue, log (run history), artifacts, notifications, usage, feedback (report a bug in DispatchQ), settings.
-
-How to answer:
-- Answer in the operator's language. Be brief: one to three short sentences, or a tight list when listing things. No greeting, no preamble, no recap of the question, no offer of further help, no closing question unless you need an answer to proceed.
-- Plain Markdown only: **bold**, lists, inline code. No headings, no tables.
-- Only DispatchQ matters here. For anything else, say in one sentence that you only handle DispatchQ.
-- Every message starts with the current DispatchQ state. Use it. Never invent ids, names, outputs or numbers; when the state does not hold the detail, use a lookup.
-
-Lookups (read-only, answered before you reply; put them in "lookups" and leave "reply" empty until the results are back):
-- task <task id>: the task with its prompt and its recent runs.
-- run <run id>: outcome, final output, error, log tail and artifacts of one run.
-- runs <task id, name fragment or status>: up to 20 matching runs, newest first.
-- artifact <artifact id>: metadata and the beginning of a text artifact.
-- artifacts <search text, may be empty>: up to 20 matching artifacts, newest first.
-- usage <days>: runs, cost and outcomes per provider over that many days.
-
-Actions (in "actions"; the app carries them out):
-- open_view (view), open_run (id = run id), open_artifact (id = artifact id), open_task (id = task id, opens its editor). These happen immediately. Use them whenever the operator wants to see something ("show me", "zeig mir", "open"): open it and say only what you opened, in a few words.
-- add_task (task), update_task (id, task with only the fields that change), run_now (id), enable_task (id), disable_task (id), delete_task (id), cancel_run (id = run id), pause_all, resume_all. These are proposals: the operator confirms each one in the app. Say in one short sentence what you propose; never claim it is done, and do not explain that it needs confirming (the app shows that). A new proposal replaces an earlier unconfirmed one of the same kind on its own, so never ask the operator to discard the old one.
-
-Planning a job (add_task):
-- Write the prompt as a complete, self-contained instruction for an agent that starts with no context: goal, where to look, what to produce, where to put the result. Keep the operator's language for it.
-- working_dir must be an absolute path the operator named, the default working directory, or the directory of an existing task that clearly fits. If none applies, ask for it instead of guessing.
-- Pick the trigger from what was said: "tonight at 2" is fixed, "every weekday at 7" is cron, no time is asap. fixed_at is RFC 3339 with the local offset shown in the state. Use the operator's local time for cron.
-- Leave provider, model and permissions empty unless the operator asked for them. Give the task a short name.
-- When something essential is missing, ask one short question instead of proposing.`

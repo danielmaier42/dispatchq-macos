@@ -22,6 +22,8 @@ export interface Card {
   action: AssistantAction
   state: CardState
   error?: string
+  // What a confirmed run_cli printed.
+  output?: string
 }
 
 export interface ChatEntry {
@@ -134,7 +136,10 @@ async function runTurn(req: AssistantTurnRequest) {
 // waiting: "make it 8 instead of 7" must not leave two jobs to file.
 function replaceOlderProposals(next: AssistantAction[]) {
   if (!next.length) return
-  const key = (a: AssistantAction) => a.type + '\0' + (a.type === 'add_task' ? '' : (a.id ?? ''))
+  const key = (a: AssistantAction) =>
+    a.type +
+    '\0' +
+    (a.type === 'add_task' ? '' : a.type === 'run_cli' ? (a.argv ?? []).slice(0, 2).join(' ') : (a.id ?? ''))
   const keys = new Set(next.map(key))
   useAssistant.setState((s) => ({
     entries: s.entries.map((e) =>

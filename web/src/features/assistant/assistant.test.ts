@@ -151,3 +151,67 @@ describe('confirming a card', () => {
     })
   })
 })
+
+describe('full CLI parity on cards', () => {
+  it('runs a confirmed dispatchq command through the daemon and keeps its output', async () => {
+    const argv = ['provider', 'disable', 'codex']
+    api.post.mockResolvedValueOnce(
+      reply({actions: [{type: 'run_cli', argv, command: 'dispatchq provider disable codex'}]}),
+    )
+    await say('disable codex')
+    const entry = useAssistant.getState().entries.at(-1)!
+    expect(api.post).toHaveBeenCalledTimes(1) // nothing runs before it is confirmed
+    api.post.mockResolvedValueOnce({output: 'provider "codex" disabled'})
+    await confirmCard(entry.id, 0, entry.cards![0])
+    expect(api.post).toHaveBeenLastCalledWith('/api/assistant/cli', {argv})
+    expect(useAssistant.getState().entries.at(-1)?.cards?.[0]).toMatchObject({
+      state: 'done',
+      output: 'provider "codex" disabled',
+    })
+  })
+
+  it('files a script job with every drafted field, switches set to false included', async () => {
+    const task = {
+      name: 'Minute test',
+      kind: 'script' as const,
+      prompt: `"$DISPATCHQ_BIN" notify --title 'test' --message "test $(date '+%Y-%m-%d %H:%M:%S')"`,
+      working_dir: '/tmp',
+      trigger: 'cron' as const,
+      cron: '* * * * *',
+      notify_on_result: false,
+      quiet_history: true,
+    }
+    api.post.mockResolvedValueOnce(reply({actions: [{type: 'add_task', task}]}))
+    await say('every minute')
+    const entry = useAssistant.getState().entries.at(-1)!
+    api.post.mockResolvedValueOnce({})
+    await confirmCard(entry.id, 0, entry.cards![0])
+    expect(api.post).toHaveBeenLastCalledWith('/api/tasks', {...task, permissions: 'default'})
+  })
+
+  it('turns a job into a script the way dispatchq edit does', async () => {
+    api.post.mockResolvedValueOnce(
+      reply({actions: [{type: 'update_task', id: 't1', task: {kind: 'script', prompt: 'echo hi'}}]}),
+    )
+    await say('make it a script')
+    const entry = useAssistant.getState().entries.at(-1)!
+    api.get.mockResolvedValueOnce([
+      {
+        id: 't1',
+        name: 'T',
+        prompt: 'p',
+        trigger: 'asap',
+        provider: 'claude',
+        model: 'opus',
+        reasoning_effort: 'high',
+        permissions: 'skip',
+        backfill: true,
+      },
+    ])
+    api.put.mockResolvedValueOnce({})
+    await confirmCard(entry.id, 0, entry.cards![0])
+    const body = api.put.mock.calls[0][1]
+    expect(body).toMatchObject({kind: 'script', prompt: 'echo hi', permissions: 'default', backfill: false})
+    for (const k of ['provider', 'pool', 'model', 'reasoning_effort']) expect(body).not.toHaveProperty(k)
+  })
+})

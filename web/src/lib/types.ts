@@ -677,7 +677,9 @@ export interface AssistantTurnRequest {
 }
 
 // assistant.TaskDraft: a job as the assistant wrote it; on update_task only the changed fields.
+// It covers every setting of `dispatchq add`, `edit` and `queue`.
 export interface AssistantTaskDraft {
+  id?: string
   name?: string
   kind?: TaskKind
   prompt?: string
@@ -687,8 +689,17 @@ export interface AssistantTaskDraft {
   cron?: string
   group?: string
   provider?: string
+  pool?: string
   model?: string
+  reasoning_effort?: string
   permissions?: TaskPermissions
+  parallel?: boolean
+  enabled?: boolean
+  notify_on_result?: boolean
+  quiet_history?: boolean
+  backfill?: boolean
+  depends_on?: string[]
+  include_results?: boolean
 }
 
 // open_* happen at once; every other type is a proposal the operator confirms.
@@ -706,6 +717,7 @@ export type AssistantActionType =
   | 'cancel_run'
   | 'pause_all'
   | 'resume_all'
+  | 'run_cli'
 
 // assistant.Action.
 export interface AssistantAction {
@@ -713,10 +725,21 @@ export interface AssistantAction {
   view?: string
   id?: string
   task?: AssistantTaskDraft
-  // What id refers to (task name, artifact title, run).
+  // run_cli: the dispatchq command, without the program name, as the daemon checked it.
+  argv?: string[]
+  // run_cli: the command as a person would type it.
+  command?: string
+  // run_cli: the command removes something for good.
+  danger?: boolean
+  // What id refers to (task name, artifact title, run); for run_cli what the command does.
   label?: string
   // Why the proposal cannot be confirmed as it stands.
   problem?: string
+}
+
+// POST /api/assistant/cli response: what a confirmed run_cli printed.
+export interface AssistantCLIResult {
+  output: string
 }
 
 // POST /api/assistant/turn response (assistant.Reply).

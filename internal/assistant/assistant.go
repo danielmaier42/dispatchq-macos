@@ -117,7 +117,10 @@ type Source interface {
 type Service struct {
 	ask Asker
 	src Source
-	now func() time.Time
+	cli CLI
+	// system is the system prompt, which names this machine.
+	system string
+	now    func() time.Time
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -130,9 +133,11 @@ type session struct {
 	state [32]byte
 }
 
-// New returns a Service that asks through a and reads DispatchQ through src.
-func New(a Asker, src Source) *Service {
-	return &Service{ask: a, src: src, now: time.Now, sessions: map[string]*session{}}
+// New returns a Service that asks through a, reads DispatchQ through src, runs
+// confirmed dispatchq commands through cli (nil: it cannot) and describes rt
+// to the model.
+func New(a Asker, src Source, cli CLI, rt Runtime) *Service {
+	return &Service{ask: a, src: src, cli: cli, system: systemPrompt(rt), now: time.Now, sessions: map[string]*session{}}
 }
 
 // Turn answers one message. inst is the provider that answers, and model the
@@ -189,7 +194,7 @@ func (s *Service) Turn(ctx context.Context, inst provider.Instance, model string
 		for _, l := range limit(ans.Lookups, maxLookupsPerRound) {
 			label, out := s.src.Lookup(ctx, l)
 			steps = append(steps, label)
-			fmt.Fprintf(&res, "\n### %s %s\n%s\n", l.Tool, l.Arg, out)
+			fmt.Fprintf(&res, "\n### %s %s\n%s\n", l.Tool, strings.TrimSpace(l.Arg+" "+strings.Join(l.Argv, " ")), out)
 		}
 		if round == maxLookupRounds {
 			res.WriteString("\n[System note: no further lookups are possible for this message. Answer now with what you have.]")
@@ -233,7 +238,7 @@ func (s *Service) call(ctx context.Context, inst provider.Instance, model, id st
 		Continues: true,
 	}
 	if !resume {
-		req.System = systemPrompt
+		req.System = s.system
 	}
 	out, err := s.ask.Ask(ctx, inst, req)
 	if err != nil {

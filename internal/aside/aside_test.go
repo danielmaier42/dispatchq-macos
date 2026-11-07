@@ -27,11 +27,11 @@ func (a *stubAdapter) Describe() provider.Description         { return provider.
 func (a *stubAdapter) DetectBinary() string                   { return a.binary }
 func (a *stubAdapter) ResolveBinary(provider.Instance) string { return a.binary }
 
-func (a *stubAdapter) CheckHealth(context.Context, provider.Instance, provider.Prober) provider.Health {
+func (a *stubAdapter) CheckHealth(context.Context, provider.Instance, provider.Host) provider.Health {
 	return provider.Health{State: provider.HealthReady}
 }
 
-func (a *stubAdapter) ListModels(context.Context, provider.Instance, provider.Prober) []provider.Model {
+func (a *stubAdapter) ListModels(context.Context, provider.Instance, provider.Host) []provider.Model {
 	return nil
 }
 

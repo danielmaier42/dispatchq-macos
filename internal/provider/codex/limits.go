@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
-	"github.com/danielmaier42/claudeq/internal/provider/binpath"
-	"github.com/danielmaier42/claudeq/internal/system"
 )
 
 // rateLimitsRequest is the conversation ReadLimits holds with `codex
@@ -61,12 +59,12 @@ type rateLimitsResult struct {
 // Codex says which plan the account is on but not how the plans compare, so
 // the reading carries no capacity: a pool weighs a Codex member as 1 unless the
 // operator sets its weight.
-func (a *Adapter) ReadLimits(ctx context.Context, inst provider.Instance) (provider.LimitReading, error) {
+func (a *Adapter) ReadLimits(ctx context.Context, inst provider.Instance, h provider.Host) (provider.LimitReading, error) {
 	bin := a.ResolveBinary(inst)
 	if bin == "" {
 		return provider.LimitReading{}, errors.New("the Codex CLI was not found, so its limits cannot be read")
 	}
-	res, err := askAppServer(ctx, provider.Command{Path: bin, Args: []string{"app-server"}, Env: a.env(inst)})
+	res, err := askAppServer(ctx, h, provider.Command{Path: bin, Args: []string{"app-server"}, Env: a.env(inst)})
 	if err != nil {
 		return provider.LimitReading{}, err
 	}
@@ -80,22 +78,15 @@ func (a *Adapter) ReadLimits(ctx context.Context, inst provider.Instance) (provi
 // askAppServer runs the app server, holds the rateLimitsRequest conversation
 // and returns the answer to the question. The server stays up for as long as
 // its input is open, so the process is stopped as soon as the answer is in.
-func askAppServer(ctx context.Context, c provider.Command) (json.RawMessage, error) {
+func askAppServer(ctx context.Context, h provider.Host, c provider.Command) (json.RawMessage, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd, err := binpath.CommandContext(ctx, c.Path, c.Args...) // a configured binary path, no shell
+	proc, err := h.Command(ctx, c, provider.CmdOptions{Stream: true})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("codex app-server: %w", err)
 	}
-	system.NoWindow(cmd)
-	if len(c.Env) > 0 {
-		cmd.Env = append(cmd.Environ(), c.Env...)
-	}
+	cmd, stdin := proc.Cmd, proc.Stdin
 	cmd.WaitDelay = time.Second
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("codex app-server stdin: %w", err)
-	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("codex app-server stdout: %w", err)

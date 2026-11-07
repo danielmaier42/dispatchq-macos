@@ -13,15 +13,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
-	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 	"github.com/danielmaier42/claudeq/internal/randid"
-	"github.com/danielmaier42/claudeq/internal/system"
 )
 
 // Runner asks a configured provider instance a question.
@@ -71,11 +68,19 @@ func (r *Runner) Ask(ctx context.Context, inst provider.Instance, req provider.A
 		}
 		return provider.Aside{}, err
 	}
-	dir, err := r.sessionDir()
+	host, err := r.Registry.HostFor(inst)
 	if err != nil {
-		return provider.Aside{}, err
+		return provider.Aside{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
-	out, err := r.exec(ctx, dir, cmd)
+	// The scratch directory is this computer's. An instance that runs in
+	// another environment gets that environment's own (see provider.Host).
+	var dir string
+	if host.Execution().IsNative() {
+		if dir, err = r.sessionDir(); err != nil {
+			return provider.Aside{}, err
+		}
+	}
+	out, err := r.exec(ctx, host, dir, cmd)
 	if err != nil {
 		return provider.Aside{}, err
 	}
@@ -92,37 +97,11 @@ func (r *Runner) Ask(ctx context.Context, inst provider.Instance, req provider.A
 	return res, nil
 }
 
-func (r *Runner) exec(ctx context.Context, dir string, cmd provider.Command) ([]byte, error) {
+func (r *Runner) exec(ctx context.Context, host provider.Host, dir string, cmd provider.Command) ([]byte, error) {
 	if r.Exec != nil {
 		return r.Exec(ctx, dir, cmd)
 	}
-	return execCommand(ctx, dir, cmd)
-}
-
-// execCommand runs the command and returns stdout only, so a warning the CLI
-// writes to stderr can never end up inside the JSON that gets parsed.
-func execCommand(ctx context.Context, dir string, cmd provider.Command) ([]byte, error) {
-	c, err := binpath.CommandContext(ctx, cmd.Path, cmd.Args...) // the adapter built this from the configured provider
-	if err != nil {
-		return nil, err
-	}
-	system.NoWindow(c)
-	c.Dir = dir
-	if len(cmd.Env) > 0 {
-		c.Env = append(os.Environ(), cmd.Env...)
-	}
-	if cmd.Stdin != "" {
-		c.Stdin = strings.NewReader(cmd.Stdin)
-	}
-	out, err := c.Output()
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
-			return out, fmt.Errorf("%w: %s", err, shorten(string(ee.Stderr), 300))
-		}
-		return out, err
-	}
-	return out, nil
+	return host.Output(ctx, cmd, dir)
 }
 
 // dirName is the throwaway directory asides run in, inside the user's own

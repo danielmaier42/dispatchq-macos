@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
-	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 	"github.com/danielmaier42/claudeq/internal/store"
 	"github.com/danielmaier42/claudeq/internal/task"
 )
@@ -250,10 +249,12 @@ type Request struct {
 }
 
 // providerRequest is the neutral description of this run handed to the adapter.
-func (r Request) providerRequest() provider.Request {
+// workDir is the task's directory in the form the run's environment uses.
+func (r Request) providerRequest(h provider.Host, workDir string) provider.Request {
 	return provider.Request{
+		Host:            h,
 		Prompt:          r.Task.Prompt,
-		WorkingDir:      r.Task.WorkingDir,
+		WorkingDir:      workDir,
 		Model:           r.Model,
 		SessionID:       r.SessionID,
 		Resume:          r.Resume,
@@ -287,15 +288,30 @@ func (e *Executor) Command(req Request) (provider.Command, error) {
 	if err != nil {
 		return provider.Command{}, err
 	}
-	return ad.Command(req.Provider, req.providerRequest())
+	host, err := e.Registry.HostFor(req.Provider)
+	if err != nil {
+		return provider.Command{}, err
+	}
+	dir, err := host.WorkDir(context.Background(), req.Task.WorkingDir)
+	if err != nil {
+		return provider.Command{}, err
+	}
+	return ad.Command(req.Provider, req.providerRequest(host, dir))
 }
 
-// runEnv is the environment for a run: the daemon's own environment, the
-// variables a run needs to queue follow-up tasks (see selfQueueSystemPrompt),
-// and finally the adapter's own additions. Appended keys win over any inherited
-// value of the same name.
+// runEnv is the native environment for a run: the daemon's own environment,
+// the run variables (see runVars) and finally the adapter's own additions.
+// Appended keys win over any inherited value of the same name. It is what the
+// native host builds for an agent run, and what a script job always gets.
 func (e *Executor) runEnv(req Request, adapterEnv []string) []string {
-	env := os.Environ()
+	return append(provider.WithLegacyNames(append(os.Environ(), e.runVars(req)...)), adapterEnv...)
+}
+
+// runVars are the variables a run needs to queue follow-up tasks (see
+// selfQueueSystemPrompt). The run's host puts them after its own environment
+// and before the adapter's additions, so the adapter's keys win.
+func (e *Executor) runVars(req Request) []string {
+	var env []string
 	if e.Home != "" {
 		env = append(env, store.EnvHome+"="+e.Home)
 	}
@@ -326,20 +342,7 @@ func (e *Executor) runEnv(req Request, adapterEnv []string) []string {
 	if req.WorkflowID != "" {
 		env = append(env, EnvWorkflowID+"="+req.WorkflowID)
 	}
-	return append(withLegacyNames(env), adapterEnv...)
-}
-
-// withLegacyNames repeats each dispatchq variable under the CLAUDEQ_ name it
-// had before the rename, so a script outside dispatchq that still reads
-// $CLAUDEQ_BIN or $CLAUDEQ_HOME keeps working after the update.
-func withLegacyNames(env []string) []string {
-	var legacy []string
-	for _, kv := range env {
-		if rest, ok := strings.CutPrefix(kv, "DISPATCHQ_"); ok {
-			legacy = append(legacy, "CLAUDEQ_"+rest)
-		}
-	}
-	return append(env, legacy...)
+	return env
 }
 
 // pipeReleaseDelay is how long a run waits for its output to close once the
@@ -363,26 +366,43 @@ func (e *Executor) Run(ctx context.Context, req Request) (provider.Result, error
 	if err != nil {
 		return provider.Result{}, err
 	}
-	invocation, err := ad.Command(req.Provider, req.providerRequest())
+	// The run's environment: the daemon's own system for a native instance,
+	// a Linux distribution for a WSL one. The task's folder is translated
+	// into that environment's form before the adapter embeds it.
+	host, err := e.Registry.HostFor(req.Provider)
+	if err != nil {
+		return provider.Result{}, err
+	}
+	workDir, err := host.WorkDir(ctx, req.Task.WorkingDir)
+	if err != nil {
+		return provider.Result{}, err
+	}
+	invocation, err := ad.Command(req.Provider, req.providerRequest(host, workDir))
 	if err != nil {
 		return provider.Result{}, err
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// binpath resolves an npm or scoop .cmd shim to the program it starts: a batch file
-	// cannot be started directly, and cmd.exe would reinterpret the prompt.
-	cmd, err := binpath.CommandContext(runCtx, invocation.Path, invocation.Args...)
+	// The native host resolves an npm or scoop .cmd shim to the program it
+	// starts (a batch file cannot be started directly, and cmd.exe would
+	// reinterpret the prompt), and passes the run variables that let the run
+	// queue follow-up tasks (self-queue).
+	proc, err := host.Command(runCtx, invocation, provider.CmdOptions{Dir: workDir, Vars: e.runVars(req)})
 	if err != nil {
 		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
 	}
-	cmd.Dir = req.Task.WorkingDir
-	cmd.Env = e.runEnv(req, invocation.Env) // lets the run queue follow-up tasks (self-queue)
-	configureProcessGroup(cmd)              // so a killed run takes its whole process tree with it
-	// A harness that takes its prompt on stdin gets it here. One that does not
-	// sees stdin closed immediately, which is what it wants: a headless run must
-	// never sit waiting for input nobody will type.
-	cmd.Stdin = strings.NewReader(invocation.Stdin)
+	cmd := proc.Cmd
+	configureProcessGroup(cmd) // so a killed run takes its whole process tree with it
+	if proc.Interrupt != nil {
+		// The environment stops its own tree first (a Linux tree a Windows Job
+		// Object cannot see), then the hard stop runs as for any run.
+		hard := cmd.Cancel
+		cmd.Cancel = func() error {
+			proc.Interrupt()
+			return hard()
+		}
+	}
 
 	// Output goes through exec's own copying, not a pipe read here until EOF:
 	// a daemon a tool call left behind holds the pipe open long after the

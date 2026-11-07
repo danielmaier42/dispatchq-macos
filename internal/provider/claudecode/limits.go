@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -72,14 +73,14 @@ type usageReport struct {
 
 // ReadLimits implements provider.LimitReader: the account's five-hour and
 // weekly windows, read with the login the CLI stored for this instance.
-func (a *Adapter) ReadLimits(ctx context.Context, inst provider.Instance) (provider.LimitReading, error) {
+func (a *Adapter) ReadLimits(ctx context.Context, inst provider.Instance, h provider.Host) (provider.LimitReading, error) {
 	if inst.UsesAPIKey() {
 		// The CLI bills an API key per token and ignores any plan login the
 		// configuration directory also holds, so the plan's windows would
 		// describe an allowance this instance does not spend.
 		return provider.LimitReading{}, provider.ErrNoPlanLimits
 	}
-	login, err := a.login(ctx, inst)
+	login, err := a.login(ctx, inst, h)
 	if err != nil {
 		return provider.LimitReading{}, err
 	}
@@ -172,6 +173,9 @@ func parseUsage(body []byte) ([]provider.LimitWindow, error) {
 	return out, nil
 }
 
+// credentialsLimit bounds the credentials file read from another environment.
+const credentialsLimit = 1 << 20
+
 // oauthLogin is the part of a stored login ReadLimits uses.
 type oauthLogin struct {
 	AccessToken, SubscriptionType, RateLimitTier string
@@ -181,9 +185,23 @@ type oauthLogin struct {
 // macOS Claude Code keeps it, else from the credentials file the CLI writes
 // where there is no keychain. The token is never logged or wrapped into an
 // error.
-func (a *Adapter) login(ctx context.Context, inst provider.Instance) (oauthLogin, error) {
-	raw, err := a.readKeychain(ctx, keychainService(inst.ConfigDir))
-	if err != nil {
+//
+// An instance that runs in another environment (Linux under WSL) keeps its
+// login in that environment's credentials file, which is read through its
+// host into memory only, exactly as the native file is: nothing is copied.
+func (a *Adapter) login(ctx context.Context, inst provider.Instance, h provider.Host) (oauthLogin, error) {
+	var raw []byte
+	var err error
+	if h != nil && !h.Execution().IsNative() {
+		dir := inst.ConfigDir
+		if dir == "" {
+			dir = "~/.claude"
+		}
+		raw, err = h.ReadFile(ctx, path.Join(dir, ".credentials.json"), credentialsLimit)
+		if err != nil {
+			return oauthLogin{}, errors.New("no Claude login was found for this account inside Linux; open the distribution and run `claude auth login` there")
+		}
+	} else if raw, err = a.readKeychain(ctx, keychainService(inst.ConfigDir)); err != nil {
 		dir := inst.ConfigDir
 		if dir == "" {
 			home, herr := os.UserHomeDir()

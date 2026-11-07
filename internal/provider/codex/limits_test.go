@@ -42,7 +42,7 @@ func TestReadLimitsAsksTheInstancesAppServer(t *testing.T) {
 	a := New()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	reading, err := a.ReadLimits(ctx, provider.Instance{BinaryPath: bin, ConfigDir: "/tmp/codex-b"})
+	reading, err := a.ReadLimits(ctx, provider.Instance{BinaryPath: bin, ConfigDir: "/tmp/codex-b"}, provider.NativeHost{})
 	if err != nil {
 		t.Fatalf("ReadLimits: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestReadLimitsReportsTheServersError(t *testing.T) {
 	bin, _ := fakeAppServer(t, `{"id":2,"error":{"code":-32600,"message":"not logged in"}}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := New().ReadLimits(ctx, provider.Instance{BinaryPath: bin})
+	_, err := New().ReadLimits(ctx, provider.Instance{BinaryPath: bin}, provider.NativeHost{})
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v, want the server's message", err)
 	}
@@ -79,7 +79,7 @@ func TestReadLimitsWhenTheServerNeverAnswers(t *testing.T) {
 	bin, _ := fakeAppServer(t, `{"id":3,"result":{}}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if _, err := New().ReadLimits(ctx, provider.Instance{BinaryPath: bin}); err == nil {
+	if _, err := New().ReadLimits(ctx, provider.Instance{BinaryPath: bin}, provider.NativeHost{}); err == nil {
 		t.Fatal("a server that never answers must be an error")
 	}
 }

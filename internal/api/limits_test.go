@@ -20,7 +20,7 @@ type limitsStub struct {
 	reads *atomic.Int32
 }
 
-func (s limitsStub) ReadLimits(context.Context, provider.Instance) (provider.LimitReading, error) {
+func (s limitsStub) ReadLimits(context.Context, provider.Instance, provider.Host) (provider.LimitReading, error) {
 	n := s.reads.Add(1)
 	return provider.LimitReading{Windows: []provider.LimitWindow{{ID: "week", Label: "Week", UsedPercent: float64(n)}}}, nil
 }

@@ -391,7 +391,7 @@ func TestFallbackLabelNamesWhoIsActuallyWorking(t *testing.T) {
 // usedUpStub reads every account's week as used up until tomorrow.
 type usedUpStub struct{ stubAdapter }
 
-func (usedUpStub) ReadLimits(context.Context, provider.Instance) (provider.LimitReading, error) {
+func (usedUpStub) ReadLimits(context.Context, provider.Instance, provider.Host) (provider.LimitReading, error) {
 	reset := time.Now().Add(24 * time.Hour)
 	return provider.LimitReading{Windows: []provider.LimitWindow{{ID: "week", Label: "Week", UsedPercent: 100, ResetsAt: &reset}}}, nil
 }
@@ -449,7 +449,7 @@ type countingStub struct {
 	checks int
 }
 
-func (c *countingStub) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Prober) provider.Health {
+func (c *countingStub) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Host) provider.Health {
 	c.mu.Lock()
 	c.checks++
 	c.mu.Unlock()

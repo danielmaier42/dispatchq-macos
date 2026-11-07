@@ -18,7 +18,7 @@ type limitsAdapter struct {
 	err     error
 }
 
-func (a limitsAdapter) ReadLimits(context.Context, provider.Instance) (provider.LimitReading, error) {
+func (a limitsAdapter) ReadLimits(context.Context, provider.Instance, provider.Host) (provider.LimitReading, error) {
 	return provider.LimitReading{Windows: a.windows}, a.err
 }
 

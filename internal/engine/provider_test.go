@@ -425,7 +425,7 @@ type blockingAdapter struct {
 	once    sync.Once
 }
 
-func (a *blockingAdapter) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Prober) provider.Health {
+func (a *blockingAdapter) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Host) provider.Health {
 	a.once.Do(func() { close(a.entered) })
 	<-a.release
 	return a.healthAdapter.CheckHealth(ctx, inst, p)
@@ -479,7 +479,7 @@ type countingHealthAdapter struct {
 	n  int
 }
 
-func (a *countingHealthAdapter) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Prober) provider.Health {
+func (a *countingHealthAdapter) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Host) provider.Health {
 	a.mu.Lock()
 	a.n++
 	a.mu.Unlock()

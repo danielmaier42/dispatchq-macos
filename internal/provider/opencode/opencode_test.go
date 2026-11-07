@@ -160,9 +160,9 @@ func fakeBinary(t *testing.T) string {
 func TestCheckHealthReady(t *testing.T) {
 	bin := fakeBinary(t)
 	a := newAdapter(bin)
-	h := a.CheckHealth(context.Background(), instance(bin), &fakeProber{
+	h := a.CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: &fakeProber{
 		out: map[string][]byte{"--version": []byte("1.18.30\n")},
-	})
+	}})
 	if h.State != provider.HealthReady {
 		t.Fatalf("State = %v, want ready (reason: %q)", h.State, h.Reason)
 	}
@@ -173,7 +173,7 @@ func TestCheckHealthReady(t *testing.T) {
 
 func TestCheckHealthNotInstalled(t *testing.T) {
 	a := newAdapter("")
-	h := a.CheckHealth(context.Background(), instance(""), &fakeProber{})
+	h := a.CheckHealth(context.Background(), instance(""), provider.NativeHost{Prober: &fakeProber{}})
 	if h.State != provider.HealthNotInstalled {
 		t.Fatalf("State = %v, want not_installed", h.State)
 	}
@@ -184,7 +184,7 @@ func TestCheckHealthInvalidConfigDir(t *testing.T) {
 	a := newAdapter(bin)
 	inst := instance(bin)
 	inst.ConfigDir = filepath.Join(t.TempDir(), "does-not-exist")
-	h := a.CheckHealth(context.Background(), inst, &fakeProber{})
+	h := a.CheckHealth(context.Background(), inst, provider.NativeHost{Prober: &fakeProber{}})
 	if h.State != provider.HealthInvalidConfiguration {
 		t.Fatalf("State = %v, want invalid_configuration", h.State)
 	}
@@ -193,9 +193,9 @@ func TestCheckHealthInvalidConfigDir(t *testing.T) {
 func TestCheckHealthVersionProbeFails(t *testing.T) {
 	bin := fakeBinary(t)
 	a := newAdapter(bin)
-	h := a.CheckHealth(context.Background(), instance(bin), &fakeProber{
+	h := a.CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: &fakeProber{
 		err: map[string]error{"--version": os.ErrDeadlineExceeded},
-	})
+	}})
 	if h.State != provider.HealthCheckFailed {
 		t.Fatalf("State = %v, want check_failed when --version cannot be answered", h.State)
 	}
@@ -207,7 +207,7 @@ func TestListModelsParsesPlainOutput(t *testing.T) {
 	p := &fakeProber{out: map[string][]byte{
 		"models": []byte("lmstudio/openai/gpt-oss-20b\nlmstudio/qwen/qwen3.6-35b-a3b\n"),
 	}}
-	got := a.ListModels(context.Background(), instance(bin), p)
+	got := a.ListModels(context.Background(), instance(bin), provider.NativeHost{Prober: p})
 	want := []provider.Model{
 		{ID: "lmstudio/openai/gpt-oss-20b", Label: "lmstudio/openai/gpt-oss-20b"},
 		{ID: "lmstudio/qwen/qwen3.6-35b-a3b", Label: "lmstudio/qwen/qwen3.6-35b-a3b"},
@@ -226,7 +226,7 @@ func TestListModelsFiltersAnErrorLine(t *testing.T) {
 	p := &fakeProber{out: map[string][]byte{
 		"models": []byte("Error: Provider not found: opencode\n"),
 	}}
-	got := a.ListModels(context.Background(), instance(bin), p)
+	got := a.ListModels(context.Background(), instance(bin), provider.NativeHost{Prober: p})
 	if got != nil {
 		t.Errorf("ListModels = %v, want nil for an error line", got)
 	}
@@ -234,7 +234,7 @@ func TestListModelsFiltersAnErrorLine(t *testing.T) {
 
 func TestListModelsNoBinaryYieldsNoSuggestions(t *testing.T) {
 	a := newAdapter("")
-	got := a.ListModels(context.Background(), instance(""), &fakeProber{})
+	got := a.ListModels(context.Background(), instance(""), provider.NativeHost{Prober: &fakeProber{}})
 	if got != nil {
 		t.Errorf("ListModels = %v, want nil — opencode ships no models of its own", got)
 	}
@@ -323,7 +323,7 @@ func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
 			}
 			bin := tc.path(t)
 			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
-			h := newAdapter("").CheckHealth(context.Background(), instance(bin), &fakeProber{out: map[string][]byte{"--version": []byte("1.18.30\n")}})
+			h := newAdapter("").CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: &fakeProber{out: map[string][]byte{"--version": []byte("1.18.30\n")}}})
 			if h.State != tc.want {
 				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
 			}

@@ -624,6 +624,23 @@ type Provider struct {
 	FallbackModel string `toml:"fallback_model,omitempty" json:"fallback_model"`
 	// Enabled turns the instance off without removing it.
 	Enabled bool `toml:"enabled" json:"enabled"`
+	// Execution names the environment the harness runs in. Absent means the
+	// daemon's own operating system, which is what every configuration written
+	// before execution environments existed means; nothing migrates.
+	Execution *ProviderExecution `toml:"execution,omitempty" json:"execution,omitempty"`
+}
+
+// ProviderExecution is the [providers.execution] table: where a provider
+// instance runs when that is not the daemon's own operating system.
+type ProviderExecution struct {
+	// Type is the environment kind. "wsl" runs the instance inside a Linux
+	// distribution of the Windows Subsystem for Linux.
+	Type string `toml:"type" json:"type"`
+	// Distro is the WSL distribution name, as `wsl.exe --list` reports it.
+	Distro string `toml:"distro,omitempty" json:"distro,omitempty"`
+	// User is an existing Linux user of that distribution. Empty runs as the
+	// distribution's default user.
+	User string `toml:"user,omitempty" json:"user,omitempty"`
 }
 
 // seedProviders builds the provider list for a configuration that has none: the

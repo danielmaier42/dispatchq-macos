@@ -90,6 +90,11 @@ func (a *Adapter) ResolveBinary(inst provider.Instance) string {
 	if inst.BinaryPath != "" {
 		return inst.BinaryPath
 	}
+	if !inst.Execution.IsNative() {
+		// Detection looks at this computer. An instance that runs in Linux is
+		// found on its own login PATH there, when it is started.
+		return BinaryName
+	}
 	return a.DetectBinary()
 }
 

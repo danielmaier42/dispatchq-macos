@@ -3,11 +3,9 @@ package opencode
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
-	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 // CheckHealth implements provider.Adapter. It costs no model usage: the
@@ -21,9 +19,9 @@ import (
 // reports HealthNotAuthenticated: a binary that answers --version is read as
 // ready, and whether a given run's chosen provider is actually usable is left
 // for the run itself to discover.
-func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Prober) provider.Health {
-	if h, ok := checkConfigDir(inst); !ok {
-		return h
+func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, h provider.Host) provider.Health {
+	if bad, ok := provider.CheckConfigDir(ctx, h, inst); !ok {
+		return bad
 	}
 
 	bin := a.ResolveBinary(inst)
@@ -34,7 +32,7 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 				"Settings → Providers.",
 		}
 	}
-	if err := executableFile(bin); err != nil {
+	if err := executableFile(ctx, h, bin); err != nil {
 		return provider.Health{
 			State:  provider.HealthNotInstalled,
 			Binary: bin,
@@ -47,7 +45,7 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 	// a busy machine. Reporting that as "not installed" would be a verdict —
 	// KnownUnready, so follow-up tasks are not even filed for the provider —
 	// where dispatchq in fact knows nothing yet.
-	version, err := p.Probe(ctx, a.probeCommand(inst, bin, "--version"))
+	version, err := h.Probe(ctx, a.probeCommand(inst, bin, "--version"))
 	if err != nil {
 		return provider.Health{
 			State:  provider.HealthCheckFailed,
@@ -76,13 +74,13 @@ func modelLine(line string) (string, bool) {
 // catalog opencode itself ships — so a binary that cannot be asked yields no
 // suggestions rather than an invented list: unlike Codex or Claude Code,
 // opencode has no models of its own to fall back to.
-func (a *Adapter) ListModels(ctx context.Context, inst provider.Instance, p provider.Prober) []provider.Model {
+func (a *Adapter) ListModels(ctx context.Context, inst provider.Instance, h provider.Host) []provider.Model {
 	return a.catalog.Lookup(inst, func() ([]provider.Model, bool) {
 		bin := a.ResolveBinary(inst)
 		if bin == "" {
 			return nil, false
 		}
-		out, err := p.Probe(ctx, a.probeCommand(inst, bin, "models"))
+		out, err := h.Probe(ctx, a.probeCommand(inst, bin, "models"))
 		if err != nil {
 			return nil, false
 		}
@@ -99,28 +97,6 @@ func (a *Adapter) ListModels(ctx context.Context, inst provider.Instance, p prov
 	})
 }
 
-// checkConfigDir reports the instance's own settings as invalid when the
-// account directory it names cannot be used.
-func checkConfigDir(inst provider.Instance) (provider.Health, bool) {
-	if inst.ConfigDir == "" {
-		return provider.Health{}, true
-	}
-	fi, err := os.Stat(inst.ConfigDir)
-	switch {
-	case err != nil:
-		return provider.Health{
-			State:  provider.HealthInvalidConfiguration,
-			Reason: fmt.Sprintf("The configuration directory %s is not accessible: %s.", inst.ConfigDir, redact(err.Error())),
-		}, false
-	case !fi.IsDir():
-		return provider.Health{
-			State:  provider.HealthInvalidConfiguration,
-			Reason: fmt.Sprintf("The configuration directory %s is not a directory.", inst.ConfigDir),
-		}, false
-	}
-	return provider.Health{}, true
-}
-
 // probeCommand builds a readiness probe for this instance — same binary, same
 // account directory as a run, so the answer is about the account the jobs
 // would actually use.
@@ -129,9 +105,10 @@ func (a *Adapter) probeCommand(inst provider.Instance, bin string, args ...strin
 }
 
 // executableFile reports why a path cannot be run, or nil when it can. The
-// platform rule lives in binpath; only the reason is redacted here.
-func executableFile(p string) error {
-	if err := binpath.CheckExecutable(p); err != nil {
+// instance's host applies the rule of its platform; only the reason is
+// redacted here.
+func executableFile(ctx context.Context, h provider.Host, p string) error {
+	if err := h.Executable(ctx, p); err != nil {
 		return fmt.Errorf("%s", redact(err.Error()))
 	}
 	return nil

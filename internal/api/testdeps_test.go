@@ -26,11 +26,11 @@ func (stubAdapter) DetectBinary() string { return "" }
 
 func (stubAdapter) ResolveBinary(inst provider.Instance) string { return inst.BinaryPath }
 
-func (s stubAdapter) CheckHealth(context.Context, provider.Instance, provider.Prober) provider.Health {
+func (s stubAdapter) CheckHealth(context.Context, provider.Instance, provider.Host) provider.Health {
 	return s.health
 }
 
-func (stubAdapter) ListModels(context.Context, provider.Instance, provider.Prober) []provider.Model {
+func (stubAdapter) ListModels(context.Context, provider.Instance, provider.Host) []provider.Model {
 	return []provider.Model{{ID: "sonnet", Label: "Sonnet (latest)"}}
 }
 

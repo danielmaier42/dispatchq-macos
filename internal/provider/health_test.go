@@ -16,7 +16,7 @@ type countingAdapter struct {
 	checks int
 }
 
-func (c *countingAdapter) CheckHealth(_ context.Context, _ Instance, _ Prober) Health {
+func (c *countingAdapter) CheckHealth(_ context.Context, _ Instance, _ Host) Health {
 	c.mu.Lock()
 	c.checks++
 	c.mu.Unlock()
@@ -137,7 +137,7 @@ type blockingAdapter struct {
 	release chan struct{}
 }
 
-func (b *blockingAdapter) CheckHealth(_ context.Context, inst Instance, _ Prober) Health {
+func (b *blockingAdapter) CheckHealth(_ context.Context, inst Instance, _ Host) Health {
 	b.started <- inst
 	<-b.release
 	return Health{State: HealthReady, Detail: inst.ID}

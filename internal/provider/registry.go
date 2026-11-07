@@ -13,6 +13,8 @@ import (
 type Registry struct {
 	mu     sync.RWMutex
 	byKind map[Kind]Adapter
+	// wsl runs WSL instances; nil where WSL does not exist (see SetWSL).
+	wsl WSLService
 }
 
 // NewRegistry returns a registry holding the given adapters. It panics on a

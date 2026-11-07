@@ -1438,7 +1438,12 @@ func (s *server) listModels(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, err)
 		return
 	}
-	models := ad.ListModels(r.Context(), resolved.Instance, provider.ExecProber{})
+	var models []provider.Model
+	// An instance whose environment cannot be reached has no suggestions; the
+	// readiness check is what explains why.
+	if host, err := s.d.Registry.HostFor(resolved.Instance); err == nil {
+		models = ad.ListModels(r.Context(), resolved.Instance, host)
+	}
 	if models == nil {
 		models = []provider.Model{}
 	}

@@ -245,11 +245,11 @@ func (s stubAdapter) ResolveBinary(provider.Instance) string {
 	return ""
 }
 
-func (s stubAdapter) CheckHealth(context.Context, provider.Instance, provider.Prober) provider.Health {
+func (s stubAdapter) CheckHealth(context.Context, provider.Instance, provider.Host) provider.Health {
 	return s.health
 }
 
-func (s stubAdapter) ListModels(context.Context, provider.Instance, provider.Prober) []provider.Model {
+func (s stubAdapter) ListModels(context.Context, provider.Instance, provider.Host) []provider.Model {
 	return nil
 }
 

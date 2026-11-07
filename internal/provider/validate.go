@@ -69,10 +69,19 @@ func Validate(reg *Registry, inst Instance) error {
 	if _, err := reg.Lookup(inst.Kind); err != nil {
 		return fmt.Errorf("%w %q: %w (known kinds: %s)", ErrInvalidProvider, inst.ID, err, kindList(reg))
 	}
-	if p := inst.BinaryPath; p != "" && !filepath.IsAbs(p) {
+	if err := CheckExecution(reg, inst.Execution); err != nil {
+		return fmt.Errorf("%w %q: %w", ErrInvalidProvider, inst.ID, err)
+	}
+	isAbs := filepath.IsAbs
+	if !inst.Execution.IsNative() {
+		// The paths of an instance that runs in Linux are Linux paths, whatever
+		// the daemon's own system calls absolute.
+		isAbs = isLinuxAbs
+	}
+	if p := inst.BinaryPath; p != "" && !isAbs(p) {
 		return fmt.Errorf("%w %q: binary path %q must be absolute", ErrInvalidProvider, inst.ID, p)
 	}
-	if d := inst.ConfigDir; d != "" && !filepath.IsAbs(d) {
+	if d := inst.ConfigDir; d != "" && !isAbs(d) {
 		return fmt.Errorf("%w %q: configuration directory %q must be absolute", ErrInvalidProvider, inst.ID, d)
 	}
 	if err := checkEnv(inst.Env); err != nil {
@@ -89,4 +98,10 @@ func kindList(reg *Registry) string {
 		names[i] = string(k)
 	}
 	return strings.Join(names, ", ")
+}
+
+// isLinuxAbs reports whether p is an absolute Linux path without a control
+// character in it.
+func isLinuxAbs(p string) bool {
+	return strings.HasPrefix(p, "/") && !strings.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f })
 }

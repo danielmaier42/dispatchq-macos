@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
-	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 // CheckHealth implements provider.Adapter. It costs no model usage: the binary,
@@ -18,9 +16,9 @@ import (
 // that does without credentials: five WebSocket attempts, a fallback to HTTPS
 // and five more — a readiness check that takes half a minute and looks like an
 // outage.
-func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Prober) provider.Health {
-	if h, ok := checkConfigDir(inst); !ok {
-		return h
+func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, h provider.Host) provider.Health {
+	if bad, ok := provider.CheckConfigDir(ctx, h, inst); !ok {
+		return bad
 	}
 
 	bin := a.ResolveBinary(inst)
@@ -31,7 +29,7 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 				"Settings → Providers.",
 		}
 	}
-	if err := executableFile(bin); err != nil {
+	if err := executableFile(ctx, h, bin); err != nil {
 		return provider.Health{
 			State:  provider.HealthNotInstalled,
 			Binary: bin,
@@ -44,7 +42,7 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 	// a busy machine. Reporting that as "not installed" would be a verdict —
 	// KnownUnready, so follow-up tasks are not even filed for the provider —
 	// where dispatchq in fact knows nothing yet.
-	version, err := p.Probe(ctx, a.probeCommand(inst, bin, "--version"))
+	version, err := h.Probe(ctx, a.probeCommand(inst, bin, "--version"))
 	if err != nil {
 		return provider.Health{
 			State:  provider.HealthCheckFailed,
@@ -55,7 +53,7 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 
 	// `codex login status` says it in the exit status and writes the words to
 	// stderr either way: "Logged in using ChatGPT" or "Not logged in".
-	out, loginErr := p.Probe(ctx, a.probeCommand(inst, bin, "login", "status"))
+	out, loginErr := h.Probe(ctx, a.probeCommand(inst, bin, "login", "status"))
 	detail := firstLine(string(version))
 	if loginErr != nil {
 		// A non-zero exit means "not logged in" only when the CLI said so. A
@@ -103,13 +101,13 @@ type modelCatalog struct {
 // command, so its absence is not a problem worth reporting: whatever it cannot
 // answer falls back to the small built-in list, and either way the result is
 // only a suggestion for the UI.
-func (a *Adapter) ListModels(ctx context.Context, inst provider.Instance, p provider.Prober) []provider.Model {
+func (a *Adapter) ListModels(ctx context.Context, inst provider.Instance, h provider.Host) []provider.Model {
 	return a.catalog.Lookup(inst, func() ([]provider.Model, bool) {
 		bin := a.ResolveBinary(inst)
 		if bin == "" {
 			return bundledModels, false
 		}
-		out, err := p.Probe(ctx, a.probeCommand(inst, bin, "debug", "models", "--bundled"))
+		out, err := h.Probe(ctx, a.probeCommand(inst, bin, "debug", "models", "--bundled"))
 		if err != nil {
 			return bundledModels, false
 		}
@@ -141,28 +139,6 @@ func saysNotLoggedIn(out string) bool {
 	return strings.Contains(strings.ToLower(out), "not logged in")
 }
 
-// checkConfigDir reports the instance's own settings as invalid when the account
-// directory it names cannot be used.
-func checkConfigDir(inst provider.Instance) (provider.Health, bool) {
-	if inst.ConfigDir == "" {
-		return provider.Health{}, true
-	}
-	fi, err := os.Stat(inst.ConfigDir)
-	switch {
-	case err != nil:
-		return provider.Health{
-			State:  provider.HealthInvalidConfiguration,
-			Reason: fmt.Sprintf("The configuration directory %s is not accessible: %s.", inst.ConfigDir, redact(err.Error())),
-		}, false
-	case !fi.IsDir():
-		return provider.Health{
-			State:  provider.HealthInvalidConfiguration,
-			Reason: fmt.Sprintf("The configuration directory %s is not a directory.", inst.ConfigDir),
-		}, false
-	}
-	return provider.Health{}, true
-}
-
 // probeCommand builds a readiness probe for this instance — same binary, same
 // account directory as a run, so the answer is about the account the jobs would
 // actually use.
@@ -171,9 +147,10 @@ func (a *Adapter) probeCommand(inst provider.Instance, bin string, args ...strin
 }
 
 // executableFile reports why a path cannot be run, or nil when it can. The
-// platform rule lives in binpath; only the reason is redacted here.
-func executableFile(p string) error {
-	if err := binpath.CheckExecutable(p); err != nil {
+// instance's host applies the rule of its platform; only the reason is
+// redacted here.
+func executableFile(ctx context.Context, h provider.Host, p string) error {
+	if err := h.Executable(ctx, p); err != nil {
 		return fmt.Errorf("%s", redact(err.Error()))
 	}
 	return nil

@@ -57,7 +57,7 @@ func TestCheckHealthReady(t *testing.T) {
 	p := loggedIn()
 	h := newAdapter("").CheckHealth(context.Background(), provider.Instance{
 		ID: "claude", Kind: provider.KindClaudeCode, BinaryPath: bin, Enabled: true,
-	}, p)
+	}, provider.NativeHost{Prober: p})
 
 	if h.State != provider.HealthReady {
 		t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
@@ -80,7 +80,7 @@ func TestCheckHealthNeverLeaksAccountDetails(t *testing.T) {
 	p := loggedIn()
 	h := newAdapter("").CheckHealth(context.Background(), provider.Instance{
 		ID: "claude", Kind: provider.KindClaudeCode, BinaryPath: fakeBinary(t), Enabled: true,
-	}, p)
+	}, provider.NativeHost{Prober: p})
 	for _, field := range []string{h.Reason, h.Detail} {
 		if strings.Contains(field, "me@example.com") {
 			t.Fatalf("the verdict carries the account's email: %q", field)
@@ -196,7 +196,7 @@ func TestCheckHealthUnreadyStates(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newAdapter(tc.detect).CheckHealth(context.Background(), tc.inst(t), tc.prober)
+			h := newAdapter(tc.detect).CheckHealth(context.Background(), tc.inst(t), provider.NativeHost{Prober: tc.prober})
 			if h.State != tc.want {
 				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
 			}
@@ -215,7 +215,7 @@ func TestCheckHealthProbesTheInstancesOwnAccount(t *testing.T) {
 	p := loggedIn()
 	newAdapter("").CheckHealth(context.Background(), provider.Instance{
 		ID: "claude-secondary", BinaryPath: fakeBinary(t), ConfigDir: dir, Enabled: true,
-	}, p)
+	}, provider.NativeHost{Prober: p})
 	for _, c := range p.cmds {
 		if len(c.Env) != 1 || c.Env[0] != ConfigDirEnv+"="+dir {
 			t.Fatalf("probe env = %v, want %s pointing at the instance's directory", c.Env, ConfigDirEnv)
@@ -232,7 +232,7 @@ func TestReadinessFallsBackToDetection(t *testing.T) {
 	if got := a.ResolveBinary(inst); got != bin {
 		t.Fatalf("ResolveBinary = %q, want the detected binary", got)
 	}
-	if h := a.CheckHealth(context.Background(), inst, loggedIn()); h.State != provider.HealthReady {
+	if h := a.CheckHealth(context.Background(), inst, provider.NativeHost{Prober: loggedIn()}); h.State != provider.HealthReady {
 		t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
 	}
 }
@@ -273,7 +273,7 @@ func TestCheckHealthToleratesNoiseAroundTheStatus(t *testing.T) {
 			}}
 			h := newAdapter("").CheckHealth(context.Background(), provider.Instance{
 				ID: "claude", BinaryPath: fakeBinary(t), Enabled: true,
-			}, p)
+			}, provider.NativeHost{Prober: p})
 			if h.State != provider.HealthReady {
 				t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
 			}
@@ -319,7 +319,7 @@ func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
 			}
 			bin := tc.path(t)
 			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
-			h := newAdapter("").CheckHealth(context.Background(), provider.Instance{ID: "claude", Kind: provider.KindClaudeCode, BinaryPath: bin, Enabled: true}, loggedIn())
+			h := newAdapter("").CheckHealth(context.Background(), provider.Instance{ID: "claude", Kind: provider.KindClaudeCode, BinaryPath: bin, Enabled: true}, provider.NativeHost{Prober: loggedIn()})
 			if h.State != tc.want {
 				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
 			}

@@ -365,7 +365,7 @@ func fakeBinary(t *testing.T) string {
 func TestCheckHealthReady(t *testing.T) {
 	bin := fakeBinary(t)
 	p := loggedIn()
-	h := newAdapter("").CheckHealth(context.Background(), instance(bin), p)
+	h := newAdapter("").CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: p})
 	if h.State != provider.HealthReady {
 		t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
 	}
@@ -436,7 +436,7 @@ func TestCheckHealthUnreadyStates(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newAdapter("").CheckHealth(context.Background(), tc.inst(t), tc.prober)
+			h := newAdapter("").CheckHealth(context.Background(), tc.inst(t), provider.NativeHost{Prober: tc.prober})
 			if h.State != tc.want {
 				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
 			}
@@ -450,7 +450,7 @@ func TestCheckHealthUnreadyStates(t *testing.T) {
 func TestListModels(t *testing.T) {
 	catalog := []byte(`{"models":[{"slug":"gpt-5.6-sol","display_name":"GPT-5.6 Sol"},{"slug":"gpt-6-astra"}]}`)
 	p := &fakeProber{out: map[string][]byte{"debug": catalog}}
-	got := newAdapter("").ListModels(context.Background(), instance(fakeBinary(t)), p)
+	got := newAdapter("").ListModels(context.Background(), instance(fakeBinary(t)), provider.NativeHost{Prober: p})
 	want := []provider.Model{
 		{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol"},
 		{ID: "gpt-6-astra", Label: "gpt-6-astra"},
@@ -473,7 +473,7 @@ func TestListModelsFallsBackToTheBundledList(t *testing.T) {
 		{name: "an empty catalog", prober: &fakeProber{out: map[string][]byte{"debug": []byte(`{"models":[]}`)}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := newAdapter("").ListModels(context.Background(), instance(fakeBinary(t)), tc.prober)
+			got := newAdapter("").ListModels(context.Background(), instance(fakeBinary(t)), provider.NativeHost{Prober: tc.prober})
 			if !reflect.DeepEqual(got, bundledModels) {
 				t.Fatalf("models = %+v, want the bundled fallback %+v", got, bundledModels)
 			}
@@ -490,11 +490,11 @@ func TestCatalogIsPerInstance(t *testing.T) {
 	p := &fakeProber{out: map[string][]byte{
 		"debug": []byte(`{"models":[{"slug":"only-here","display_name":"Only here"}]}`),
 	}}
-	if got := a.ListModels(context.Background(), first, p); len(got) != 1 || got[0].ID != "only-here" {
+	if got := a.ListModels(context.Background(), first, provider.NativeHost{Prober: p}); len(got) != 1 || got[0].ID != "only-here" {
 		t.Fatalf("models = %+v, want the discovered one", got)
 	}
 	p.out["debug"] = []byte(`{"models":[{"slug":"other-build"}]}`)
-	if got := a.ListModels(context.Background(), second, p); len(got) != 1 || got[0].ID != "other-build" {
+	if got := a.ListModels(context.Background(), second, provider.NativeHost{Prober: p}); len(got) != 1 || got[0].ID != "other-build" {
 		t.Fatalf("models = %+v, want the second instance asked for itself", got)
 	}
 }
@@ -505,13 +505,13 @@ func TestAFallbackCatalogIsNotRemembered(t *testing.T) {
 	a := newAdapter("")
 	inst := instance(fakeBinary(t))
 	failing := &fakeProber{err: map[string]error{"debug": errors.New("unknown command")}}
-	if got := a.ListModels(context.Background(), inst, failing); len(got) != len(bundledModels) {
+	if got := a.ListModels(context.Background(), inst, provider.NativeHost{Prober: failing}); len(got) != len(bundledModels) {
 		t.Fatalf("models = %+v, want the fallback", got)
 	}
 	working := &fakeProber{out: map[string][]byte{
 		"debug": []byte(`{"models":[{"slug":"now-installed"}]}`),
 	}}
-	if got := a.ListModels(context.Background(), inst, working); len(got) != 1 || got[0].ID != "now-installed" {
+	if got := a.ListModels(context.Background(), inst, provider.NativeHost{Prober: working}); len(got) != 1 || got[0].ID != "now-installed" {
 		t.Fatalf("models = %+v, want the real catalog once it can be read", got)
 	}
 }
@@ -523,7 +523,7 @@ func TestLoginStatusThatCouldNotBeAskedIsNotALogout(t *testing.T) {
 		out: map[string][]byte{"--version": []byte("codex-cli 0.154.0")},
 		err: map[string]error{"login": errors.New("signal: killed")},
 	}
-	h := newAdapter("").CheckHealth(context.Background(), instance(fakeBinary(t)), p)
+	h := newAdapter("").CheckHealth(context.Background(), instance(fakeBinary(t)), provider.NativeHost{Prober: p})
 	if h.State != provider.HealthCheckFailed {
 		t.Fatalf("state = %q (%s), want check_failed", h.State, h.Reason)
 	}
@@ -586,7 +586,7 @@ func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
 			}
 			bin := tc.path(t)
 			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
-			h := newAdapter("").CheckHealth(context.Background(), instance(bin), loggedIn())
+			h := newAdapter("").CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: loggedIn()})
 			if h.State != tc.want {
 				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
 			}

@@ -127,7 +127,8 @@ const DefaultHealthTTL = 30 * time.Second
 type Checker struct {
 	// Registry resolves an instance's kind to the adapter that checks it.
 	Registry *Registry
-	// Prober runs the CLI probes. Nil means [ExecProber].
+	// Prober runs the CLI probes of native instances. Nil means the registry's
+	// host for the instance ([NativeHost] for a native one).
 	Prober Prober
 	// Now reads the clock. Nil means time.Now.
 	Now func() time.Time
@@ -154,11 +155,14 @@ func (c *Checker) now() time.Time {
 	return time.Now()
 }
 
-func (c *Checker) prober() Prober {
-	if c.Prober != nil {
-		return c.Prober
+// host is the environment an instance's checks run in. A test Prober stands
+// in for the daemon's own operating system only; an instance that runs
+// elsewhere is always checked where it runs.
+func (c *Checker) host(inst Instance) (Host, error) {
+	if c.Prober != nil && inst.Execution.IsNative() {
+		return NativeHost{Prober: c.Prober}, nil
 	}
-	return ExecProber{}
+	return c.Registry.HostFor(inst)
 }
 
 func (c *Checker) ttl() time.Duration {
@@ -172,7 +176,7 @@ func (c *Checker) ttl() time.Duration {
 func fingerprint(inst Instance) string {
 	// The variables hold secrets, so only a digest of them is kept as the key.
 	env := sha256.Sum256([]byte(strings.Join(inst.EnvPairs(), "\x00")))
-	return fmt.Sprintf("%s\x00%s\x00%s\x00%t\x00%x", inst.Kind, inst.BinaryPath, inst.ConfigDir, inst.Enabled, env)
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%t\x00%x\x00%s", inst.Kind, inst.BinaryPath, inst.ConfigDir, inst.Enabled, env, inst.Execution.key())
 }
 
 // Check returns the instance's readiness, reusing a recent verdict for the same
@@ -249,9 +253,13 @@ func (c *Checker) probe(ctx context.Context, inst Instance) Health {
 	}
 	// One deadline for the whole check, so two slow probes cannot add up to
 	// twice the wait a caller was promised.
+	host, err := c.host(inst)
+	if err != nil {
+		return Health{State: HealthInvalidConfiguration, Reason: err.Error(), CheckedAt: now}
+	}
 	ctx, cancel := context.WithTimeout(ctx, CheckTimeout)
 	defer cancel()
-	h := ad.CheckHealth(ctx, inst, c.prober())
+	h := ad.CheckHealth(ctx, inst, host)
 	if h.CheckedAt.IsZero() {
 		h.CheckedAt = now
 	}

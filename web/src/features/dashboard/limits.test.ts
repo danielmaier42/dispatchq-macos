@@ -107,20 +107,17 @@ describe('limits', () => {
     ).toMatch(/Last ping failed: no network$/)
     expect(creditText(entry({state: 'ok', checked_at: ''}), t)).toBe('')
   })
-  it('says the credit in one word on the line, the detail stays behind it', () => {
+  it('says only whether the credit lets the account take work', () => {
     const base = entry({state: 'unsupported', api_key: true, checked_at: ''})
     const ok = {
       ...base,
       credit: {status: 'ok' as const, checked_at: '2026-11-05T19:00:00Z', source: 'ping' as const},
     }
+    const until = '2026-11-12T00:00:00Z'
     expect(creditLabel(ok)).toBe('credit available')
-    expect(creditLabel({...ok, blocked: {until: '2026-11-12T00:00:00Z', reason: 'credit_exhausted'}})).toBe(
-      'credit used up',
-    )
-    expect(creditLabel({...base, blocked: {until: '2026-11-12T00:00:00Z', reason: 'billing_refused'}})).toBe(
-      'billing refused',
-    )
-    expect(creditLabel(base)).toBe('credit not checked yet')
+    expect(creditLabel(base)).toBe('credit available')
+    expect(creditLabel({...ok, blocked: {until, reason: 'credit_exhausted'}})).toBe('credit used up')
+    expect(creditLabel({...base, blocked: {until, reason: 'billing_refused'}})).toBe('credit used up')
     expect(creditLabel(entry({state: 'ok', checked_at: ''}))).toBe('')
   })
   it('an ordinary limit is no account block', () => {

@@ -79,23 +79,55 @@ func attachParentConsole() {
 }
 
 // newPlatform wires what this first Windows edition supports: the Run-key
-// autostart, native folder and save dialogs, and the execution-state sleep
-// hold. Wake-from-sleep needs Task Scheduler wake timers and a power-plan check
-// it does not have yet; native notifications are not implemented, but Pushover,
-// ntfy and webhooks work as on macOS; continue-in-terminal and the in-app
-// uninstaller stay nil, which the API answers as unavailable (the installer's
-// uninstaller removes the app). There is no published Windows installer to
-// update to, so no update service is created.
+// autostart, Windows toast notifications, native folder and save dialogs, and
+// the execution-state sleep hold. Wake-from-sleep needs Task Scheduler wake
+// timers and a power-plan check it does not have yet; continue-in-terminal and
+// the in-app uninstaller stay nil, which the API answers as unavailable (the
+// installer's uninstaller removes the app). There is no published Windows
+// installer to update to, so no update service is created.
 func newPlatform(r system.Runner) platform {
+	toast := &notify.Toast{Runner: r, Register: registerToastApp}
 	return platform{
-		service:          runKeyService{},
-		sleep:            system.DefaultSleepInhibitor(),
-		notifyStatus:     func() string { return notify.AuthorizationUnsupported },
+		service: runKeyService{},
+		sleep:   system.DefaultSleepInhibitor(),
+		desktop: toast,
+		// At daemon start: register (or repair) the Start menu identity toasts
+		// need, and say in the log when that fails rather than at the first
+		// notification. Startup waits for it at most 15 seconds; a slower
+		// registration finishes in the background.
+		requestNotifyAuth: func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if err := toast.EnsureRegistered(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "dispatchqd:", err)
+			}
+		},
+		notifyStatus:     toast.Status,
 		chooseFolder:     api.PowerShellFolderChooser(r),
 		saveFile:         api.PowerShellSaveFileDialog(r),
 		osVersion:        osVersion(r),
 		stopStrayDaemons: killStrayDaemons,
 	}
+}
+
+// registerToastApp gives the per-user Start menu shortcut DispatchQ's
+// AppUserModelID, which Windows requires before it shows a desktop app's
+// toasts, and the stub activator CLSID Microsoft documents for keeping them
+// in the notification center (not yet verified on Windows for DispatchQ). The shortcut and the window app it recreates a lost shortcut for
+// sit where the installer puts them: the window app and the icon next to this
+// daemon.
+func registerToastApp() error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate dispatchqd: %w", err)
+	}
+	lnk, err := notify.WindowsShortcutPath()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(self)
+	return notify.RegisterWindowsApp(lnk, notify.WindowsAppID, notify.WindowsToastActivatorCLSID,
+		filepath.Join(dir, "dispatchqapp"+exeSuffix), filepath.Join(dir, "dispatchq.ico"))
 }
 
 // osVersion reports the Windows version, for the feedback issue's environment line.

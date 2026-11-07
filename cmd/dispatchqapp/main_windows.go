@@ -17,10 +17,16 @@ import (
 	webview "github.com/webview/webview_go"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/danielmaier42/claudeq/internal/notify"
 )
 
 func main() {
 	runtime.LockOSThread()
+	// The window takes the AppUserModelID its Start menu shortcut and the
+	// daemon's toasts carry, so all three are one app to the taskbar and to
+	// Settings > System > Notifications. A failure only affects grouping.
+	_ = notify.SetProcessAppID(notify.WindowsAppID)
 	ensureDaemon()
 
 	w := webview.New(false)
@@ -40,9 +46,9 @@ func main() {
 			_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", u).Start()
 		}
 	})
-	// The macOS-only hooks the page asks for. Native notifications are not
-	// implemented on Windows, so there is never a pending click, and the title
-	// bar follows the system theme without a pin.
+	// The macOS-only hooks the page asks for. A Windows toast opens its link
+	// itself and has no artifact or run click target, so there is never a
+	// pending click, and the title bar follows the system theme without a pin.
 	_ = w.Bind("cqTakePendingNotification", func() string { return "" })
 	_ = w.Bind("cqSetAppearance", func(string) {})
 	_ = w.Bind("cqReadAccent", func() string { return accentHex() })

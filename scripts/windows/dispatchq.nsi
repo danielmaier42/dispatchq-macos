@@ -4,7 +4,7 @@
 ; Defines expected from the build script:
 ;   VERSION      product version string, e.g. dev-feature-windows-port-poc
 ;   STAGE        directory holding dispatchqapp.exe, dispatchqd.exe, dispatchq.exe,
-;                dispatchq.ico, LICENSE, INSTALL-WINDOWS.txt, path-helper.ps1 [, webview2-bootstrapper.exe]
+;                dispatchq.ico, LICENSE, path-helper.ps1 [, webview2-bootstrapper.exe]
 ;   OUTFILE      installer to write
 ;   BOOTSTRAPPER defined when STAGE contains webview2-bootstrapper.exe
 
@@ -33,8 +33,6 @@ VIAddVersionKey "LegalCopyright" "DispatchQ contributors"
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_RUN "$INSTDIR\dispatchqapp.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Open DispatchQ"
-!define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\INSTALL-WINDOWS.txt"
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "Show the first-start notes"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "${STAGE}\LICENSE"
@@ -104,8 +102,9 @@ Section "DispatchQ" SecMain
   File "${STAGE}\dispatchq.exe"
   File "${STAGE}\dispatchq.ico"
   File "${STAGE}\LICENSE"
-  File "${STAGE}\INSTALL-WINDOWS.txt"
   File "${STAGE}\path-helper.ps1"
+  ; Earlier PoC builds installed first-start notes; drop a leftover copy.
+  Delete "$INSTDIR\INSTALL-WINDOWS.txt"
   WriteUninstaller "$INSTDIR\Uninstall DispatchQ.exe"
 
   Call EnsureWebView2
@@ -122,7 +121,7 @@ Section "DispatchQ" SecMain
   Pop $0
   ${If} $0 != 0
     DetailPrint "Registering the daemon failed (exit code $0)"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ could not register its background service for sign-in (exit code $0). Start DispatchQ from the Start menu; see INSTALL-WINDOWS.txt." /SD IDOK
+    MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ could not register its background service for sign-in (exit code $0). Start DispatchQ from the Start menu." /SD IDOK
   ${EndIf}
 
   WriteRegStr HKCU "Software\DispatchQ" "InstallDir" "$INSTDIR"
@@ -163,6 +162,7 @@ Section "Uninstall"
   Delete "$INSTDIR\dispatchq.exe"
   Delete "$INSTDIR\dispatchq.ico"
   Delete "$INSTDIR\LICENSE"
+  ; Installed by earlier PoC builds.
   Delete "$INSTDIR\INSTALL-WINDOWS.txt"
   Delete "$INSTDIR\path-helper.ps1"
   Delete "$INSTDIR\Uninstall DispatchQ.exe"

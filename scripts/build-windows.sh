@@ -75,7 +75,6 @@ rm -f "$SYSO"
 unset GOOS GOARCH
 
 cp "$ROOT/LICENSE" "$STAGE/LICENSE"
-cp "$ROOT/scripts/windows/INSTALL-WINDOWS.txt" "$STAGE/INSTALL-WINDOWS.txt"
 cp "$ROOT/scripts/windows/path-helper.ps1" "$STAGE/path-helper.ps1"
 
 NSIS_DEFS=()

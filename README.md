@@ -217,8 +217,9 @@ registers the daemon to start at every sign-in, adds the CLI to your user
 `PATH`, and installs the Microsoft Edge WebView2 Runtime when it is missing.
 Uninstall it from Settings > Apps, the Start menu, or `dispatchq uninstall`
 (`/PURGE` also deletes `%APPDATA%\dispatchq`). The step-by-step notes and a
-first-start checklist ship in the installer as
-[`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt).
+first-start checklist are in
+[`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt) in this repository;
+the installer does not copy them to the PC.
 
 It reuses the same daemon, queue and dashboard. What differs on Windows:
 

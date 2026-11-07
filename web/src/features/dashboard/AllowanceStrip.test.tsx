@@ -59,6 +59,21 @@ describe('AllowanceStrip', () => {
     expect(week).toContain('@min-[860px]:col-start-3')
   })
 
+  it("says an API key's credit in the right-hand column, where a plan says its week is used up", () => {
+    const api = (name: string, extra: Partial<LimitsEntry>): LimitsEntry => ({
+      ...entry(name, []),
+      limits: {state: 'unsupported', api_key: true, checked_at: ''},
+      ...extra,
+    })
+    show([
+      api('ok', {credit: {status: 'ok', checked_at: '2026-10-28T09:00:00Z', source: 'ping'}}),
+      api('empty', {blocked: {until: '2026-11-04T10:00:00Z', reason: 'credit_exhausted'}}),
+    ])
+    expect(screen.getByText('Credit OK').parentElement?.className).toContain('justify-end')
+    expect(screen.getByText('No credit left').parentElement?.className).toContain('justify-end')
+    expect(screen.queryByText(/ping answered/)).toBeNull()
+  })
+
   it('lists the providers alphabetically by name, whatever order the configuration has', () => {
     show([
       entry('codex', []),

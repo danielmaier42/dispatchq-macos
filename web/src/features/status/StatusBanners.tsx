@@ -1,11 +1,11 @@
 import {useNow} from '@/hooks/use-now'
-import {Ban, BellOff, Check, Copy, MoonStar, PauseCircle, RefreshCw, Unplug} from 'lucide-react'
+import {BellOff, Check, Copy, MoonStar, PauseCircle, RefreshCw, Unplug} from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {Button} from '@/components/ui/button'
 import {toast} from '@/components/ui/toaster'
 import {Tooltip} from '@/components/ui/tooltip'
 import {errorMessage} from '@/lib/api'
-import {NO_CREDIT, relTime} from '@/lib/format'
+import {relTime} from '@/lib/format'
 import {isAppWindow, openExternal} from '@/lib/native'
 import {invalidate, keys, useHealth} from '@/lib/queries'
 import {RenameBar} from '@/features/whats-new/RenameBar'
@@ -163,8 +163,9 @@ function NotifyBar({status}: {status: NotifyStatus}) {
   )
 }
 
-// A used-up credit balance gets a bar of its own that says exactly that and
-// nothing more; an ordinary rate limit beside it keeps its full explanation.
+// A used-up credit balance gets no bar, just as a used-up week gets none: the
+// Allowance strip says it on the provider's line, and the scheduler passes the
+// provider over meanwhile. Only an ordinary rate limit is announced here.
 function LimitBars({until, providers}: {until: string; providers: LimitedProvider[]}) {
   const now = useNow(15_000)
 
@@ -177,15 +178,8 @@ function LimitBars({until, providers}: {until: string; providers: LimitedProvide
     return () => clearTimeout(t)
   }, [until])
 
-  // Each bar keeps to its own clock: the credit retry passing does not hide a
-  // rate limit that still holds, nor the other way round.
   const split = splitLimits(providers, until)
-  return (
-    <>
-      {activeLimit(split.creditUntil, now) && <StatusBar tone="danger" icon={<Ban />} title={NO_CREDIT} />}
-      {split.until && <LimitBar until={split.until} providers={split.rateLimited} now={now} />}
-    </>
-  )
+  return split.until ? <LimitBar until={split.until} providers={split.rateLimited} now={now} /> : null
 }
 
 // The queue standing still on a rate limit is normal, not a fault: say what it

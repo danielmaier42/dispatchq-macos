@@ -213,4 +213,3 @@ func withUTF8BOM(src string) []byte {
 	}
 	return []byte(bom + src)
 }
-

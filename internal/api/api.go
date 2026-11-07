@@ -88,8 +88,8 @@ type Deps struct {
 	// Holds reports, per task, why the scheduler's last pass did not start it
 	// although it was due, and since when it waits. Optional (engine.Engine.Holds).
 	Holds func() map[string]schedule.Hold
-	// NotifyStatus reports whether macOS will actually show notifications
-	// (notify.MacAuthorization). Optional; empty means "don't know".
+	// NotifyStatus reports whether the system will actually show notifications
+	// (notify.MacAuthorization on macOS, notify.Toast.Status on Windows). Optional; empty means "don't know".
 	NotifyStatus func() string
 	// WarmFileAccess reads the given directories so macOS raises its file-access
 	// consent prompt now — called right after a task is created or its folder

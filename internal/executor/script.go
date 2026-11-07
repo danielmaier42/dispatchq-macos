@@ -46,7 +46,7 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 
 	src := req.Task.Prompt
 	path := filepath.Join(dir, scriptFileName)
-	if err := os.WriteFile(path, []byte(src), 0o700); err != nil { //nolint:gosec // the script must be executable to honour its own shebang
+	if err := os.WriteFile(path, scriptFileBytes(src), 0o700); err != nil { //nolint:gosec // the script must be executable to honour its own shebang
 		return provider.Result{}, fmt.Errorf("write script: %w", err)
 	}
 	name, args, err := scriptCommand(path, src)
@@ -201,3 +201,16 @@ func (t *tailBuffer) String() string {
 	}
 	return string(b)
 }
+
+// withUTF8BOM returns src as UTF-8 that starts with a byte order mark, adding
+// one only when src does not already begin with it. Windows PowerShell 5.1
+// reads a .ps1 file without a BOM in the system's ANSI code page, which turns
+// every non-ASCII character of a script job into mojibake.
+func withUTF8BOM(src string) []byte {
+	const bom = "\uFEFF"
+	if strings.HasPrefix(src, bom) {
+		return []byte(src)
+	}
+	return []byte(bom + src)
+}
+

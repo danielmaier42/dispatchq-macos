@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -232,5 +234,40 @@ func TestTailBufferCutsOnARuneBoundary(t *testing.T) {
 		if r == '�' {
 			t.Fatalf("String() = %q, want valid UTF-8", b.String())
 		}
+	}
+}
+
+func TestWithUTF8BOM(t *testing.T) {
+	bom := "\xEF\xBB\xBF"
+	cases := map[string]string{
+		"":                     bom,
+		"Write-Output 'Grüße'": bom + "Write-Output 'Grüße'",
+		bom + "already":        bom + "already",
+	}
+	for src, want := range cases {
+		if got := string(withUTF8BOM(src)); got != want {
+			t.Errorf("withUTF8BOM(%q) = %q, want %q", src, got, want)
+		}
+	}
+}
+
+// A non-ASCII script reaches the script runner byte for byte as UTF-8 that it
+// decodes as UTF-8: on Unix the source unchanged (so a #! line still works),
+// on Windows behind the BOM PowerShell 5.1 needs.
+func TestScriptKeepsNonASCIISource(t *testing.T) {
+	dir := t.TempDir()
+	tk := scriptTask(utf8WriteScript)
+	tk.WorkingDir = dir
+	e := &Executor{}
+	_, log, status, _ := runScriptTask(t, e, Request{Task: tk})
+	if status != store.StatusSuccess {
+		t.Fatalf("status = %v, log = %q", status, log)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "out.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(got)) != "Grüße ✓" {
+		t.Fatalf("script wrote %q, want %q", got, "Grüße ✓")
 	}
 }

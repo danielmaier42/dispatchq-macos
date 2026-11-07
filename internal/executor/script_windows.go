@@ -27,3 +27,7 @@ func scriptCommand(path, src string) (name string, args []string, err error) {
 	}
 	return defaultShell, []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path}, nil
 }
+
+// scriptFileBytes is what the script file holds: the job's source with a UTF-8
+// byte order mark, so Windows PowerShell 5.1 reads it as UTF-8.
+func scriptFileBytes(src string) []byte { return withUTF8BOM(src) }

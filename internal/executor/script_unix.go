@@ -18,3 +18,7 @@ func scriptCommand(path, src string) (name string, args []string, err error) {
 	}
 	return defaultShell, []string{path}, nil
 }
+
+// scriptFileBytes is what the script file holds: the job's source unchanged. A
+// byte order mark would hide a #! line from the kernel.
+func scriptFileBytes(src string) []byte { return []byte(src) }

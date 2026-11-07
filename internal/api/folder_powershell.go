@@ -63,9 +63,10 @@ if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { Emit $d
 
 // runPowerShellDialog runs script in an STA PowerShell, which Windows Forms
 // dialogs require, and decodes the base64 answer. No output means the user
-// cancelled.
+// cancelled. PowerShell runs as a command that shows a window: started hidden
+// like a background command, its dialog would never appear.
 func runPowerShellDialog(ctx context.Context, r system.Runner, what, script string) (string, bool, error) {
-	out, err := r.Run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-STA",
+	out, err := system.ShowingWindows(r).Run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-STA",
 		"-EncodedCommand", encodePowerShell(script))
 	text := strings.TrimSpace(string(out))
 	if err != nil {

@@ -245,6 +245,7 @@ It reuses the same daemon, queue and dashboard. What differs on Windows:
 | Cancel | every run starts suspended, joins a Windows Job Object and is then resumed, so even a child started at once belongs to it; cancelling, the idle watchdog or the daemon dying ends the whole process tree, and a run whose job cannot be set up does not start |
 | Script jobs | run as PowerShell; a `#!` line is refused |
 | Keep awake | held while a run is active (the display may still sleep) |
+| Folder and save dialogs | the native Windows dialogs, opened by the daemon through PowerShell |
 | Not available | native notifications (Pushover, ntfy and webhooks work), wake from sleep, continue in a terminal, in-app update check and uninstall button, appearance pinning |
 
 Platform layer: the Windows edition builds on the contributor's platform

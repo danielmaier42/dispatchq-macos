@@ -43,7 +43,7 @@ func OSAScriptSaveFileDialog(r system.Runner) SaveFileDialog {
 // A user cancel (AppleScript error -128) is reported as chosen=false, not an
 // error; what is the dialog's name for error messages.
 func chooseWithOSAScript(ctx context.Context, r system.Runner, what string, args ...string) (string, bool, error) {
-	out, err := r.Run(ctx, "osascript", args...)
+	out, err := system.ShowingWindows(r).Run(ctx, "osascript", args...)
 	text := strings.TrimSpace(string(out))
 	if err != nil {
 		if strings.Contains(text, "-128") || strings.Contains(strings.ToLower(text), "cancel") {

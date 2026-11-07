@@ -214,39 +214,114 @@ func (h *Helper) info() wslproto.Result {
 	return res
 }
 
-// windowsProgram reports whether p is a Windows program the Linux PATH offers
-// through interop (appendWindowsPath): DispatchQ must run the Linux CLI, never
-// silently the Windows one.
-func windowsProgram(p, mountRoot string) bool {
+// windowsProgram says why p is a Windows program rather than the Linux CLI
+// DispatchQ promises to run, or "" when it is not one. The same rule covers a
+// name found on PATH (appendWindowsPath offers the Windows programs there),
+// an explicitly configured path and the program run actually starts: a
+// Windows extension or a place on a mounted Windows drive, for p itself and
+// for what its symbolic links resolve to, and a Windows executable image
+// (the "MZ" header WSL interop starts through binfmt_misc) under any name.
+// Linux scripts, ELF binaries and links to them are not Windows programs.
+// Only the provider binary is judged: DispatchQ.exe and other Windows tools a
+// provider calls through interop stay reachable.
+func windowsProgram(p, mountRoot string) string {
+	if why := windowsLocation(p, mountRoot); why != "" {
+		return why
+	}
+	target := p
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		target = resolved
+		if resolved != p {
+			if why := windowsLocation(resolved, mountRoot); why != "" {
+				return "it links to " + resolved + ", which " + strings.TrimPrefix(why, "it ")
+			}
+		}
+	}
+	image, err := windowsImage(target)
+	if err != nil {
+		return "its executable header cannot be inspected: " + err.Error()
+	}
+	if image {
+		return "it is a Windows executable image"
+	}
+	return ""
+}
+
+// windowsLocation is the name and place part of windowsProgram.
+func windowsLocation(p, mountRoot string) string {
 	lower := strings.ToLower(p)
 	for _, ext := range []string{".exe", ".cmd", ".bat", ".com", ".ps1"} {
 		if strings.HasSuffix(lower, ext) {
-			return true
+			return "it has the Windows extension " + ext
 		}
 	}
-	return mountRoot != "" && strings.HasPrefix(p, mountRoot)
+	if mountRoot == "" {
+		return ""
+	}
+	if strings.HasPrefix(p, mountRoot) {
+		return "it is on the Windows drive mount " + mountRoot
+	}
+	// The mount root itself may be reached through a link.
+	if resolved, err := filepath.EvalSymlinks(strings.TrimSuffix(mountRoot, "/")); err == nil {
+		if root := resolved + "/"; root != mountRoot && strings.HasPrefix(p, root) {
+			return "it is on the Windows drive mount " + mountRoot
+		}
+	}
+	return ""
 }
 
-// lookPath resolves name on the PATH of env, skipping Windows programs.
+// windowsImage reports whether p starts with the DOS/PE "MZ" header.
+// Inspection failures must not be treated as evidence of a Linux program.
+func windowsImage(p string) (bool, error) {
+	f, err := os.Open(p) //nolint:gosec // the provider binary being judged, opened as its own user
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = f.Close() }()
+	var magic [2]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return false, nil
+		}
+		return false, err
+	}
+	return magic == [2]byte{'M', 'Z'}, nil
+}
+
+// lookPath resolves name to the Linux program to run: an explicit path as it
+// is, a bare name on the PATH of env. Windows programs are refused for an
+// explicit path and skipped on PATH (see windowsProgram).
 func (h *Helper) lookPath(name string, env []string, mountRoot string) (string, error) {
 	if strings.Contains(name, "/") {
 		p := h.expand(name)
 		if err := executable(p); err != nil {
 			return "", err
 		}
+		if why := windowsProgram(p, mountRoot); why != "" {
+			return "", fmt.Errorf("%s cannot be used as a Linux provider (%s). Windows programs are not supported as WSL providers: install the Linux CLI in the distribution and name its Linux path", p, why)
+		}
 		return p, nil
 	}
+	var skipped []string
 	for _, dir := range filepath.SplitList(getenv(env, "PATH")) {
 		if dir == "" || !strings.HasPrefix(dir, "/") {
 			continue
 		}
 		p := path.Join(dir, name)
-		if windowsProgram(p, mountRoot) {
+		if why := windowsLocation(p, mountRoot); why != "" {
+			continue // the Windows PATH entries interop appends: not worth naming
+		}
+		if executable(p) != nil {
 			continue
 		}
-		if executable(p) == nil {
-			return p, nil
+		if why := windowsProgram(p, mountRoot); why != "" {
+			skipped = append(skipped, p+" ("+why+")")
+			continue
 		}
+		return p, nil
+	}
+	if len(skipped) > 0 {
+		return "", fmt.Errorf("%s was not found on the Linux PATH; skipped Windows programs or files whose type could not be inspected: %s: %w", name, strings.Join(skipped, "; "), os.ErrNotExist)
 	}
 	return "", fmt.Errorf("%s was not found on the Linux PATH (Windows programs are skipped): %w", name, os.ErrNotExist)
 }

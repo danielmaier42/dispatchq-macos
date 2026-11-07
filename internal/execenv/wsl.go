@@ -440,23 +440,13 @@ func (h *Host) StatDir(ctx context.Context, p string) error {
 	return nil
 }
 
-// Executable implements provider.Host. A bare name is looked up on the
-// user's login PATH, skipping Windows programs.
+// Executable implements provider.Host. The helper resolves p exactly as a
+// run would: a bare name on the user's login PATH, an explicit path as it
+// is, and in both cases a Windows program (by extension, drive mount, link
+// target or executable image) is not the Linux CLI and is refused.
 func (h *Host) Executable(ctx context.Context, p string) error {
-	if !strings.Contains(p, "/") {
-		_, err := h.fileOp(ctx, wslproto.OpLookup, p, 0)
-		return err
-	}
-	res, err := h.fileOp(ctx, wslproto.OpStat, p, 0)
-	switch {
-	case err != nil:
-		return err
-	case res.IsDir:
-		return fmt.Errorf("%s is a directory", p)
-	case !res.Executable:
-		return fmt.Errorf("%s is not executable", p)
-	}
-	return nil
+	_, err := h.fileOp(ctx, wslproto.OpLookup, p, 0)
+	return err
 }
 
 // ReadFile implements provider.Host. The data stays in the daemon's memory.

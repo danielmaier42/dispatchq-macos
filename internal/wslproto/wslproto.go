@@ -56,7 +56,7 @@ const DataChunk = 64 << 10
 const (
 	OpRun    = "run"    // start Argv and relay its output; exit code is its own
 	OpInfo   = "info"   // who and where: user, home, architecture, mount root, interop
-	OpLookup = "lookup" // resolve Path on the login PATH
+	OpLookup = "lookup" // resolve Path (a bare name on the login PATH, or a path) to a Linux program
 	OpStat   = "stat"   // describe Path
 	OpRead   = "read"   // read at most Limit bytes of Path
 	OpUsers  = "users"  // the distribution's login users

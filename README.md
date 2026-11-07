@@ -276,7 +276,7 @@ starts it. On macOS the choice does not exist.
 | | Linux (WSL) provider |
 | --- | --- |
 | Login and settings | the Linux ones: install the CLI and run `claude auth login` (or the Codex or OpenCode login) inside Linux as that user; nothing is copied between Windows and Linux |
-| Paths | binary and configuration directory are Linux paths (`~` is the Linux home); empty binary finds the CLI on the Linux login `PATH`, never a Windows `.exe` |
+| Paths | binary and configuration directory are Linux paths (`~` is the Linux home); empty binary finds the CLI on the Linux login `PATH`, never a Windows `.exe`. Provider executables must be readable; Windows programs are rejected for explicit paths and symlinks too. The Windows CLI bridge for follow-ups remains available. |
 | Task folders | stored as Windows sees them: `C:\repo` (opened as `/mnt/c/repo`, slower) or `\\wsl.localhost\Ubuntu\home\you\repo` (fast). A Linux path typed for a task that runs in exactly one distribution is stored as that share. A pool or fallback skips a provider that cannot open the task's folder; a provider named directly that cannot is refused when the task is saved |
 | How it runs | `wsl.exe --distribution D [--user U] --cd / --exec <helper> <operation>`, with nothing else on the command line. The program's arguments, environment (including API keys) and input go to DispatchQ's Linux helper as frames on its standard input, never on a command line, in a file or in `WSLENV` |
 | Helper | `dispatchq-wsl`, a static Linux program shipped for x86-64 and arm64 in both installers; the distribution's own processor picks it (an x64 installer on Windows on Arm still runs arm64 distributions), and its ELF machine is checked before it starts |

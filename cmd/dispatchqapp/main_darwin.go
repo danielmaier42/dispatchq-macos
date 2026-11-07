@@ -22,9 +22,6 @@ import (
 	"github.com/danielmaier42/claudeq/internal/notify"
 )
 
-// systemSettingsScheme is the URL scheme that opens a System Settings pane.
-const systemSettingsScheme = "x-apple.systempreferences:"
-
 func main() {
 	runtime.LockOSThread()
 	// Claim notification clicks before anything else: webview.New runs the app's
@@ -62,15 +59,17 @@ func main() {
 	)
 
 	// Open external (http/https) links in the default browser — WKWebView won't
-	// open target=_blank links on its own. The System Settings scheme is allowed
-	// too, so the Settings view can send the operator straight to the macOS
-	// notification preferences.
+	// open target=_blank links on its own.
 	_ = w.Bind("cqOpenExternal", func(u string) {
-		if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") ||
-			strings.HasPrefix(u, systemSettingsScheme) {
+		if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
 			_ = exec.Command("open", u).Start()
 		}
 	})
+	// Settings → Notifications and the notification banner send the operator
+	// straight to the macOS notification preferences. The pane is fixed here;
+	// the page only asks for it.
+	_ = w.Bind("cqOpenNotificationSettings",
+		notificationSettingsAction(notificationSettingsTarget, notificationSettingsPlace, launchSettings))
 
 	// Clicking a notification opens what it is about in the window: the
 	// artifact, the run's log, or the Notifications view. The target is fetched

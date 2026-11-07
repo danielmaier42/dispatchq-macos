@@ -65,7 +65,7 @@ export function AboutSection() {
                 )}
               </div>
               <div className="text-[12.5px] text-muted-foreground">
-                A queue for unattended coding-agents that runs on your Mac
+                A queue for unattended coding-agents that runs on your computer
               </div>
             </div>
             <Button onClick={() => openExternal(REPO)}>

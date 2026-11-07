@@ -247,7 +247,9 @@ It reuses the same daemon, queue and dashboard. What differs on Windows:
 | Keep awake | held while a run is active (the display may still sleep) |
 | Folder and save dialogs | the native Windows dialogs, opened by the daemon through PowerShell |
 | Providers in WSL | optional, per provider (see below); a PC without WSL is unaffected |
-| Not available | native notifications (Pushover, ntfy and webhooks work), wake from sleep, continue in a terminal, in-app update check and uninstall button, appearance pinning, script jobs in WSL |
+| Notifications | Windows toasts, sent through Windows PowerShell 5.1 under the Start menu entry's app identity, which the daemon registers at start; a link opens in the default browser. Pushover, ntfy and webhooks work as on macOS. Whether a toast without a link stays in the notification center and what clicking it does is not yet verified on Windows |
+| Shortcuts and wording | every shortcut hint shows **Ctrl** where this README says **⌘** (**Ctrl+K**, **Ctrl+J**, **Ctrl+1**–**Ctrl+8**, **Ctrl+S**, **Ctrl+Enter**); **⌘N** and **⌘R** come from the macOS menu bar and have no Windows equivalent. Settings speak of *this computer* and name Windows' own places (Settings > System > Notifications, Installed apps) instead of System Settings or the macOS Installer |
+| Not available | wake from sleep, continue in a terminal, in-app update check and uninstall button, appearance pinning, script jobs in WSL |
 
 ### Providers in WSL (optional)
 

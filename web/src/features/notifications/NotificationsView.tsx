@@ -113,7 +113,7 @@ export function NotificationsView() {
         <EmptyState
           icon={<BellOff />}
           title="No notifications yet"
-          description="Everything DispatchQ announces — a run that failed, a new artifact, a message from a task — is listed here, even after the macOS banner is gone."
+          description="Everything DispatchQ announces — a run that failed, a new artifact, a message from a task — is listed here, even after its notification is gone."
         />
       ) : !filtered.length ? (
         <EmptyState

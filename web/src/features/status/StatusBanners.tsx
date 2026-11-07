@@ -6,21 +6,22 @@ import {toast} from '@/components/ui/toaster'
 import {Tooltip} from '@/components/ui/tooltip'
 import {errorMessage} from '@/lib/api'
 import {NO_CREDIT, relTime} from '@/lib/format'
-import {isAppWindow, openExternal} from '@/lib/native'
+import {useHost} from '@/lib/platform'
 import {invalidate, keys, useHealth} from '@/lib/queries'
 import {RenameBar} from '@/features/whats-new/RenameBar'
 import {useWhatsNewStatus} from '@/features/whats-new/store'
 import type {LimitedProvider, NotifyStatus} from '@/lib/types'
+import {notifyCopy} from './notify-copy'
 import {
   activeLimit,
   limitCoverage,
   limitHeading,
-  NOTIFICATION_SETTINGS_URL,
   notificationsBlocked,
   splitLimits,
   SUDOERS_COMMAND,
   wakeNeedsSudoers,
 } from './health'
+import {openNotificationSettings} from './notification-settings'
 import {StatusBar} from './StatusBar'
 
 // The banners that speak for the machine rather than for a view: the daemon
@@ -131,34 +132,37 @@ function CommandToCopy({command}: {command: string}) {
   )
 }
 
-// System Settings only opens from the app window; in a browser tab we just
-// say where to look.
-function openNotificationSettings() {
-  if (isAppWindow()) openExternal(NOTIFICATION_SETTINGS_URL)
-  else toast('Open System Settings → Notifications → DispatchQ')
-}
-
 function NotifyBar({status}: {status: NotifyStatus}) {
+  const host = useHost().data
+  const copy = notifyCopy(host)
   return (
     <StatusBar
       tone="warning"
       icon={<BellOff />}
-      title="macOS is not showing DispatchQ's notifications"
+      title={copy.blockedTitle(status)}
       actions={
-        <Button size="sm" variant="secondary" onClick={openNotificationSettings}>
-          Open System Settings
+        <Button size="sm" variant="secondary" onClick={() => void openNotificationSettings(host)}>
+          Open {copy.settingsLabel}
         </Button>
       }
     >
-      {status === 'denied' ? (
+      {copy.mac ? (
         <>
-          Run outcomes and new artifacts are being announced, but macOS is set to hide them. Turn{' '}
-          <strong>Allow notifications</strong> back on for DispatchQ.
+          {status === 'denied' ? (
+            <>
+              Run outcomes and new artifacts are being announced, but macOS is set to hide them. Turn{' '}
+              <strong>Allow notifications</strong> back on for DispatchQ.
+            </>
+          ) : (
+            <>
+              DispatchQ hasn't been allowed to notify you yet, so run outcomes and new artifacts stay silent.
+            </>
+          )}{' '}
+          Pick <strong>Alerts</strong> while you're there and an alert stays on screen until you click it.
         </>
       ) : (
-        <>DispatchQ hasn't been allowed to notify you yet, so run outcomes and new artifacts stay silent.</>
-      )}{' '}
-      Pick <strong>Alerts</strong> while you're there and an alert stays on screen until you click it.
+        copy.blockedBody(status)
+      )}
     </StatusBar>
   )
 }

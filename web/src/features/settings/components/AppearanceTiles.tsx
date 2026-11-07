@@ -26,9 +26,9 @@ const SCHEME: Record<'light' | 'dark', CSSProperties> = {
 }
 
 const TIPS: Record<string, string> = {
-  '': 'Follows the Mac: light by day, dark at night if macOS switches',
-  light: 'Always light, whatever the Mac does',
-  dark: 'Always dark, whatever the Mac does',
+  '': 'Follows the system: light or dark, as its appearance setting says',
+  light: 'Always light, whatever the system does',
+  dark: 'Always dark, whatever the system does',
 }
 
 function WindowMock({scheme, className}: {scheme: 'light' | 'dark'; className?: string}) {

@@ -2,6 +2,7 @@ import {ArrowUp} from 'lucide-react'
 import {useEffect, useLayoutEffect, useRef} from 'react'
 import {Button} from '@/components/ui/button'
 import {Kbd} from '@/components/ui/kbd'
+import {enterKey, modifierKey} from '@/lib/platform'
 import {cn} from '@/lib/utils'
 
 // Composer is the chat input: it grows with its text up to a cap, and
@@ -72,8 +73,8 @@ export function Composer({
         <div className="flex items-center gap-2 px-2.5 pb-2.5">
           <span className="flex-1 truncate pl-1 text-[12px] text-subtle-foreground">{hint}</span>
           <span className="flex items-center gap-0.5 text-[11px] text-subtle-foreground">
-            {!enterSends && <Kbd>⌘</Kbd>}
-            <Kbd>↵</Kbd>
+            {!enterSends && <Kbd>{modifierKey()}</Kbd>}
+            <Kbd>{enterKey()}</Kbd>
           </span>
           <Button size="sm" variant="primary" loading={busy} onClick={onSend} aria-label="Send">
             {!busy && <ArrowUp />}

@@ -22,6 +22,7 @@ import {openRunLog} from '@/features/log/store'
 import {pickAndImportTask} from '@/features/task-editor/import'
 import {openAddTask, openTaskEditor} from '@/features/task-editor/store'
 import {openWhatsNew} from '@/features/whats-new/store'
+import {keyCombo, menuKeyCombo} from '@/lib/platform'
 import {refreshAll, useRuns, useSettings, useTasks} from '@/lib/queries'
 import {useSaveAppearance} from '@/features/settings/use-appearance'
 import {navigate} from './nav'
@@ -87,16 +88,16 @@ export function CommandPalette() {
               )}
 
               <Group heading="Actions">
-                <Item icon={Sparkles} onSelect={run(openAssistant)} hint="⌘J">
+                <Item icon={Sparkles} onSelect={run(openAssistant)} hint={keyCombo('J')}>
                   Ask DispatchQ
                 </Item>
-                <Item icon={Plus} onSelect={run(() => openAddTask())} hint="⌘N">
+                <Item icon={Plus} onSelect={run(() => openAddTask())} hint={menuKeyCombo('N')}>
                   New task
                 </Item>
                 <Item icon={Download} onSelect={run(pickAndImportTask)}>
                   Import task…
                 </Item>
-                <Item icon={RefreshCw} onSelect={run(() => void refreshAll())} hint="⌘R">
+                <Item icon={RefreshCw} onSelect={run(() => void refreshAll())} hint={menuKeyCombo('R')}>
                   Refresh everything
                 </Item>
                 <Item
@@ -120,7 +121,12 @@ export function CommandPalette() {
 
               <Group heading="Go to">
                 {VIEWS.map((v, i) => (
-                  <Item key={v.id} icon={v.icon} onSelect={run(() => navigate(v.id))} hint={`⌘${i + 1}`}>
+                  <Item
+                    key={v.id}
+                    icon={v.icon}
+                    onSelect={run(() => navigate(v.id))}
+                    hint={keyCombo(String(i + 1))}
+                  >
                     {v.label}
                   </Item>
                 ))}

@@ -104,8 +104,9 @@ type Deps struct {
 	// Assistant is the chat that operates dispatchq. Optional; when nil the
 	// dashboard says the chat is not available.
 	Assistant *assistant.Service
-	// OSVersion reports the macOS product version (e.g. "15.6") for the
-	// environment line of a feedback issue. Optional; empty leaves it out.
+	// OSVersion names the operating system and its version (e.g. "macOS 15.6",
+	// "Windows 10.0 (build 26100)") for the environment line of a feedback
+	// issue. Optional; empty leaves it out.
 	OSVersion func() string
 	// Review checks a draft prompt against this machine before it is queued.
 	// Optional; when nil the dashboard shows no suggestions.
@@ -124,8 +125,9 @@ type Deps struct {
 	// Limits remembers and reads each provider's allowance (5-hour and weekly
 	// windows). Optional; when nil the dashboard has no limits to show.
 	Limits *provider.LimitMonitor
-	// Uninstall opens DispatchQ's uninstaller in the macOS Installer (Settings >
-	// System). Optional; when nil the endpoint reports "not implemented".
+	// Uninstall opens DispatchQ's uninstaller (on macOS the macOS Installer,
+	// from Settings > System). Optional; when nil the endpoint reports "not
+	// implemented" and GET /api/host says uninstall is false.
 	Uninstall func(ctx context.Context) error
 }
 
@@ -165,10 +167,6 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/notifications/{id}/read", s.readNotification)
 	mux.HandleFunc("GET /api/providers", s.listProviders)
 	mux.HandleFunc("GET /api/providers/kinds", s.listProviderKinds)
-	mux.HandleFunc("GET /api/wsl", s.wslStatus)
-	mux.HandleFunc("GET /api/wsl/distros", s.wslDistros)
-	mux.HandleFunc("GET /api/wsl/users", s.wslUsers)
-	mux.HandleFunc("POST /api/wsl/detect", s.wslDetect)
 	mux.HandleFunc("GET /api/limits", s.listLimits)
 	mux.HandleFunc("GET /api/pools", s.listPools)
 	mux.HandleFunc("GET /api/pools/{id}", s.getPool)
@@ -195,6 +193,7 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/stats", s.getStats)
 	mux.HandleFunc("GET /api/health", s.getHealth)
 	mux.HandleFunc("GET /api/ping", s.getPing)
+	mux.HandleFunc("GET /api/host", s.getHost)
 	mux.HandleFunc("GET /api/update", s.getUpdate)
 	mux.HandleFunc("POST /api/update/check", s.checkUpdate)
 	mux.HandleFunc("POST /api/update/dismiss", s.dismissUpdate)

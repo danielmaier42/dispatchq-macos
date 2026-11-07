@@ -573,6 +573,15 @@ export interface LimitedProvider {
   reason?: BlockReason
 }
 
+// GET /api/host response: the operating system the daemon runs on and the
+// system services it has there.
+export interface HostInfo {
+  // Go's runtime.GOOS: "darwin", "windows", "linux", ...
+  os: string
+  // POST /api/uninstall opens an uninstaller on this system.
+  uninstall: boolean
+}
+
 // GET /api/health response.
 export interface Health {
   // "" when scheduled wake is healthy.
@@ -900,6 +909,7 @@ export type UninstallRequest = Record<string, never>
 // GET     /api/stats?days=<n|all>                -                            Stats
 // GET     /api/health                            -                            Health
 // GET     /api/ping                              -                            204
+// GET     /api/host                              -                            HostInfo
 // GET     /api/update                            -                            UpdateStatus
 // POST    /api/update/check                      -                            UpdateStatus
 // POST    /api/update/dismiss                    UpdateDismissRequest         UpdateStatus

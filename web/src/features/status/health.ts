@@ -3,9 +3,6 @@ import type {LimitedProvider, NotifyStatus} from '@/lib/types'
 export const SUDOERS_COMMAND =
   'echo "$(whoami) ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/dispatchq'
 
-export const NOTIFICATION_SETTINGS_URL =
-  'x-apple.systempreferences:com.apple.Notifications-Settings.extension'
-
 // A wake error about passwords or permissions means pmset needs a sudoers
 // entry; anything else is a plain failure to report as it is.
 export function wakeNeedsSudoers(err: string): boolean {

@@ -113,9 +113,9 @@ func newPlatform(r system.Runner) platform {
 // registerToastApp gives the per-user Start menu shortcut DispatchQ's
 // AppUserModelID, which Windows requires before it shows a desktop app's
 // toasts, and the stub activator CLSID Microsoft documents for keeping them
-// in the notification center (not yet verified on Windows for DispatchQ). The shortcut and the window app it recreates a lost shortcut for
-// sit where the installer puts them: the window app and the icon next to this
-// daemon.
+// in the notification center (not yet verified on Windows for DispatchQ).
+// The shortcut and the window app it recreates a lost shortcut for sit where
+// the installer puts them: the window app and the icon next to this daemon.
 func registerToastApp() error {
 	self, err := os.Executable()
 	if err != nil {

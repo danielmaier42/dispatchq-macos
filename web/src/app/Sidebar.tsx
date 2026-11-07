@@ -10,6 +10,7 @@ import {openAddTask} from '@/features/task-editor/store'
 import {useMediaQuery} from '@/hooks/use-media-query'
 import {useHealth, useSettings, useUpdate} from '@/lib/queries'
 import {openExternal} from '@/lib/native'
+import {keyCombo, menuKeyCombo, withShortcut} from '@/lib/platform'
 import {cn} from '@/lib/utils'
 import {useBadges} from './badges'
 import {navigate, useNav} from './nav'
@@ -94,9 +95,9 @@ function Panel({onCollapse, className}: {onCollapse?: () => void; className?: st
             aria-pressed={assistantOpen}
           >
             <Sparkles /> Ask DispatchQ
-            <span className="ml-auto text-[11px] font-normal opacity-75">⌘J</span>
+            <span className="ml-auto text-[11px] font-normal opacity-75">{keyCombo('J')}</span>
           </Button>
-          <Tooltip content="New task form (⌘N)">
+          <Tooltip content={withShortcut('New task form', menuKeyCombo('N'))}>
             <Button
               variant="secondary"
               size="icon"
@@ -119,7 +120,7 @@ function Panel({onCollapse, className}: {onCollapse?: () => void; className?: st
         >
           <Search className="size-3.5" />
           <span className="flex-1 text-left">Search & commands</span>
-          <Kbd>⌘K</Kbd>
+          <Kbd>{keyCombo('K')}</Kbd>
         </button>
       </div>
 
@@ -181,7 +182,7 @@ function Rail({onExpand}: {onExpand: () => void}) {
           <PanelLeftOpen />
         </Button>
       </Tooltip>
-      <Tooltip content="Ask DispatchQ (⌘J)" side="right">
+      <Tooltip content={withShortcut('Ask DispatchQ', keyCombo('J'))} side="right">
         <Button
           variant="primary"
           size="icon"
@@ -192,12 +193,12 @@ function Rail({onExpand}: {onExpand: () => void}) {
           <Sparkles />
         </Button>
       </Tooltip>
-      <Tooltip content="New task form (⌘N)" side="right">
+      <Tooltip content={withShortcut('New task form', menuKeyCombo('N'))} side="right">
         <Button variant="secondary" size="icon" onClick={() => openAddTask()} aria-label="New task form">
           <Plus />
         </Button>
       </Tooltip>
-      <Tooltip content="Search & commands (⌘K)" side="right">
+      <Tooltip content={withShortcut('Search & commands', keyCombo('K'))} side="right">
         <Button variant="secondary" size="icon" onClick={openPalette} aria-label="Search & commands">
           <Search />
         </Button>
@@ -228,7 +229,7 @@ function RailItem({
 }) {
   const Icon = def.icon
   return (
-    <Tooltip content={`${def.label} (⌘${shortcut})`} side="right">
+    <Tooltip content={withShortcut(def.label, keyCombo(String(shortcut)))} side="right">
       <button
         onClick={() => navigate(def.id)}
         aria-current={active ? 'page' : undefined}
@@ -294,7 +295,7 @@ function NavItem({
         <CountBadge count={count} className={def.id === 'settings' ? 'bg-danger text-white' : undefined} />
       ) : (
         <span className="text-[11px] text-subtle-foreground opacity-0 transition-opacity group-hover:opacity-100">
-          ⌘{shortcut}
+          {keyCombo(String(shortcut))}
         </span>
       )}
     </button>

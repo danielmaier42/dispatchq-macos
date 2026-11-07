@@ -8,6 +8,7 @@ import {Kbd} from '@/components/ui/kbd'
 import {toast} from '@/components/ui/toaster'
 import {errorMessage, post} from '@/lib/api'
 import {openExternal} from '@/lib/native'
+import {enterKey, modifierKey} from '@/lib/platform'
 import type {FeedbackUrlResponse} from '@/lib/types'
 import {httpsOnly} from '../feedback'
 import {setDraft, setError, useFeedback} from '../store'
@@ -107,8 +108,8 @@ export function DraftForm({repo, env}: {repo: string; env: string}) {
           change or delete anything on that page.
         </p>
         <span className="hidden items-center gap-0.5 sm:flex">
-          <Kbd>⌘</Kbd>
-          <Kbd>↵</Kbd>
+          <Kbd>{modifierKey()}</Kbd>
+          <Kbd>{enterKey()}</Kbd>
         </span>
         <Button variant="primary" loading={opening} onClick={() => void openIssue()}>
           {!opening && <ExternalLink />}

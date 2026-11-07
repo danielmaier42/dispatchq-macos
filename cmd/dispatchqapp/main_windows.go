@@ -40,6 +40,11 @@ func main() {
 	w.SetTitle("DispatchQ")
 	w.SetSize(1120, 760, webview.HintNone)
 
+	// Settings > Notifications and the notification banner open the Windows
+	// notification settings. The page passes nothing; the ms-settings page is
+	// fixed here.
+	_ = w.Bind("cqOpenNotificationSettings",
+		notificationSettingsAction(notificationSettingsTarget, notificationSettingsPlace, launchSettings))
 	// Links that leave the dashboard open in the default browser.
 	_ = w.Bind("cqOpenExternal", func(u string) {
 		if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {

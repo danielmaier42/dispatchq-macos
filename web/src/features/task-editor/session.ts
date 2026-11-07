@@ -114,7 +114,7 @@ export async function resolveSession(req: TaskEditorRequest): Promise<EditorSess
         // it — reviewed for real once there is a folder to resolve it against.
         fresh: !missingDir,
         dirHint: missingDir
-          ? `The file's working directory (${missingDir}) does not exist on this Mac. Choose a folder.`
+          ? `The file's working directory (${missingDir}) does not exist on this computer. Choose a folder.`
           : undefined,
         // When no single provider here matches the harness the file was written
         // for, the choice is the importer's: DispatchQ will not put someone else's

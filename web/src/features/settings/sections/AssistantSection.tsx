@@ -45,7 +45,7 @@ export function AssistantSection({value}: {value: Settings}) {
           <Row
             htmlFor="s-review"
             label="Check prompts with Claude"
-            description="Before a task is added, imported or edited, Claude reads its prompt against this Mac: paths that aren't here, a file to be written into a folder that doesn't exist, guidelines it points at. It offers a rewrite under the prompt box, and reviews the custom system prompt the same way."
+            description="Before a task is added, imported or edited, Claude reads its prompt against this computer: paths that aren't here, a file to be written into a folder that doesn't exist, guidelines it points at. It offers a rewrite under the prompt box, and reviews the custom system prompt the same way."
             control={
               <Switch
                 id="s-review"

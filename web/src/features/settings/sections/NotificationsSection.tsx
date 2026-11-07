@@ -4,24 +4,21 @@ import {Section} from '@/components/layout/view-layout'
 import {Alert} from '@/components/ui/alert'
 import {Button} from '@/components/ui/button'
 import {Switch} from '@/components/ui/switch'
-import {toast} from '@/components/ui/toaster'
-import {isAppWindow, openExternal} from '@/lib/native'
+import {useHost} from '@/lib/platform'
 import {useHealth} from '@/lib/queries'
+import {openNotificationSettings} from '@/features/status/notification-settings'
 import type {Settings} from '@/lib/types'
+import {notifyCopy} from '@/features/status/notify-copy'
 import {commitSettings} from '../actions'
 import {Channels} from '../components/Channels'
 import {SaveMode} from '../components/parts'
 
-// macOS keeps the alert style (Banners vanish, Alerts wait for a click). Only
-// the app window can open a System Settings URL; a browser tab says where to look.
-function openNotificationSettings() {
-  if (isAppWindow()) openExternal('x-apple.systempreferences:com.apple.Notifications-Settings.extension')
-  else toast('Open System Settings → Notifications → DispatchQ')
-}
-
 export function NotificationsSection({value, stored}: {value: Settings; stored: Settings}) {
   const notify = useHealth().data?.notify_status
   const blocked = notify === 'denied' || notify === 'not_determined'
+  const host = useHost().data
+  const copy = notifyCopy(host)
+  const openSettings = () => void openNotificationSettings(host)
 
   return (
     <>
@@ -29,17 +26,23 @@ export function NotificationsSection({value, stored}: {value: Settings; stored: 
         <Alert
           tone="warning"
           className="mb-6"
-          title="macOS is not showing DispatchQ's notifications"
-          actions={<Button onClick={openNotificationSettings}>Open System Settings</Button>}
+          title={copy.blockedTitle(notify)}
+          actions={<Button onClick={openSettings}>Open {copy.settingsLabel}</Button>}
         >
-          {notify === 'denied'
-            ? 'Run outcomes and new artifacts are announced, but macOS hides them. Turn Allow notifications back on for DispatchQ.'
-            : "DispatchQ hasn't been allowed to notify you yet, so run outcomes and new artifacts stay silent."}{' '}
-          Pick Alerts while you are there and an alert stays on screen until you click it.
+          {copy.mac ? (
+            <>
+              {notify === 'denied'
+                ? 'Run outcomes and new artifacts are announced, but macOS hides them. Turn Allow notifications back on for DispatchQ.'
+                : "DispatchQ hasn't been allowed to notify you yet, so run outcomes and new artifacts stay silent."}{' '}
+              Pick Alerts while you are there and an alert stays on screen until you click it.
+            </>
+          ) : (
+            copy.blockedBody(notify)
+          )}
         </Alert>
       )}
 
-      <Section title="On this Mac" actions={<SaveMode mode="instant" />}>
+      <Section title="On this computer" actions={<SaveMode mode="instant" />}>
         <RowGroup>
           <Row
             htmlFor="s-artifact-notify"
@@ -55,11 +58,11 @@ export function NotificationsSection({value, stored}: {value: Settings; stored: 
           />
           {!blocked && (
             <Row
-              label="Keep alerts on screen"
-              description="macOS decides how long a notification lingers: pick Alerts, not Banners"
+              label={copy.lingerLabel}
+              description={copy.lingerDescription}
               control={
-                <Button onClick={openNotificationSettings}>
-                  System Settings
+                <Button onClick={openSettings}>
+                  {copy.settingsLabel}
                   <ExternalLink className="size-3.5" />
                 </Button>
               }

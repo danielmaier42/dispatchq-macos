@@ -56,7 +56,7 @@ func newFeedbackServer(t *testing.T, ask feedback.Asker) (*httptest.Server, *sto
 	if ask != nil {
 		svc = feedback.New(ask)
 	}
-	srv := httptest.NewServer(handler(Deps{Store: st, Feedback: svc, OSVersion: func() string { return "15.6" }}))
+	srv := httptest.NewServer(handler(Deps{Store: st, Feedback: svc, OSVersion: func() string { return "macOS 15.6" }}))
 	t.Cleanup(srv.Close)
 	return srv, st
 }
@@ -68,7 +68,7 @@ func TestFeedbackStatusReportsAvailability(t *testing.T) {
 	if !st.Available || st.Reason != "" {
 		t.Fatalf("status = %+v, want available", st)
 	}
-	if st.Repo != update.DefaultRepo || st.AppVersion != version.String() || st.OSVersion != "15.6" {
+	if st.Repo != update.DefaultRepo || st.AppVersion != version.String() || st.OSVersion != "macOS 15.6" {
 		t.Fatalf("status = %+v, want repo/versions filled in", st)
 	}
 	if st.MaxTurns != feedback.MaxUserTurns {
@@ -84,7 +84,7 @@ func TestFeedbackStatusExplainsAnUnavailableAssistant(t *testing.T) {
 		t.Fatalf("status = %+v, want unavailable with a reason", st)
 	}
 	// The dashboard still needs the versions for its manual form.
-	if st.AppVersion == "" || st.OSVersion != "15.6" {
+	if st.AppVersion == "" || st.OSVersion != "macOS 15.6" {
 		t.Fatalf("status = %+v, want the environment details anyway", st)
 	}
 }
@@ -179,6 +179,24 @@ func TestFeedbackURLLeavesOutAnUnknownOSVersion(t *testing.T) {
 	}
 	if !strings.Contains(body, "DispatchQ "+version.String()) {
 		t.Fatalf("body = %q, want the app version", body)
+	}
+}
+
+func TestFeedbackURLKeepsTheSystemNameAsGiven(t *testing.T) {
+	// The platform names its own system; a Windows daemon must not end up as
+	// "macOS Windows ..." in a public issue.
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	srv := httptest.NewServer(handler(Deps{Store: st, OSVersion: func() string { return "Windows 10.0 (build 26100)" }}))
+	t.Cleanup(srv.Close)
+	var got map[string]string
+	do(t, srv, http.MethodPost, "/api/feedback/url", map[string]any{"title": "T", "body": "B"}).into(t, &got)
+	u, _ := url.Parse(got["url"])
+	body := u.Query().Get("body")
+	if !strings.Contains(body, " · Windows 10.0 (build 26100)") || strings.Contains(body, "macOS") {
+		t.Fatalf("body = %q, want the Windows line without macOS", body)
 	}
 }
 

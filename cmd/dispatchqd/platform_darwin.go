@@ -212,8 +212,8 @@ func warmFileAccess(dirs []string) {
 	}
 }
 
-// osVersion reports the macOS product version (e.g. "15.6") for the feedback
-// issue's environment line. It is asked once and cached: the version cannot
+// osVersion names the system and its product version (e.g. "macOS 15.6") for
+// the feedback issue's environment line. It is asked once and cached: the version cannot
 // change while the daemon runs, and an unreadable one simply stays empty.
 func osVersion(r system.Runner) func() string {
 	var once sync.Once
@@ -226,7 +226,9 @@ func osVersion(r system.Runner) func() string {
 			if err != nil {
 				return
 			}
-			cached = strings.TrimSpace(string(out))
+			if v := strings.TrimSpace(string(out)); v != "" {
+				cached = "macOS " + v
+			}
 		})
 		return cached
 	}

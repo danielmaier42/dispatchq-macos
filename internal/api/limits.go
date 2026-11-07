@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/store"
 )
 
 // limitsView is one provider's allowance as the dashboard shows it: which
@@ -26,6 +28,23 @@ type limitsView struct {
 	// reopens and, for an account block, which one. It is what proves a used-up
 	// credit balance, which no reading can show.
 	Blocked *blockView `json:"blocked,omitempty"`
+	// Credit is the latest proof of an API-key account's credit: a ping or a
+	// run that got an answer or was refused. Absent until there is one.
+	Credit *creditView `json:"credit,omitempty"`
+}
+
+// creditView is a store.CreditCheck as the dashboard shows it, with why the
+// latest ping got no answer at all, when it did not.
+type creditView struct {
+	store.CreditCheck
+	PingFailed string `json:"ping_failed,omitempty"`
+}
+
+// CreditMonitor is the part of credit.Monitor the API uses.
+type CreditMonitor interface {
+	Checks() (map[string]store.CreditCheck, error)
+	Failure(id string) string
+	PingAll(ctx context.Context, insts []provider.Instance)
 }
 
 // blockView is a closed rate-limit gate as the dashboard shows it.
@@ -38,7 +57,9 @@ type blockView struct {
 // listLimits answers with every configured provider's allowance, in
 // configuration order. Without ?fresh=1 it is answered from the daemon's last
 // readings and costs nothing; with it, readings older than half a minute are
-// taken again — what opening the dashboard and View > Refresh ask for.
+// taken again — what opening the dashboard and View > Refresh ask for. With
+// ?ping=1 as well, every enabled account on an API key is pinged first, so its
+// credit is proven now: what the Dashboard's Read now button asks for.
 func (s *server) listLimits(w http.ResponseWriter, r *http.Request) {
 	set, ok := s.providerSet(w)
 	if !ok {
@@ -51,6 +72,23 @@ func (s *server) listLimits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limits := s.d.Limits.Get(r.Context(), insts, r.URL.Query().Get("fresh") == "1")
+	if s.d.Credits != nil && r.URL.Query().Get("ping") == "1" {
+		var keyed []provider.Instance
+		for i, inst := range insts {
+			if inst.Enabled && limits[i].APIKey {
+				keyed = append(keyed, inst)
+			}
+		}
+		s.d.Credits.PingAll(r.Context(), keyed)
+	}
+	var credits map[string]store.CreditCheck
+	if s.d.Credits != nil {
+		var err error
+		if credits, err = s.d.Credits.Checks(); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	cfg, err := s.d.Store.LoadConfig()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
@@ -84,6 +122,9 @@ func (s *server) listLimits(w http.ResponseWriter, r *http.Request) {
 	reasons := s.blockReasons()
 	for i, inst := range insts {
 		v := limitsView{ID: inst.ID, Name: inst.Label(), Default: inst.ID == set.DefaultID(), Limits: limits[i]}
+		if c, ok := credits[inst.ID]; ok {
+			v.Credit = &creditView{CreditCheck: c, PingFailed: s.d.Credits.Failure(inst.ID)}
+		}
 		if until, ok := blocked[inst.ID]; ok {
 			v.Blocked = &blockView{Until: until, Reason: reasons[inst.ID]}
 		}

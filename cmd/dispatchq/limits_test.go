@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/store"
 )
 
 // limitsAdapter is the stub harness with a scripted allowance.
@@ -87,5 +88,24 @@ func TestCmdProviderLimitsArguments(t *testing.T) {
 	}
 	if err := cmdProvider(st, []string{"limits", provider.DefaultInstanceID, "extra"}); err == nil {
 		t.Fatal("a second id must be refused")
+	}
+}
+
+// TestCmdProviderLimitsShowsTheCreditProof: an API-key account shows the
+// daemon's latest ping instead of a balance nobody can read.
+func TestCmdProviderLimitsShowsTheCreditProof(t *testing.T) {
+	st := newTestStore(t)
+	withLimits(t, limitsAdapter{err: provider.ErrNoPlanLimits})
+	if err := st.UpdateState(func(s *store.State) error {
+		s.CreditChecks[provider.DefaultInstanceID] = store.CreditCheck{
+			Status: string(provider.BlockCreditExhausted), Source: "ping", CheckedAt: time.Now(),
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() error { return cmdProvider(st, []string{"limits"}) })
+	if !strings.Contains(out, "No credit left (refused by a ping, ") {
+		t.Fatalf("table = %q, want the refused ping", out)
 	}
 }

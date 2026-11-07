@@ -94,3 +94,20 @@ func TestBlockReasonLastsWhileClosedAndIsForgottenOnReopen(t *testing.T) {
 		t.Fatalf("reason = %q for a plain limit, want none", g.Reason())
 	}
 }
+
+func TestLiftReopensOnlyAnAccountBlock(t *testing.T) {
+	start := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	g := New(clock.NewFake(start))
+
+	g.BlockBecause(start.Add(7*24*time.Hour), "credit_exhausted")
+	g.Lift()
+	if !g.Open() || g.Reason() != "" {
+		t.Fatalf("after Lift: open=%v reason=%q, want open and no reason", g.Open(), g.Reason())
+	}
+
+	g.Block(start.Add(time.Hour))
+	g.Lift()
+	if g.Open() {
+		t.Fatal("Lift reopened a gate an ordinary limit closed")
+	}
+}

@@ -80,6 +80,9 @@ func (a *Adapter) ParseAside(out []byte) (provider.Aside, error) {
 		if detail == "" {
 			detail = env.Subtype
 		}
+		if block := refusalBlock(detail); block != "" {
+			return provider.Aside{}, &provider.AccountBlockedError{Block: block, Detail: detail}
+		}
 		return provider.Aside{}, fmt.Errorf("claude reported an error: %s", detail)
 	}
 	return provider.Aside{
@@ -87,4 +90,19 @@ func (a *Adapter) ParseAside(out []byte) (provider.Aside, error) {
 		Text:       env.Result,
 		Structured: env.StructuredOutput,
 	}, nil
+}
+
+// refusalBlock names the account block an aside's error text reports: the API's
+// own "Credit balance is too low", or a billing refusal that does not say why.
+// The json envelope carries only the message, not the error name a run's
+// stream has, so the words are all there is to go by.
+func refusalBlock(detail string) provider.Block {
+	lower := strings.ToLower(detail)
+	switch {
+	case strings.Contains(lower, creditExhaustedText):
+		return provider.BlockCreditExhausted
+	case strings.Contains(lower, "billing"):
+		return provider.BlockBillingRefused
+	}
+	return ""
 }

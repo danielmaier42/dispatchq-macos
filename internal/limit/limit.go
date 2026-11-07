@@ -51,6 +51,17 @@ func (g *Gate) BlockBecause(until time.Time, reason string) {
 	}
 }
 
+// Lift reopens a gate an account block closed, once something proved the
+// account takes work again (a ping that got an answer). A gate closed by an
+// ordinary limit stays closed: that one resets on its own clock.
+func (g *Gate) Lift() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.reason != "" {
+		g.blockedUntil, g.reason = time.Time{}, ""
+	}
+}
+
 // BlockFor closes the gate for the given delay from now. It is the fallback
 // entry point for rate-limit events that expose a retry delay but no absolute
 // reset timestamp (PLAN.md V2); when the CLI reports one (rate_limit_event),

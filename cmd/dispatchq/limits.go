@@ -34,6 +34,9 @@ type limitsView struct {
 	// is above the backfill threshold. Absent for a provider switched off.
 	Urgency  *provider.MemberScore `json:"urgency,omitempty"`
 	Backfill bool                  `json:"backfill"`
+	// Credit is the daemon's latest proof of an API-key account's credit (a
+	// ping or a run), as the state file records it. Absent until there is one.
+	Credit *store.CreditCheck `json:"credit,omitempty"`
 }
 
 // cmdProviderLimits reads every provider's allowance (or one provider's) right
@@ -92,9 +95,16 @@ func cmdProviderLimits(st *store.Store, args []string) error {
 			return l, ok && len(l.Windows) > 0
 		},
 		func(provider.Instance) provider.Health { return provider.Health{State: provider.HealthReady} }, nil)
+	state, err := st.LoadState()
+	if err != nil {
+		return err
+	}
 	views := make([]limitsView, len(insts))
 	for i, inst := range insts {
 		views[i] = limitsView{ID: inst.ID, Name: inst.Label(), Default: inst.ID == set.DefaultID(), Limits: limits[i]}
+		if c, ok := state.CreditChecks[inst.ID]; ok && limits[i].APIKey {
+			views[i].Credit = &c
+		}
 		if ad, err := reg.Lookup(inst.Kind); err == nil {
 			views[i].TypeName = ad.Describe().Name
 		}
@@ -139,6 +149,9 @@ func printLimits(views []limitsView, now time.Time) error {
 			note = "switched off"
 		case provider.LimitsUnsupported:
 			note = l.Reason
+			if v.Credit != nil {
+				note = creditNote(*v.Credit)
+			}
 		case provider.LimitsUnavailable:
 			note = l.Reason
 			if !l.UpdatedAt.IsZero() {
@@ -157,6 +170,23 @@ func printLimits(views []limitsView, now time.Time) error {
 		}
 	}
 	return w.Flush()
+}
+
+// creditNote is an API-key account's latest credit proof as the limits table
+// shows it, in place of the unreadable balance.
+func creditNote(c store.CreditCheck) string {
+	by := "by a ping"
+	if c.Source == "run" {
+		by = "by a run"
+	}
+	when := c.CheckedAt.Local().Format("Mon 15:04")
+	switch provider.Block(c.Status) {
+	case provider.BlockCreditExhausted:
+		return "No credit left (refused " + by + ", " + when + ")"
+	case provider.BlockBillingRefused:
+		return "Billing refused (" + by + ", " + when + ")"
+	}
+	return "Credit OK (answered " + by + ", " + when + ")"
 }
 
 // resetsText is when a window starts over: the local day and time, and how far

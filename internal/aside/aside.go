@@ -75,6 +75,13 @@ func (r *Runner) Ask(ctx context.Context, inst provider.Instance, req provider.A
 	}
 	out, err := r.exec(ctx, dir, cmd)
 	if err != nil {
+		// A refused request still prints its envelope before the CLI exits
+		// non-zero, and that names why: a used-up credit balance must read as
+		// that, not as a crashed command.
+		var blocked *provider.AccountBlockedError
+		if _, perr := ad.ParseAside(out); errors.As(perr, &blocked) {
+			return provider.Aside{}, perr
+		}
 		return provider.Aside{}, err
 	}
 	res, err := ad.ParseAside(out)

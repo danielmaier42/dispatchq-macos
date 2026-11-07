@@ -104,3 +104,52 @@ func TestListLimitsNamesAUsedUpCreditBalance(t *testing.T) {
 		t.Fatalf("health = %+v, want the credit block named", health.Limited)
 	}
 }
+
+// apiKeyStub is a harness on an API key: no plan windows to read.
+type apiKeyStub struct{ stubAdapter }
+
+func (apiKeyStub) ReadLimits(context.Context, provider.Instance) (provider.LimitReading, error) {
+	return provider.LimitReading{}, provider.ErrNoPlanLimits
+}
+
+// fakeCredits records the pings Read now asks for and answers with a proof.
+type fakeCredits struct {
+	pinged []string
+	checks map[string]store.CreditCheck
+}
+
+func (f *fakeCredits) Checks() (map[string]store.CreditCheck, error) { return f.checks, nil }
+func (f *fakeCredits) Failure(string) string                         { return "" }
+func (f *fakeCredits) PingAll(_ context.Context, insts []provider.Instance) {
+	for _, inst := range insts {
+		f.pinged = append(f.pinged, inst.ID)
+		f.checks[inst.ID] = store.CreditCheck{Status: "ok", Source: "ping", CheckedAt: time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)}
+	}
+}
+
+// TestReadNowPingsAPIKeys: only ?ping=1 (the Read now button) pings, opening
+// the Dashboard (?fresh=1) does not, and the proof comes back on the line.
+func TestReadNowPingsAPIKeys(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	reg := provider.NewRegistry(apiKeyStub{stubAdapter{health: provider.Health{State: provider.HealthReady}}})
+	credits := &fakeCredits{checks: map[string]store.CreditCheck{}}
+	srv := httptest.NewServer(Handler(Deps{Store: st, Registry: reg, Providers: provider.NewChecker(reg),
+		Limits: provider.NewLimitMonitor(reg, nil), Credits: credits}))
+	t.Cleanup(srv.Close)
+
+	var got []limitsView
+	do(t, srv, http.MethodGet, "/api/limits?fresh=1", nil).into(t, &got)
+	if len(credits.pinged) != 0 || got[0].Credit != nil {
+		t.Fatalf("opening the Dashboard pinged %v / credit %+v, want nothing", credits.pinged, got[0].Credit)
+	}
+	do(t, srv, http.MethodGet, "/api/limits?fresh=1&ping=1", nil).into(t, &got)
+	if len(credits.pinged) != 1 || credits.pinged[0] != provider.DefaultInstanceID {
+		t.Fatalf("Read now pinged %v, want the API-key account", credits.pinged)
+	}
+	if c := got[0].Credit; c == nil || c.Status != "ok" || c.Source != "ping" {
+		t.Fatalf("credit = %+v, want the ping's answer", c)
+	}
+}

@@ -385,6 +385,18 @@ export interface LimitsEntry {
   backfill: boolean
   // The provider's rate-limit gate while it is closed.
   blocked?: ProviderBlock
+  // The latest proof of an API-key account's credit; absent until there is one.
+  credit?: CreditCheck
+}
+
+// store.CreditCheck: what the last ping or run on an API-key account found.
+export interface CreditCheck {
+  // 'ok' when the account answered, otherwise the block it was refused with.
+  status: 'ok' | 'credit_exhausted' | 'billing_refused'
+  checked_at: ISOTime
+  source: 'ping' | 'run'
+  // Why the latest ping got neither an answer nor a refusal.
+  ping_failed?: string
 }
 
 // provider.Block: an account block behind a pause, as opposed to a used-up

@@ -124,6 +124,9 @@ type Deps struct {
 	// Limits remembers and reads each provider's allowance (5-hour and weekly
 	// windows). Optional; when nil the dashboard has no limits to show.
 	Limits *provider.LimitMonitor
+	// Credits is what is known about the prepaid credit of accounts on an API
+	// key, and pings them when the Dashboard's Read now asks. Optional.
+	Credits CreditMonitor
 	// Uninstall opens DispatchQ's uninstaller in the macOS Installer (Settings >
 	// System). Optional; when nil the endpoint reports "not implemented".
 	Uninstall func(ctx context.Context) error

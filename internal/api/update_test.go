@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,7 @@ func newUpdateServer(t *testing.T, current string, rels ...update.Release) (*htt
 	svc := update.NewService(stubFetcher{rels: rels}, time.Hour,
 		update.WithDownloadDir(t.TempDir()),
 		update.WithHTTPClient(pkgSrv.Client()),
+		update.WithTarget(update.Target{OS: update.OSMacOS, Arch: update.ArchARM64}),
 		update.WithOpener(func(_ context.Context, path string) error { *opened = path; return nil }),
 	)
 	if len(rels) > 0 {
@@ -409,5 +411,79 @@ func TestReinstallReleaseRefused(t *testing.T) {
 				t.Errorf("installer opened despite refusal: %q", *opened)
 			}
 		})
+	}
+}
+
+// A Windows beta reads the real release feed through the GitHub fetcher: it is
+// offered the next normal release, whose installer has no "-beta", picks the
+// stable file over the beta of the same version, ignores a newer release that
+// has no installer for it, and downloads and opens the .exe under its own name.
+func TestUpdateWindowsBetaEndToEnd(t *testing.T) {
+	orig := version.Version
+	version.Version = "v2.0.14"
+	t.Cleanup(func() { version.Version = orig })
+	stubInstalled(t, "")
+
+	var feed *httptest.Server
+	feed = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/dl/") {
+			_, _ = w.Write([]byte("setup-bytes"))
+			return
+		}
+		asset := func(name string) string {
+			return `{"name":"` + name + `","browser_download_url":"` + feed.URL + `/dl/` + name + `"}`
+		}
+		_, _ = w.Write([]byte(`[
+		  {"tag_name":"v2.2.0","body":"mac only","assets":[` + asset("dispatchq-2.2.0-macos-arm64.pkg") + `]},
+		  {"tag_name":"v2.1.0","body":"stable windows","assets":[` +
+			asset("dispatchq-2.1.0-windows-x64-beta.exe") + `,` + asset("dispatchq-2.1.0-windows-x64.exe") + `,` +
+			asset("dispatchq-2.1.0-windows-arm64.exe") + `,` + asset("dispatchq-2.1.0-macos-arm64.pkg") + `]},
+		  {"tag_name":"v2.0.14","body":"beta","assets":[` + asset("dispatchq-2.0.14-windows-x64-beta.exe") + `]}
+		]`))
+	}))
+	t.Cleanup(feed.Close)
+
+	target := update.Target{OS: update.OSWindows, Arch: update.ArchX64}
+	var opened string
+	svc := update.NewService(update.GitHubFetcher{BaseURL: feed.URL, Client: feed.Client(), Target: target}, time.Hour,
+		update.WithDownloadDir(t.TempDir()), update.WithHTTPClient(feed.Client()), update.WithTarget(target),
+		update.WithOpener(func(_ context.Context, path string) error { opened = path; return nil }))
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	srv := httptest.NewServer(handler(Deps{Store: st, Updates: svc}))
+	t.Cleanup(srv.Close)
+
+	r := do(t, srv, "POST", "/api/update/check", nil)
+	var raw map[string]any
+	r.into(t, &raw)
+	for _, key := range []string{"current", "supported", "available", "latest", "has_installer"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("status lacks the %q field older dashboards read: %s", key, r.Body)
+		}
+	}
+	var s updateStatus
+	r.into(t, &s)
+	if !s.Available || !s.HasInstaller || s.Latest != "2.1.0" || s.SkippedCount != 1 {
+		t.Fatalf("status = %+v, want 2.1.0 available with an installer", s)
+	}
+	if !strings.Contains(s.Notes, "stable windows") || strings.Contains(s.Notes, "mac only") {
+		t.Errorf("notes = %q, want only the offered release's notes", s.Notes)
+	}
+
+	var out struct {
+		Path string `json:"path"`
+	}
+	d := do(t, srv, "POST", "/api/update/download", nil)
+	if d.Status != http.StatusOK {
+		t.Fatalf("download status = %d (%s)", d.Status, d.Body)
+	}
+	d.into(t, &out)
+	if filepath.Base(out.Path) != "dispatchq-2.1.0-windows-x64.exe" || opened != out.Path {
+		t.Fatalf("downloaded %q, opened %q", out.Path, opened)
+	}
+	if data, err := os.ReadFile(out.Path); err != nil || string(data) != "setup-bytes" {
+		t.Fatalf("installer content = %q, %v", data, err)
 	}
 }

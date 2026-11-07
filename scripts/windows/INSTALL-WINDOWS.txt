@@ -87,7 +87,7 @@ What works and what does not (first version)
     directory, keeping the PC awake while a run is active.
   Not available, and shown as unavailable instead of failing silently:
     native Windows notifications, waking the PC from sleep for a scheduled run,
-    "continue in a terminal", in-app update check and uninstall button,
+    "continue in a terminal", the in-app uninstall button,
     Appearance pinning of the window frame.
   Differences:
     Script jobs run as PowerShell, not sh; a script that starts with #! is refused.

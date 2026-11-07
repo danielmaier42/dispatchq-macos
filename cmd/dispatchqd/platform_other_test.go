@@ -15,7 +15,7 @@ func TestOtherPlatformOffersNoMacTools(t *testing.T) {
 	p := newPlatform(system.Real{})
 	if p.service != nil || p.waker != nil || p.sleep != nil || p.desktop != nil || p.requestNotifyAuth != nil ||
 		p.chooseFolder != nil || p.saveFile != nil || p.openTerminal != nil ||
-		p.warmFileAccess != nil || p.stopStrayDaemons != nil || p.osVersion != nil || p.uninstall != nil || p.selfUpdate {
+		p.warmFileAccess != nil || p.stopStrayDaemons != nil || p.osVersion != nil || p.uninstall != nil || p.openInstaller != nil {
 		t.Fatalf("platform = %+v, want no system services", p)
 	}
 	if got := p.notifyStatus(); got != notify.AuthorizationUnsupported {

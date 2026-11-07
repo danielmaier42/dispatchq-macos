@@ -30,6 +30,8 @@ type updateStatus struct {
 	// ready to download.
 	Available bool `json:"available"`
 	// Latest is the latest release's version, "" if unknown / not yet checked.
+	// It is the newest release with an installer for this system when there is
+	// one (see update.Latest).
 	Latest string `json:"latest"`
 	// Tag is the latest release's git tag, e.g. "v0.1.5".
 	Tag string `json:"tag,omitempty"`
@@ -45,7 +47,8 @@ type updateStatus struct {
 	// AllReleasesURL is the GitHub page listing every release, so the user can
 	// always browse the full history.
 	AllReleasesURL string `json:"all_releases_url,omitempty"`
-	// HasInstaller reports whether the latest release ships a `.pkg` asset.
+	// HasInstaller reports whether the latest release ships an installer for
+	// this system's operating system and architecture.
 	HasInstaller bool `json:"has_installer"`
 	// PublishedAt is when the latest release was published.
 	PublishedAt *time.Time `json:"published_at,omitempty"`
@@ -119,7 +122,7 @@ func buildUpdateStatus(current, installed, dismissed string, snap update.Snapsho
 	// Show the notes of every release the user skipped, newest first. For a
 	// dev/unknown current version NewerThan returns nothing, so fall back to the
 	// latest release's own notes for display.
-	skipped := update.NewerThan(snap.Releases, cur)
+	skipped := update.NewerThan(upTo(snap.Releases, rel.Version), cur)
 	st.SkippedCount = len(skipped)
 	st.Notes = aggregateNotes(skipped, rel)
 
@@ -137,6 +140,19 @@ func buildUpdateStatus(current, installed, dismissed string, snap update.Snapsho
 		st.Reinstall = true
 	}
 	return st
+}
+
+// upTo is the releases no newer than version: a release newer than the one
+// offered has no installer for this system, so its notes describe nothing the
+// update brings.
+func upTo(releases []update.Release, version string) []update.Release {
+	out := make([]update.Release, 0, len(releases))
+	for _, r := range releases {
+		if update.Compare(r.Version, version) <= 0 {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // aggregateNotes joins the notes of the skipped releases (newest first), each

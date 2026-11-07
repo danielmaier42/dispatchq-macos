@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -89,8 +90,9 @@ func attachParentConsole() {
 // the execution-state sleep hold. Wake-from-sleep needs Task Scheduler wake
 // timers and a power-plan check it does not have yet; continue-in-terminal and
 // the in-app uninstaller stay nil, which the API answers as unavailable (the
-// installer's uninstaller removes the app). There is no published Windows
-// installer to update to, so no update service is created.
+// installer's uninstaller removes the app). Updates download the release's
+// Windows installer for this architecture and open it for the operator, whose
+// setup then stops and replaces this installation the way a manual run does.
 func newPlatform(r system.Runner) platform {
 	toast := &notify.Toast{Runner: r, Register: registerToastApp}
 	return platform{
@@ -115,9 +117,64 @@ func newPlatform(r system.Runner) platform {
 		stopStrayDaemons: killStrayDaemons,
 		stopInstallation: stopInstallation,
 		webView2Status:   webView2Status,
+		openInstaller:    openInstaller(shellOpen),
 
 		loadWebView2Client: webview2.LoadClient,
 	}
+}
+
+// openInstaller hands a downloaded setup program to the operator: launch
+// starts it in a window of its own, without the silent switch, so the operator
+// confirms the update in setup and setup itself stops this installation
+// (stop-installation) before it replaces anything. Only an .exe is started.
+func openInstaller(launch func(path string) error) func(ctx context.Context, path string) error {
+	return func(ctx context.Context, path string) error {
+		if !strings.EqualFold(filepath.Ext(path), exeSuffix) {
+			return fmt.Errorf("refusing to start %s: not a Windows setup program", path)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := launch(path); err != nil {
+			return fmt.Errorf("start setup %s: %w", path, err)
+		}
+		return nil
+	}
+}
+
+// sFalse is S_FALSE: COM was already initialized on this thread, and the call
+// still has to be balanced by CoUninitialize.
+const sFalse = syscall.Errno(1)
+
+// shellOpen opens path the way Explorer does on a double click, through
+// ShellExecuteW, which also shows the elevation prompt should a program ask
+// for it. ShellExecute can involve COM-activated shell extensions, so COM is
+// initialized on this thread first, as the ShellExecuteW documentation asks.
+func shellOpen(path string) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	switch err := windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED|windows.COINIT_DISABLE_OLE1DDE); {
+	case err == nil, errors.Is(err, sFalse):
+		defer windows.CoUninitialize()
+	case errors.Is(err, syscall.Errno(windows.RPC_E_CHANGED_MODE)):
+		// The thread already runs a multithreaded apartment; ShellExecute
+		// works there too, and that initialization is not ours to undo.
+	default:
+		return fmt.Errorf("initialize COM: %w", err)
+	}
+	verb, err := windows.UTF16PtrFromString("open")
+	if err != nil {
+		return err
+	}
+	file, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	dir, err := windows.UTF16PtrFromString(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	return windows.ShellExecute(0, verb, file, nil, dir, windows.SW_SHOWNORMAL)
 }
 
 // webView2Status repeats the window's own WebView2 lookup (the daemon and the

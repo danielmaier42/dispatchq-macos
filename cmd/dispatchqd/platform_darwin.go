@@ -39,7 +39,18 @@ func newPlatform(r system.Runner) platform {
 		osVersion:         osVersion(r),
 		uninstall:         openUninstaller(r),
 		stopStrayDaemons:  func() error { killStrayDaemons(); return nil },
-		selfUpdate:        true,
+		openInstaller:     openPackage(r),
+	}
+}
+
+// openPackage hands a downloaded installer package to macOS, which opens it in
+// the Installer app for the operator to confirm.
+func openPackage(r system.Runner) func(ctx context.Context, path string) error {
+	return func(ctx context.Context, path string) error {
+		if out, err := r.Run(ctx, "open", path); err != nil {
+			return fmt.Errorf("open %s: %w: %s", path, err, strings.TrimSpace(string(out)))
+		}
+		return nil
 	}
 }
 

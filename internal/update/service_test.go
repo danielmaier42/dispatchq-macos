@@ -138,6 +138,7 @@ func TestServiceDownloadWritesFileAndOpens(t *testing.T) {
 	s := NewService(f, time.Hour,
 		WithDownloadDir(dir),
 		WithHTTPClient(srv.Client()),
+		WithTarget(macARM),
 		WithOpener(func(_ context.Context, path string) error { opened = path; return nil }),
 	)
 	if _, err := s.CheckNow(context.Background()); err != nil {
@@ -186,7 +187,7 @@ func TestServiceDownloadSanitizesAssetName(t *testing.T) {
 	dir := t.TempDir()
 	f := &fakeFetcher{rels: []Release{{Version: "0.3.0", PkgURL: srv.URL + "/x.pkg", PkgName: "../../../evil.pkg"}}}
 	s := NewService(f, time.Hour, WithDownloadDir(dir),
-		WithHTTPClient(srv.Client()),
+		WithHTTPClient(srv.Client()), WithTarget(macARM),
 		WithOpener(func(context.Context, string) error { return nil }))
 	if _, err := s.CheckNow(context.Background()); err != nil {
 		t.Fatalf("check: %v", err)
@@ -200,5 +201,104 @@ func TestServiceDownloadSanitizesAssetName(t *testing.T) {
 	}
 	if filepath.Base(path) != "evil.pkg" {
 		t.Errorf("base name = %q, want evil.pkg", filepath.Base(path))
+	}
+}
+
+// downloadFor checks rel, then downloads it as target with an opener that
+// records what it was handed.
+func downloadFor(t *testing.T, target Target, rel Release, opts ...Option) (dir, path, opened string, err error) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("installer-bytes"))
+	}))
+	t.Cleanup(srv.Close)
+	dir = t.TempDir()
+	rel.PkgURL = srv.URL + "/" + rel.PkgName
+	all := append([]Option{
+		WithDownloadDir(dir), WithHTTPClient(srv.Client()), WithTarget(target),
+		WithOpener(func(_ context.Context, p string) error { opened = p; return nil }),
+	}, opts...)
+	s := NewService(&fakeFetcher{rels: []Release{rel}}, time.Hour, all...)
+	if _, cerr := s.CheckNow(context.Background()); cerr != nil {
+		t.Fatalf("check: %v", cerr)
+	}
+	path, err = s.Download(context.Background())
+	return dir, path, opened, err
+}
+
+// A Windows installer keeps its real name and .exe ending, and is handed to the
+// platform's opener rather than to a macOS tool.
+func TestServiceDownloadWindowsInstaller(t *testing.T) {
+	for _, name := range []string{"dispatchq-2.1.0-windows-x64.exe", "dispatchq-2.2.0-windows-x64-beta.exe"} {
+		dir, path, opened, err := downloadFor(t, winX64, Release{Version: "2.1.0", PkgName: name})
+		if err != nil {
+			t.Fatalf("Download %s: %v", name, err)
+		}
+		want := filepath.Join(dir, name)
+		if path != want || opened != want {
+			t.Fatalf("path %q opened %q, want %q", path, opened, want)
+		}
+		entries, _ := os.ReadDir(dir)
+		if len(entries) != 1 {
+			t.Fatalf("download dir holds %d entries, want only the installer", len(entries))
+		}
+	}
+}
+
+// A file whose ending is not this system's installer is never downloaded or
+// handed to the opener: no .pkg on Windows, no .exe on macOS.
+func TestServiceDownloadRefusesForeignInstaller(t *testing.T) {
+	for _, tc := range []struct {
+		target Target
+		name   string
+	}{
+		{winX64, "dispatchq-2.1.0-macos-arm64.pkg"},
+		{macARM, "dispatchq-2.1.0-windows-x64.exe"},
+		{winARM, "dispatchq-2.1.0-windows-arm64.exe.txt"},
+		{winARM, ".exe"},
+		{winX64, `..\..\evil.bat`},
+	} {
+		dir, path, opened, err := downloadFor(t, tc.target, Release{Version: "2.1.0", PkgName: tc.name})
+		if err == nil || path != "" || opened != "" {
+			t.Fatalf("%s on %s: path %q opened %q err %v, want refusal", tc.name, tc.target, path, opened, err)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Fatalf("%s on %s left %d files behind", tc.name, tc.target, len(entries))
+		}
+	}
+}
+
+// A Windows path in an asset name is reduced to its last element on every
+// system, so it cannot leave the download directory.
+func TestServiceDownloadStripsWindowsSeparators(t *testing.T) {
+	dir, path, _, err := downloadFor(t, winX64, Release{Version: "2.1.0", PkgName: `..\..\dispatchq-2.1.0-windows-x64.exe`})
+	if err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if path != filepath.Join(dir, "dispatchq-2.1.0-windows-x64.exe") {
+		t.Fatalf("path = %q", path)
+	}
+}
+
+// Without a platform opener the installer stays downloaded and the error says
+// so; no system tool is started.
+func TestServiceDownloadWithoutOpener(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("x"))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	rel := Release{Version: "2.1.0", PkgName: "dispatchq-2.1.0-windows-x64.exe", PkgURL: srv.URL + "/x"}
+	s := NewService(&fakeFetcher{rels: []Release{rel}}, time.Hour,
+		WithDownloadDir(dir), WithHTTPClient(srv.Client()), WithTarget(winX64))
+	if _, err := s.CheckNow(context.Background()); err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	path, err := s.Download(context.Background())
+	if err == nil || path != filepath.Join(dir, rel.PkgName) {
+		t.Fatalf("Download = %q, %v; want the file and an error", path, err)
+	}
+	if _, serr := os.Stat(path); serr != nil {
+		t.Fatalf("downloaded installer missing: %v", serr)
 	}
 }

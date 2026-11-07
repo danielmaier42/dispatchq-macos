@@ -7,8 +7,8 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,8 +19,8 @@ const DefaultInterval = time.Hour
 
 // Service keeps the latest-release check cached in memory and refreshes it on a
 // ticker, so the API can answer instantly without hitting the network on every
-// poll. It also downloads the installer `.pkg` on demand. It is safe for
-// concurrent use.
+// poll. It also downloads this system's installer on demand and hands it to the
+// platform's opener. It is safe for concurrent use.
 type Service struct {
 	fetcher  Fetcher
 	interval time.Duration
@@ -28,6 +28,7 @@ type Service struct {
 	// download configuration (injectable for tests)
 	client  *http.Client
 	destDir string
+	target  Target
 	open    func(ctx context.Context, path string) error
 
 	// checkMu serializes fetches so a manual check and the hourly worker never
@@ -66,11 +67,17 @@ func WithHTTPClient(c *http.Client) Option { return func(s *Service) { s.client 
 // ~/Downloads).
 func WithDownloadDir(dir string) Option { return func(s *Service) { s.destDir = dir } }
 
-// WithOpener overrides how a downloaded installer is launched (default: `open`
-// the file, which hands it to the macOS Installer).
+// WithOpener sets how a downloaded installer is handed to the user: the macOS
+// Installer for a `.pkg`, the installer's own window for a Windows `.exe`. The
+// platform provides it; without one, Download leaves the file in place and
+// reports that this system cannot open it.
 func WithOpener(fn func(ctx context.Context, path string) error) Option {
 	return func(s *Service) { s.open = fn }
 }
+
+// WithTarget sets the system whose installers are downloaded (default
+// [CurrentTarget]). Download refuses a file whose ending is not the target's.
+func WithTarget(t Target) Option { return func(s *Service) { s.target = t } }
 
 // NewService builds a Service. interval <= 0 uses [DefaultInterval].
 func NewService(f Fetcher, interval time.Duration, opts ...Option) *Service {
@@ -81,7 +88,8 @@ func NewService(f Fetcher, interval time.Duration, opts ...Option) *Service {
 		fetcher:  f,
 		interval: interval,
 		client:   &http.Client{Timeout: 5 * time.Minute},
-		open:     openWithFinder,
+		target:   CurrentTarget(),
+		open:     noOpener,
 	}
 	for _, o := range opts {
 		o(s)
@@ -154,9 +162,9 @@ func (s *Service) Snapshot() Snapshot {
 	return snap
 }
 
-// Download fetches the cached latest release's `.pkg` into the download
-// directory and opens it (launching the macOS Installer). It returns the path
-// of the downloaded file. Only one download runs at a time.
+// Download fetches the cached latest release's installer into the download
+// directory and opens it with the platform's opener. It returns the path of the
+// downloaded file. Only one download runs at a time.
 func (s *Service) Download(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	rel := Latest(s.releases)
@@ -176,7 +184,7 @@ func (s *Service) Download(ctx context.Context) (string, error) {
 		s.mu.Unlock()
 	}()
 
-	dest, err := s.downloadPkg(ctx, rel)
+	dest, err := s.downloadInstaller(ctx, rel)
 	if err != nil {
 		return "", err
 	}
@@ -188,17 +196,39 @@ func (s *Service) Download(ctx context.Context) (string, error) {
 	return dest, nil
 }
 
-// downloadPkg streams the release's `.pkg` to a temp file and renames it into
-// place, so an interrupted download never leaves a truncated installer behind.
-func (s *Service) downloadPkg(ctx context.Context, rel *Release) (string, error) {
+// installerFileName is the bare file name rel's installer is saved under. A
+// crafted asset name (e.g. "../../evil.pkg") is reduced to its last element so
+// it can never write outside the download directory, and a name whose ending is
+// not this system's installer ending is refused, so the opener is never handed
+// another kind of file.
+func (s *Service) installerFileName(rel *Release) (string, error) {
+	ext := s.target.Ext()
+	if ext == "" {
+		return "", errors.New("no installer is published for this system")
+	}
+	name := rel.PkgName
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		name = name[i+1:]
+	}
+	if name == "" || name == "." || name == ".." {
+		return fmt.Sprintf("dispatchq-%s-%s%s", rel.Version, s.target, ext), nil
+	}
+	if !strings.EqualFold(filepath.Ext(name), ext) || len(name) == len(ext) {
+		return "", fmt.Errorf("installer %q is not a %s file for %s", name, ext, s.target)
+	}
+	return name, nil
+}
+
+// downloadInstaller streams the release's installer to a temp file and renames
+// it into place, so an interrupted download never leaves a truncated installer
+// behind.
+func (s *Service) downloadInstaller(ctx context.Context, rel *Release) (string, error) {
+	name, err := s.installerFileName(rel)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(s.destDir, 0o755); err != nil {
 		return "", fmt.Errorf("create download dir: %w", err)
-	}
-	// Reduce the asset name to a bare file name so a crafted release asset (e.g.
-	// "../../evil.pkg") can never write outside the download directory.
-	name := filepath.Base(rel.PkgName)
-	if name == "" || name == "." || name == string(filepath.Separator) {
-		name = fmt.Sprintf("dispatchq-%s.pkg", rel.Version)
 	}
 	dest := filepath.Join(s.destDir, name)
 
@@ -215,7 +245,7 @@ func (s *Service) downloadPkg(ctx context.Context, rel *Release) (string, error)
 		return "", fmt.Errorf("download installer: unexpected status %s", resp.Status)
 	}
 
-	tmp, err := os.CreateTemp(s.destDir, ".dispatchq-dl-*.pkg")
+	tmp, err := os.CreateTemp(s.destDir, ".dispatchq-dl-*"+s.target.Ext())
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
@@ -235,8 +265,7 @@ func (s *Service) downloadPkg(ctx context.Context, rel *Release) (string, error)
 	return dest, nil
 }
 
-// openWithFinder hands the downloaded package to macOS, which opens it in the
-// Installer app.
-func openWithFinder(ctx context.Context, path string) error {
-	return exec.CommandContext(ctx, "open", path).Run()
+// noOpener is the opener of a Service built without [WithOpener].
+func noOpener(context.Context, string) error {
+	return errors.New("this system cannot open the installer; open the downloaded file yourself")
 }

@@ -46,7 +46,7 @@ func TestGitHubFetcherReleases(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f := GitHubFetcher{BaseURL: srv.URL}
+	f := GitHubFetcher{BaseURL: srv.URL, Target: macARM}
 	rels, err := f.Releases(context.Background())
 	if err != nil {
 		t.Fatalf("Releases: %v", err)
@@ -95,5 +95,35 @@ func TestGitHubFetcherErrorStatus(t *testing.T) {
 
 	if _, err := (GitHubFetcher{BaseURL: srv.URL}).Releases(context.Background()); err == nil {
 		t.Fatal("expected an error for a 404 response")
+	}
+}
+
+// On a Mac the canonical package wins over the legacy name listed before it,
+// and a package carrying another version is never the installer.
+func TestGitHubFetcherMacPrefersCanonicalPackage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[
+		  {"tag_name":"v2.1.0","assets":[
+		    {"name":"dispatchq-2.0.9.pkg","browser_download_url":"https://example.test/old"},
+		    {"name":"dispatchq-2.1.0.pkg","browser_download_url":"https://example.test/legacy"},
+		    {"name":"dispatchq-2.1.0-macos-arm64.pkg","browser_download_url":"https://example.test/canonical"}]},
+		  {"tag_name":"v2.0.5","assets":[
+		    {"name":"dispatchq-2.0.4.pkg","browser_download_url":"https://example.test/mismatch"}]}
+		]`))
+	}))
+	defer srv.Close()
+
+	rels, err := GitHubFetcher{BaseURL: srv.URL, Target: macARM}.Releases(context.Background())
+	if err != nil {
+		t.Fatalf("Releases: %v", err)
+	}
+	if len(rels) != 2 {
+		t.Fatalf("got %d releases", len(rels))
+	}
+	if rels[0].PkgName != "dispatchq-2.1.0-macos-arm64.pkg" || rels[0].PkgURL != "https://example.test/canonical" {
+		t.Errorf("2.1.0 installer = %q (%q), want the canonical package", rels[0].PkgName, rels[0].PkgURL)
+	}
+	if rels[1].PkgURL != "" {
+		t.Errorf("2.0.5 installer = %q, want none for a mismatched version", rels[1].PkgName)
 	}
 }

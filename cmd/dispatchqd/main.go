@@ -267,13 +267,12 @@ func cmdRun(args []string) error {
 	// Background update checker: polls GitHub for a newer release hourly and
 	// caches the result so the dashboard's "update available" banner and the
 	// manual "Check for updates" button answer instantly (see internal/update).
-	// A system without a release installer gets no update service at all. The
-	// update endpoints then answer "not available".
-	var updates *update.Service
-	if plat.selfUpdate {
-		updSvc := update.NewService(update.GitHubFetcher{}, update.DefaultInterval)
-		go updSvc.Run(ctx)
-		updates = updSvc
+	// Each check and download looks for this system's own installer (operating
+	// system and architecture). A system without a release installer gets no
+	// update service at all. The update endpoints then answer "not available".
+	updates := newUpdateService(plat, update.CurrentTarget())
+	if updates != nil {
+		go updates.Run(ctx)
 	}
 	go limits.Run(ctx, provider.DefaultLimitsInterval, func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, "dispatchqd: "+format+"\n", args...)

@@ -21,6 +21,9 @@ type GitHubFetcher struct {
 	Client *http.Client
 	// BaseURL overrides the GitHub API root (for tests); empty uses the real one.
 	BaseURL string
+	// Target is the system whose installer each release offers; the zero value
+	// uses [CurrentTarget].
+	Target Target
 }
 
 // ghRelease mirrors the subset of GitHub's release JSON we consume.
@@ -83,19 +86,23 @@ func (g GitHubFetcher) Releases(ctx context.Context) ([]Release, error) {
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&grs); err != nil {
 		return nil, fmt.Errorf("decode releases: %w", err)
 	}
+	target := g.Target
+	if target == (Target{}) {
+		target = CurrentTarget()
+	}
 	out := make([]Release, 0, len(grs))
 	for _, gr := range grs {
 		if gr.Draft || gr.Prerelease {
 			continue
 		}
-		out = append(out, *gr.toRelease())
+		out = append(out, *gr.toRelease(target))
 	}
 	return out, nil
 }
 
-// toRelease converts the GitHub payload into our Release, picking the `.pkg`
-// asset as the installer download.
-func (gr ghRelease) toRelease() *Release {
+// toRelease converts the GitHub payload into our Release, picking the asset
+// [SelectInstaller] finds for target as the installer download.
+func (gr ghRelease) toRelease(target Target) *Release {
 	rel := &Release{
 		Version:     Normalize(gr.TagName),
 		Tag:         gr.TagName,
@@ -103,12 +110,13 @@ func (gr ghRelease) toRelease() *Release {
 		HTMLURL:     gr.HTMLURL,
 		PublishedAt: gr.PublishedAt,
 	}
+	assets := make([]Asset, 0, len(gr.Assets))
 	for _, a := range gr.Assets {
-		if strings.HasSuffix(strings.ToLower(a.Name), ".pkg") {
-			rel.PkgURL = a.BrowserDownloadURL
-			rel.PkgName = a.Name
-			break
-		}
+		assets = append(assets, Asset{Name: a.Name, URL: a.BrowserDownloadURL})
+	}
+	if a, ok := SelectInstaller(target, rel.Version, assets); ok {
+		rel.PkgURL = a.URL
+		rel.PkgName = a.Name
 	}
 	return rel
 }

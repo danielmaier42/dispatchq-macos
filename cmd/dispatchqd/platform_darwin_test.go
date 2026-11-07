@@ -23,7 +23,7 @@ func TestDarwinPlatformHasEveryService(t *testing.T) {
 		"osVersion":         p.osVersion != nil,
 		"uninstall":         p.uninstall != nil,
 		"stopStrayDaemons":  p.stopStrayDaemons != nil,
-		"selfUpdate":        p.selfUpdate,
+		"openInstaller":     p.openInstaller != nil,
 	}
 	for name, ok := range checks {
 		if !ok {

@@ -8,6 +8,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/api"
 	"github.com/danielmaier42/claudeq/internal/engine"
 	"github.com/danielmaier42/claudeq/internal/notify"
+	"github.com/danielmaier42/claudeq/internal/update"
 )
 
 // errUnsupported is the answer of an operation that this operating system
@@ -62,8 +63,22 @@ type platform struct {
 	// loadWebView2Client loads a WebView2 client library the way the window
 	// does; webView2Status runs it in a separate, time-limited process.
 	loadWebView2Client func(path string) error
-	// selfUpdate tells whether a downloaded release installs on this system.
-	selfUpdate bool
+	// openInstaller hands a downloaded release installer to the operator, who
+	// finishes the update in it. Nil where no installer is published for this
+	// system; the daemon then runs no update service.
+	openInstaller func(ctx context.Context, path string) error
+}
+
+// newUpdateService builds the release check and installer download for target,
+// the system this daemon was built for, handing downloads to the platform's
+// installer opener. It is nil, and the daemon runs no update service, where the
+// platform cannot open an installer or none is published for target.
+func newUpdateService(p platform, target update.Target) *update.Service {
+	if p.openInstaller == nil || !target.Supported() {
+		return nil
+	}
+	return update.NewService(update.GitHubFetcher{Target: target}, update.DefaultInterval,
+		update.WithTarget(target), update.WithOpener(p.openInstaller))
 }
 
 // serviceSpec is the daemon command a service manager starts.

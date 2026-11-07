@@ -436,8 +436,10 @@ func (p Parsed) String() string {
 	return strings.Join(words, " ")
 }
 
-// PowerShell is the command line as typed in PowerShell, each word quoted
-// that PowerShell would otherwise read differently.
+// PowerShell is the command line as typed in PowerShell 7.3 or later, each
+// word quoted that PowerShell would otherwise read differently. It is shown,
+// never run: Windows PowerShell 5.1 passes a " inside a word to a native
+// program differently, which only a card's reader typing it there would meet.
 func (p Parsed) PowerShell() string {
 	words := []string{"dispatchq"}
 	for _, w := range p.Argv() {

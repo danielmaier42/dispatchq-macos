@@ -460,6 +460,12 @@ func TestRuntimeLimitsAndShellOnCards(t *testing.T) {
 	if !strings.Contains(p, "cannot run script jobs") || strings.Contains(p, "is PowerShell, run in") {
 		t.Error("a system without a script runner is offered script jobs")
 	}
+	if strings.Contains(p, `Use "script" when`) || strings.Contains(p, "choose: a script job") {
+		t.Error("a system without a script runner is still told to plan or offer scripts")
+	}
+	if p := systemPrompt(PlatformRuntime("darwin", "15.6", true)); !strings.Contains(p, `Use "script" when`) || !strings.Contains(p, "choose: a script job") {
+		t.Error("a system that runs scripts lost its script planning")
+	}
 	if !strings.Contains(p, "PowerShell, never Bash") || !strings.Contains(p, "never suggest macOS tools such as osascript") {
 		t.Error("an agent job on Windows lost its PowerShell guidance")
 	}

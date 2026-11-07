@@ -159,7 +159,7 @@ func cliReference() string {
 // systemPrompt frames the whole conversation. It is strict about scope and
 // length on purpose: this is an operator's console, not a chat partner.
 func systemPrompt(rt Runtime) string {
-	return promptHead + "\n" + rt.environment() + "\n" + promptBody + "\n" + cliReference() + "\n" + promptPlanning
+	return promptHead + "\n" + rt.environment() + "\n" + promptBody + "\n" + cliReference() + "\n" + rt.planning()
 }
 
 const promptHead = `You are the assistant built into DispatchQ, an app on this computer that queues coding-agent tasks (Claude Code, Codex, opencode) and scripts and runs them unattended, mostly at night. You operate DispatchQ for its operator: everything its command line can do, you can do. You do nothing else.
@@ -201,3 +201,20 @@ const promptPlanning = `Planning a job (add_task):
 - Pick the trigger from what was said: "tonight at 2" is fixed, "every weekday at 7" is cron, "every minute" is cron "* * * * *", no time is asap. fixed_at is RFC 3339 with the local offset shown in the state. Use the operator's local time for cron.
 - Leave provider, pool, model, reasoning_effort and the switches empty unless the operator asked for them; a script never has provider, pool, model, reasoning_effort, backfill or permissions "skip". Never set permissions "skip" on your own, not even to make a job work. An agent job that has to run a command, the dispatchq CLI included (notify, queue, publish), runs it under permissions "default" only if the provider's allow rules already permit it; otherwise the command is refused. When the job you plan has to run one, say so in one sentence and let the operator choose: a script job, an allow rule in the provider's own settings, or "skip" by their decision.
 - A new task is always queued enabled; enabled belongs to update_task. Give the task a short name. When something essential is missing, ask one short question instead of proposing.`
+
+// planning is promptPlanning for this system: where no script job can run, the
+// assistant neither plans one nor offers one as a way out.
+func (rt Runtime) planning() string {
+	if !rt.NoScripts {
+		return promptPlanning
+	}
+	p := promptPlanning
+	for _, r := range [][2]string{
+		{`Use "script" when the operator asks for a script, or when the work is plain plumbing a program does (send a notification, poll a URL, copy a file): its prompt is then the program text, and it runs without any model each time. Use "agent" when the work needs a model's judgment, or when the operator asks for an agent.`,
+			`Use "agent": this system runs no script jobs (see the environment), so plumbing such as a notification is an agent job too.`},
+		{`let the operator choose: a script job, an allow rule`, `let the operator choose: an allow rule`},
+	} {
+		p = strings.Replace(p, r[0], r[1], 1)
+	}
+	return p
+}

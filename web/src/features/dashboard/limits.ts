@@ -79,6 +79,25 @@ export function creditText(p: LimitsEntry, now = Date.now()): string {
   return `Billing refused · ${by} was refused ${when}.${failed}`
 }
 
+// creditLabel is the label on an API-key account's line, lower case like the
+// "week used up" a plan account shows in the same column. It says only whether
+// the account takes work: a credit or billing refusal closes it until a ping
+// gets an answer; otherwise it is open. creditText is the detail behind it.
+export function creditLabel(p: LimitsEntry): string {
+  if (!p.limits.api_key) return ''
+  return creditBlock(p) ? CREDIT_USED_UP : 'credit available'
+}
+
+const CREDIT_USED_UP = 'credit used up'
+
+// creditRefused is the label of a closed account, shown in red.
+export const creditRefused = (label: string) => label === CREDIT_USED_UP
+
+// creditBlock is an account block about the account's credit: the line says it
+// in the credit column, the way a used-up week is said, and not as a fault.
+export const creditBlock = (p: LimitsEntry) =>
+  p.blocked?.reason === 'credit_exhausted' || p.blocked?.reason === 'billing_refused'
+
 // blockText says what an account block means and when the provider is tried
 // again; empty for a provider that is not blocked by one. A used-up credit
 // balance reads NO_CREDIT and nothing else: its retries stay silent.

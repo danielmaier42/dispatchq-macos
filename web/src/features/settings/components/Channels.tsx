@@ -118,8 +118,9 @@ export function Channels({value, stored}: {value: Settings; stored: Settings}) {
           hint={
             <>
               The JSON posted to the endpoint. <Code>{'{{title}}'}</Code>, <Code>{'{{message}}'}</Code> and{' '}
-              <Code>{'{{url}}'}</Code> are filled in and escaped. Leave empty to send DispatchQ's own body; set
-              it to what the service expects (Slack wants <Code>text</Code>, Discord <Code>content</Code>).
+              <Code>{'{{url}}'}</Code> are filled in and escaped. Leave empty to send DispatchQ's own body;
+              set it to what the service expects (Slack wants <Code>text</Code>, Discord <Code>content</Code>
+              ).
             </>
           }
         >

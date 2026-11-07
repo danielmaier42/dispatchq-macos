@@ -44,11 +44,22 @@ const show = (providers: object[], until: string) => {
 describe('limit banners', () => {
   afterEach(cleanup)
 
-  it('says only "No credit left" while the credit block is the only one', () => {
+  it('shows no bar for a used-up credit balance, as for a used-up week', () => {
     show([{name: 'API', until: FUTURE, fallback: 'Claude', reason: 'credit_exhausted'}], FUTURE)
-    const bar = screen.getByRole('alert')
-    expect(bar.textContent).toBe('No credit left')
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('announces a rate limit beside a credit-held provider without naming the latter', () => {
+    show(
+      [
+        {name: 'API', until: FUTURE, reason: 'credit_exhausted'},
+        {name: 'Codex', until: FUTURE},
+      ],
+      FUTURE,
+    )
+    expect(screen.getByRole('status').textContent).toMatch(/^Rate limit reached, waiting on Codex/)
+    expect(screen.getByRole('status').textContent).not.toMatch(/API/)
   })
 
   it('keeps a rate limit on another provider after the credit retry time has passed', () => {

@@ -37,7 +37,10 @@ export function limitCoverage(providers: LimitedProvider[]): LimitCoverage {
   return covered === providers.length ? 'all' : 'some'
 }
 
-const noCredit = (p: LimitedProvider) => p.reason === 'credit_exhausted'
+// creditBlocked is a provider held by its API credit: refused for a used-up
+// balance or by billing. No clock reopens it; a ping that gets an answer does.
+const creditBlocked = (p: LimitedProvider) =>
+  p.reason === 'credit_exhausted' || p.reason === 'billing_refused'
 
 export interface LimitSplit {
   // When the last used-up credit balance is tried again; '' when no provider
@@ -53,14 +56,14 @@ export interface LimitSplit {
 const times = (providers: LimitedProvider[]) =>
   providers.map((p) => Date.parse(p.until)).filter((t) => !Number.isNaN(t))
 
-// splitLimits keeps a used-up credit balance out of the rate-limit banner: its
-// retries are not news, so neither its provider nor its retry time feed the
-// headline or the reopen time. A provider without a time of its own falls back
+// splitLimits keeps a credit-held provider's gate time out of the reopen time:
+// it is only how long the gate holds without an answered ping, not when the
+// provider takes work again. A provider without a time of its own falls back
 // to the daemon's gate time.
 export function splitLimits(providers: LimitedProvider[], until: string): LimitSplit {
-  const credit = providers.filter(noCredit)
+  const credit = providers.filter(creditBlocked)
   if (!credit.length) return {creditUntil: '', rateLimited: providers, until}
-  const rateLimited = providers.filter((p) => !noCredit(p))
+  const rateLimited = providers.filter((p) => !creditBlocked(p))
   const c = times(credit)
   const r = times(rateLimited)
   return {

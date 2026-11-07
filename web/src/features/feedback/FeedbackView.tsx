@@ -135,6 +135,7 @@ export function FeedbackView() {
                 busy={s.busy}
                 error={s.error}
                 hint={hint}
+                enterSends
                 placeholder={
                   s.messages.some((m) => m.role === 'assistant')
                     ? 'Answer Claude’s question…'

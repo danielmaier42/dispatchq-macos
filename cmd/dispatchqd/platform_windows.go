@@ -176,16 +176,21 @@ func (runKeyService) Install(_ context.Context, spec serviceSpec, out io.Writer)
 	return nil
 }
 
-// Uninstall removes the autostart entry and stops the daemon.
+// Uninstall removes the autostart entry and stops the daemon. The daemon is
+// stopped even when the entry cannot be removed, so the installer's
+// uninstaller can still delete its files; the error is returned after that.
 func (runKeyService) Uninstall(_ context.Context, out io.Writer) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
-	if err == nil {
-		defer func() { _ = k.Close() }()
-		if err := k.DeleteValue(runValueName); err != nil && !errors.Is(err, registry.ErrNotExist) {
-			return fmt.Errorf("remove autostart: %w", err)
+	err := removeAutostart(func() (valueDeleter, error) {
+		k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
+		if err != nil {
+			return nil, err
 		}
-	}
+		return k, nil
+	}, func(err error) bool { return errors.Is(err, registry.ErrNotExist) }, runValueName)
 	killStrayDaemons()
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(out, "removed the %s autostart entry and stopped the daemon\n", runValueName)
 	fmt.Fprintln(out, "To remove the app itself, use Settings > Apps > Installed apps > DispatchQ, or the Uninstall DispatchQ shortcut.")
 	return nil

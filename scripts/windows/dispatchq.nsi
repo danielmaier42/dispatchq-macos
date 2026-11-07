@@ -3,6 +3,7 @@
 ;
 ; Defines expected from the build script:
 ;   VERSION      product version string, e.g. dev-feature-windows-port-poc
+;   ARCH         payload architecture: x64 or arm64
 ;   STAGE        directory holding dispatchqapp.exe, dispatchqd.exe, dispatchq.exe,
 ;                dispatchq.ico, LICENSE, path-helper.ps1 [, webview2-bootstrapper.exe]
 ;   OUTFILE      installer to write
@@ -12,6 +13,15 @@ Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
+!include "x64.nsh"
+
+; NSIS only builds x86 installer stubs. The stub runs natively on x64 Windows and
+; under emulation on Windows on ARM; the payload it installs is native to ARCH.
+!if "${ARCH}" != "x64"
+!if "${ARCH}" != "arm64"
+!error "ARCH must be x64 or arm64"
+!endif
+!endif
 
 Name "DispatchQ"
 OutFile "${OUTFILE}"
@@ -19,13 +29,13 @@ InstallDir "$LOCALAPPDATA\Programs\DispatchQ"
 InstallDirRegKey HKCU "Software\DispatchQ" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
-BrandingText "DispatchQ ${VERSION}"
+BrandingText "DispatchQ ${VERSION} (${ARCH})"
 
 VIProductVersion "0.0.0.0"
 VIAddVersionKey "ProductName" "DispatchQ"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "FileVersion" "${VERSION}"
-VIAddVersionKey "FileDescription" "DispatchQ installer"
+VIAddVersionKey "FileDescription" "DispatchQ installer (Windows ${ARCH})"
 VIAddVersionKey "LegalCopyright" "DispatchQ contributors"
 
 !define MUI_ICON "${STAGE}\dispatchq.ico"
@@ -65,6 +75,23 @@ Var Purge
 ; The WebView2 runtime registers its version under this client id, per machine
 ; or per user.
 !define WEBVIEW2_KEY "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+
+; Refuses a machine the payload cannot run on. ARM64 executables need Windows on
+; ARM; x64 executables run on x64 Windows and, emulated, on Windows 11 on ARM.
+Function .onInit
+!if "${ARCH}" == "arm64"
+  ${IfNot} ${IsNativeARM64}
+    MessageBox MB_OK|MB_ICONSTOP "This DispatchQ installer is for Windows on ARM (ARM64). Use the x64 installer on this PC." /SD IDOK
+    Abort
+  ${EndIf}
+!else
+  ${IfNot} ${IsNativeAMD64}
+  ${AndIfNot} ${IsNativeARM64}
+    MessageBox MB_OK|MB_ICONSTOP "DispatchQ needs 64-bit Windows." /SD IDOK
+    Abort
+  ${EndIf}
+!endif
+FunctionEnd
 
 Function StopRunning
   ; Upgrade or reinstall: the daemon holds the store lock and the dashboard port,

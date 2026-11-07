@@ -8,14 +8,17 @@ What this is
   machines. Keep the macOS app as the reference.
 
 Requirements
-  - Windows 11 x64 (Windows 10 x64 may work, it is untested).
+  - Windows 11 on an x64 PC: the x64 installer.
+    Windows 11 on an ARM PC (for example Snapdragon): the ARM64 installer. The x64
+    installer also works there, emulated. Windows 10 may work, it is untested.
+    The ARM64 installer refuses to run on a non-ARM PC.
   - Microsoft Edge WebView2 Runtime. Windows 11 includes it; the installer installs
     it when it is missing and the installer carries the bootstrapper.
   - A provider CLI you already use: Claude Code, Codex or OpenCode, installed natively
     (not inside WSL) and signed in.
 
 Install
-  1. Double-click DispatchQ-<version>-windows-x64-setup.exe. No administrator rights
+  1. Double-click DispatchQ-<version>-windows-<x64|arm64>-setup.exe. No administrator rights
      are needed; it installs for your user under %LOCALAPPDATA%\Programs\DispatchQ.
   2. Windows SmartScreen will warn that the publisher is unknown (the installer is not
      signed). Choose "More info", then "Run anyway".
@@ -66,8 +69,11 @@ First-start checklist
       terminal: `dispatchq` resolves; uninstall removes that PATH entry.
   [ ] Close the window; the queue keeps running (dispatchqd.exe stays in Task Manager).
   [ ] Sign out and in again; dispatchqd.exe is running without opening the window.
+  [ ] ARM PC with the ARM64 installer: Task Manager > Details (Architecture column)
+      shows ARM64 for dispatchqapp.exe and dispatchqd.exe.
   [ ] Report anything that fails, with %APPDATA%\dispatchq\dispatchqd.log.
 
 Verify the download
   Compare the SHA-256 of the installer with SHA256SUMS next to it:
-    Get-FileHash .\DispatchQ-<version>-windows-x64-setup.exe -Algorithm SHA256
+    Get-FileHash .\DispatchQ-<version>-windows-<x64|arm64>-setup.exe -Algorithm SHA256
+  BUILD-INFO.json next to it names the source commit and the architecture.

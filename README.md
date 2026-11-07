@@ -201,17 +201,30 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/dispa
 
 ## Windows (local proof of concept)
 
-There is a first native Windows x64 edition. It is **not published**: releases
-and the website offer only the macOS installer, and CI builds nothing for
-Windows. You build the installer yourself on a Mac (or Linux) and copy it over:
+There is a first native Windows edition for x64 and ARM64 PCs. It is **not
+published**: releases and the website offer only the macOS installer, and CI
+builds nothing for Windows. You build the installer yourself on a Mac (or Linux)
+and copy it over:
 
 ```sh
 brew install mingw-w64 makensis librsvg imagemagick   # once
-scripts/build-windows.sh                              # writes dist/windows/
+scripts/build-windows.sh                              # x64, writes dist/windows/
+scripts/build-windows.sh --arch arm64                 # ARM64, writes dist/windows-arm64/
 ```
 
-That produces `DispatchQ-<version>-windows-x64-setup.exe` and a `SHA256SUMS`
-file. The installer is per user (no administrator rights), unsigned (SmartScreen
+That produces `DispatchQ-<version>-windows-<x64|arm64>-setup.exe`, a
+`SHA256SUMS` file and a `BUILD-INFO.json` naming the source commit and
+toolchain. The ARM64 build needs [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
+for the window's C++ part; on a Mac the script downloads the pinned official
+release into `build/windows/cache` (checksum verified, nothing installed
+system-wide), or uses `DISPATCHQ_LLVM_MINGW=<dir>` or one on `PATH`. The build
+checks that the three programs carry the target's machine type.
+
+Each installer holds programs for one architecture. The installer itself is a
+32-bit x86 program for both (NSIS has no ARM64 stub), which Windows on ARM runs
+emulated. The ARM64 installer refuses to run on a non-ARM PC; the x64 one runs
+on 64-bit Windows, including Windows 11 on ARM, where its programs run emulated.
+The installer is per user (no administrator rights), unsigned (SmartScreen
 asks you to confirm), installs under `%LOCALAPPDATA%\Programs\DispatchQ`,
 registers the daemon to start at every sign-in, adds the CLI to your user
 `PATH`, and installs the Microsoft Edge WebView2 Runtime when it is missing.
@@ -244,9 +257,10 @@ no-console log setup; `internal/system` supplies the sleep inhibitor (the thread
 keep the explicit unsupported fallback (`platform_other.go`). The Windows PoC therefore
 depends on PR 159 being merged first.
 
-The Windows code has been cross-compiled and its portable parts (shim resolution, the installer PATH script) are
-unit-tested on macOS; the Windows-only Job Object tests are compiled but have not run, and the app has **not** been run on a Windows machine yet (see
-[docs/windows/PLAN.md](docs/windows/PLAN.md) for the verification gaps).
+The Windows code has been cross-compiled and its portable parts (shim resolution, the installer PATH script,
+the build's architecture handling) are unit-tested on macOS; the Windows-only Job Object tests are compiled but have not run.
+An x64 build has been installed on one Windows PC and first testing there is under way; the ARM64 build has **not** been run
+on Windows at all (see [docs/windows/PLAN.md](docs/windows/PLAN.md) for the verification gaps).
 
 ## Coming from ClaudeQ
 

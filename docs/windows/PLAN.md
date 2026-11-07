@@ -2,7 +2,7 @@
 
 Status: a local-only proof of concept is implemented on `feature/windows-port-poc` (supersedes the earlier "implementation deferred" note; the maintainer asked for it explicitly). It is built by `scripts/build-windows.sh` and is never built, released or advertised by CI, GitHub Releases or the website. No repository rename, base-repo extraction, relay or iOS work is part of it.
 
-### Proof of concept status (2026-11-06)
+### Proof of concept status (2026-11-07)
 
 | Area | State |
 | --- | --- |
@@ -12,11 +12,12 @@ Status: a local-only proof of concept is implemented on `feature/windows-port-po
 | Native window | WebView2 via the existing `webview_go` (built-in loader, no DLL to ship); links, accent colour. Cross-compiled only; never opened on Windows. |
 | Platform layer | Built on the contributor platform abstraction of [PR 159](https://github.com/danielmaier42/dispatchq-app/pull/159) (integrated at `2bcaac0034d8b2f28e17fd56bd6d27033b7537aa`; PR 151 depends on it and must not merge before it). Windows fills the `platform` bundle in `cmd/dispatchqd/platform_windows.go`: Run-key `serviceManager`, `stopStrayDaemons` (process enumeration, no `pkill`), PowerShell folder/save dialogs, OS version; `platformInit` (GUI-subsystem log redirect) and `exeSuffix` stay per-OS functions. The sleep hold is `system.DefaultSleepInhibitor` (`internal/system/sleep_*.go`): thread-pinned `SetThreadExecutionState` on Windows, `caffeinate -i` on macOS, none elsewhere. The daemon and `dispatchq run-now` both wire it. `platform_other.go` (`!darwin && !windows`) is the explicit unsupported fallback for Linux and other systems. Cross-compiled and unit-tested on macOS only. |
 | Daemon lifecycle | Run-key autostart and start-now in `dispatchqd install`, log file, single daemon. Behaviour at lock, logout and reboot unverified. |
+| Architectures | x64 and ARM64, each a separate installer from `scripts/build-windows.sh --arch amd64\|arm64` (default amd64, `x64` accepted). ARM64 cross-compiles the daemon and CLI with Go and the window's cgo/C++ WebView2 part and icon resource with the official llvm-mingw toolchain (pinned release, checksum-verified download into `build/windows/cache`). The build fails unless all three programs carry the target PE machine type (0x8664 / 0xaa64). ARM64 window: statically linked C++ runtime, imports only Windows system DLLs and the UCRT, and the built-in WebView2 loader selects the runtime's `EBWebView\arm64` client. Both installers use NSIS's x86 stub (no ARM64 stub exists), emulated on Windows on ARM; the ARM64 installer refuses non-ARM machines, the x64 one refuses 32-bit Windows. The architecture mapping, PE check and installer guards are unit-tested on macOS. The ARM64 build has never run on Windows. |
 | Installer | NSIS per-user installer with WebView2 bootstrapper, PATH entry, uninstaller, `/PURGE`. The install directory reaches the PATH script (`path-helper.ps1`) through an environment variable, never as PowerShell source; helper exit codes are checked and reported. The script is round-trip tested under PowerShell on macOS with `$`, backtick, space, quote, `%` and Unicode paths. The installer itself was built, never executed on Windows. |
 | Disabled and documented | Native notifications, wake from sleep, continue in terminal, in-app update and uninstall, appearance pinning, shebang scripts. |
-| Open | Windows ARM64, WSL, execution after logout, code signing, updater, CI, website selection (planned until publication), real Windows end-to-end verification. |
+| Open | Running the ARM64 build on Windows on ARM, WSL, execution after logout, code signing, updater, CI, website selection (planned until publication), real Windows end-to-end verification. |
 
-Verification gap: no Windows machine or VM was available to the implementer (no Parallels/UTM/VirtualBox, no Wine), so no behaviour on Windows has been observed. Everything above marked unrun needs the first-install checklist in `scripts/windows/INSTALL-WINDOWS.txt` on a Windows 11 x64 PC.
+Verification gap: no Windows machine or VM was available to the implementer (no Parallels/UTM/VirtualBox, no Wine). An x64 build is now installed on the maintainer's physical Windows laptop; it appears to work and testing continues, so individual items above are still unverified until that testing reports them. No Windows on ARM device has run the ARM64 build. Everything above marked unrun needs the first-install checklist in `scripts/windows/INSTALL-WINDOWS.txt` on a Windows 11 PC of each architecture.
 
 Created: 2026-11-05.
 
@@ -33,7 +34,7 @@ The preferred repository direction is to rename the existing `dispatchq-macos` r
 - Reuse the current WebView dashboard. Do not replace the UI framework merely to support Windows.
 - Preserve existing macOS install locations, binary names, LaunchAgent identity, data and backward compatibility unless a separate migration is explicitly required.
 - Native Windows and WSL are different execution environments. A native application does not imply that WSL providers, Unix scripts or macOS MCP configurations work automatically.
-- Proposed initial baseline: Windows 11 x64, native providers, background execution in the signed-in user's session. Windows ARM64, Windows 10, WSL execution and execution after logout need explicit scope decisions.
+- Proposed initial baseline: Windows 11 x64 (ARM64 builds exist locally, unverified on hardware), native providers, background execution in the signed-in user's session. Windows ARM64, Windows 10, WSL execution and execution after logout need explicit scope decisions.
 - Relay and iOS remain separate projects and are not prerequisites for this port.
 
 ## Feasibility evidence

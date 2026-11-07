@@ -26,12 +26,18 @@ if [ "$got" != "$expected" ]; then
   printf 'got:\n%s\nexpected:\n%s\n' "$got" "$expected" >&2
   fail "the builds did not produce exactly the expected installers"
 fi
-sums=0
-while IFS= read -r -d '' list; do
+# Check coverage by installer, not by total line count: a duplicated checksum
+# for one file must never stand in for another file's missing checksum.
+while IFS= read -r name; do
+  asset="$(find "$ARTIFACTS" -type f -name "$name")"
+  list="$(dirname "$asset")/SHA256SUMS"
+  [ -f "$list" ] || fail "missing checksum for $name"
+  awk -v expected="$name" '
+    NF != 2 || $2 != expected { bad = 1 }
+    END { exit (bad || NR != 1) }
+  ' "$list" || fail "SHA256SUMS must list exactly $name once"
   (cd "$(dirname "$list")" && shasum -a 256 -c SHA256SUMS) || fail "checksum mismatch in $list"
-  sums=$((sums + $(wc -l <"$list")))
-done < <(find "$ARTIFACTS" -type f -name SHA256SUMS -print0)
-[ "$sums" -eq 3 ] || fail "$sums checksums for 3 installers"
+done <<<"$expected"
 mkdir -p "$RELEASE"
 while IFS= read -r name; do
   cp "$(find "$ARTIFACTS" -type f -name "$name")" "$RELEASE/$name"

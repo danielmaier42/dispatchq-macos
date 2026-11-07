@@ -136,6 +136,20 @@ func TestReleaseAssetsRefuses(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		{"missing checksum hidden by a duplicate", "arm64", func(t *testing.T, root string) {
+			complete(t, root)
+			if err := os.Remove(filepath.Join(root, "release-windows-arm64", "SHA256SUMS")); err != nil {
+				t.Fatal(err)
+			}
+			list := filepath.Join(root, "release-windows-x64", "SHA256SUMS")
+			line, err := os.ReadFile(list)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(list, append(line, line...), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
 		{"installer without checksum", "arm64", func(t *testing.T, root string) {
 			complete(t, root)
 			if err := os.Remove(filepath.Join(root, "release-windows-arm64", "SHA256SUMS")); err != nil {

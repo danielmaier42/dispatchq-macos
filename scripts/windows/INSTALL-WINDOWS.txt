@@ -1,4 +1,4 @@
-DispatchQ for Windows (proof of concept, local build)
+DispatchQ for Windows (beta, not published)
 =====================================================
 
 What this is

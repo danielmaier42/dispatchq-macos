@@ -70,7 +70,7 @@ workflow engine:
 
 - [How it works](#how-it-works)
 - [Install](#install)
-- [Windows (local proof of concept)](#windows-local-proof-of-concept)
+- [Windows (beta)](#windows-beta)
 - [Coming from ClaudeQ](#coming-from-claudeq)
 - [Using it](#using-it)
 - [The app](#the-app)
@@ -199,10 +199,10 @@ dashboard shows it if a wake ever fails):
 echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/dispatchq
 ```
 
-## Windows (local proof of concept)
+## Windows (beta)
 
-There is a first native Windows edition for x64 and ARM64 PCs. It is **not
-published**: releases and the website offer only the macOS installer. Every
+There is a native Windows beta for x64 and ARM64 PCs. It needs no WSL. It is
+**not published**: releases and the website offer only the macOS installer. Every
 CI run builds both installers for beta testing and keeps them as workflow
 artifacts of that run (`DispatchQ-<version>-windows-<x64|arm64>`, kept 14 days,
 for signed-in GitHub users), never as release assets. Or build the installer
@@ -238,14 +238,15 @@ the installer does not copy them to the PC.
 
 It reuses the same daemon, queue and dashboard. What differs on Windows:
 
-| Area | Windows PoC |
+| Area | Windows beta |
 | --- | --- |
 | Window | WebView2, the same dashboard |
 | Background service | `dispatchqd.exe`, started from the per-user Run key at sign-in; runs only while you are signed in |
 | Data | `%APPDATA%\dispatchq`; the daemon log is `dispatchqd.log` there |
 | Providers | native `claude`, `codex`, `opencode` found in the usual install folders, npm and scoop shims, then `PATH`; an npm or scoop `.cmd` shim is resolved to the program it starts; a Claude login is read from `.credentials.json` |
 | Cancel | every run starts suspended, joins a Windows Job Object and is then resumed, so even a child started at once belongs to it; cancelling, the idle watchdog or the daemon dying ends the whole process tree, and a run whose job cannot be set up does not start |
-| Script jobs | run as PowerShell; a `#!` line is refused |
+| Script jobs | run as Windows PowerShell, written as UTF-8 with a byte order mark so non-ASCII text survives; a `#!` line is refused |
+| Agent jobs | the built-in guidance tells the agent to call the CLI in PowerShell through `$env:DISPATCHQ_BIN` (a bare `dispatchq` when it is unset) and names Windows paths; a provider in WSL gets the Linux shell version |
 | Keep awake | held while a run is active (the display may still sleep) |
 | Folder and save dialogs | the native Windows dialogs, opened by the daemon through PowerShell |
 | Providers in WSL | optional, per provider (see below); a PC without WSL is unaffected |
@@ -293,15 +294,16 @@ and how long a distribution takes to start, are checked on the PC
 WSL"). An older build ignores a provider's `[providers.execution]` table and
 would drop it when it rewrites the configuration; no released build has one.
 
-Platform layer: the Windows edition builds on the contributor's platform
-abstraction from [PR 159](https://github.com/danielmaier42/dispatchq-app/pull/159)
-(`cmd/dispatchqd/platform.go`). `platform_windows.go` supplies the Run-key service
+Platform layer: the Windows beta builds on the platform abstraction Lukas Wolfrum
+([@Kryolisc](https://github.com/Kryolisc)) contributed in
+[PR 159](https://github.com/danielmaier42/dispatchq-app/pull/159)
+(`cmd/dispatchqd/platform.go`), adopted in full, including its later fix that holds off idle
+sleep during `dispatchq run-now`, so PR 159 needs no separate merge. `platform_windows.go` supplies the Run-key service
 manager, the stray-daemon termination, the PowerShell dialogs, the Windows version and the
 no-console log setup; `internal/system` supplies the sleep inhibitor (the thread-pinned
 `SetThreadExecutionState` hold on Windows, `caffeinate -i` on macOS). Both the daemon and
 `dispatchq run-now` take it from `system.DefaultSleepInhibitor`. Linux and other systems
-keep the explicit unsupported fallback (`platform_other.go`). The Windows PoC therefore
-depends on PR 159 being merged first.
+keep the explicit unsupported fallback (`platform_other.go`).
 
 The Windows code has been cross-compiled and its portable parts (shim resolution, the installer PATH script,
 the build's architecture handling) are unit-tested on macOS; the Windows-only Job Object tests are compiled but have not run.
@@ -2224,7 +2226,7 @@ Requires Go 1.26+, Node.js 22+ with npm (for the web UI) and `librsvg`
 scripts/build-app.sh    # build/DispatchQ.app          (double-click or `open` it)
 scripts/build-pkg.sh    # dist/dispatchq-<version>.pkg  (installer)
 make web                # only the web UI, into internal/api/web
-scripts/build-windows.sh  # dist/windows/…-setup.exe  (local Windows PoC, see above)
+scripts/build-windows.sh  # dist/windows/…-setup.exe  (local Windows beta build, see above)
 ```
 
 The daemon embeds the web UI when it is compiled, so build the UI first

@@ -359,7 +359,7 @@ func TestInstallerToastLifecycle(t *testing.T) {
 	if shortcut < 0 || start < 0 || shortcut > start {
 		t.Fatalf("install must create %s for dispatchqapp.exe before it starts dispatchqd (shortcut at %d, start at %d)", lnk, shortcut, start)
 	}
-	stop := strings.Index(uninstall, "taskkill /F /IM dispatchqd.exe")
+	stop := strings.Index(uninstall, `"$INSTDIR\dispatchqd.exe" uninstall`)
 	remove := strings.Index(uninstall, "Delete "+lnk)
 	if stop < 0 || remove < 0 || stop > remove {
 		t.Fatalf("uninstall must stop dispatchqd before it deletes %s (stop at %d, delete at %d)", lnk, stop, remove)

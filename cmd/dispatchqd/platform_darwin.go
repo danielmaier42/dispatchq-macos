@@ -38,7 +38,7 @@ func newPlatform(r system.Runner) platform {
 		warmFileAccess:    warmFileAccess,
 		osVersion:         osVersion(r),
 		uninstall:         openUninstaller(r),
-		stopStrayDaemons:  killStrayDaemons,
+		stopStrayDaemons:  func() error { killStrayDaemons(); return nil },
 		selfUpdate:        true,
 	}
 }

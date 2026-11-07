@@ -3,7 +3,9 @@ package store
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -115,4 +117,43 @@ func readLockPID(path string) int {
 		return 0
 	}
 	return pid
+}
+
+// DaemonLockPath is the daemon lock file of the data directory at home.
+func DaemonLockPath(home string) string { return filepath.Join(home, daemonLockFile) }
+
+// DaemonHolder says whether a daemon owns a data directory and which process
+// the lock file names. The pid is informational: it is written best-effort
+// after the lock is taken and can be stale, so it never identifies a process
+// to act on.
+type DaemonHolder struct {
+	// Held reports whether a process holds the daemon lock right now.
+	Held bool
+	// PID is the process the lock file names, or 0 when it names none.
+	PID int
+}
+
+// ProbeDaemonLock reports whether a daemon owns the data directory at home,
+// without creating the directory or the lock file. It takes the lock for an
+// instant when nobody holds it; a daemon starting at that moment waits for it
+// like for any predecessor.
+func ProbeDaemonLock(home string) (DaemonHolder, error) {
+	path := DaemonLockPath(home)
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return DaemonHolder{}, nil
+	}
+	if err != nil {
+		return DaemonHolder{}, fmt.Errorf("open daemon lock: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	err = tryLockExclusive(f)
+	if err == nil {
+		_ = unlockFile(f)
+		return DaemonHolder{}, nil
+	}
+	if !errors.Is(err, errLockHeld) {
+		return DaemonHolder{}, fmt.Errorf("probe daemon lock: %w", err)
+	}
+	return DaemonHolder{Held: true, PID: readLockPID(path)}, nil
 }

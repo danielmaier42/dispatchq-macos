@@ -35,7 +35,7 @@ const runKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
 // runValueName is the entry the installer and `dispatchqd install` write.
 const runValueName = "DispatchQ"
 
-// daemonImage is the process name every daemon instance carries.
+// daemonImage is the file name of the daemon executable.
 const daemonImage = "dispatchqd.exe"
 
 // platformInit prepares the standard streams. dispatchqd is a GUI-subsystem
@@ -107,6 +107,7 @@ func newPlatform(r system.Runner) platform {
 		saveFile:         api.PowerShellSaveFileDialog(r),
 		osVersion:        osVersion(r),
 		stopStrayDaemons: killStrayDaemons,
+		stopInstallation: stopInstallation,
 	}
 }
 
@@ -176,49 +177,165 @@ func (runKeyService) Install(_ context.Context, spec serviceSpec, out io.Writer)
 	return nil
 }
 
-// Uninstall removes the autostart entry and stops the daemon. The daemon is
-// stopped even when the entry cannot be removed, so the installer's
-// uninstaller can still delete its files; the error is returned after that.
+// Uninstall stops this installation's window and daemon, then removes the
+// autostart entry. When the daemon of the data directory belongs to another
+// installation or cannot be identified, nothing is stopped or removed and the
+// reason is returned. Another installation's window or daemon, and a daemon
+// for another data directory, keep running.
 func (runKeyService) Uninstall(_ context.Context, out io.Writer) error {
-	err := removeAutostart(func() (valueDeleter, error) {
-		k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
-		if err != nil {
-			return nil, err
-		}
-		return k, nil
-	}, func(err error) bool { return errors.Is(err, registry.ErrNotExist) }, runValueName)
-	killStrayDaemons()
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate dispatchqd: %w", err)
+	}
+	s, err := newDaemonStopper([]string{self})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "removed the %s autostart entry and stopped the daemon\n", runValueName)
-	fmt.Fprintln(out, "To remove the app itself, use Settings > Apps > Installed apps > DispatchQ, or the Uninstall DispatchQ shortcut.")
+	return uninstallInOrder(
+		func() error { return stopWindows([]string{siblingWindow(self)}) },
+		s.stop,
+		func() error {
+			return removeAutostart(func() (valueDeleter, error) {
+				k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
+				if err != nil {
+					return nil, err
+				}
+				return k, nil
+			}, func(err error) bool { return errors.Is(err, registry.ErrNotExist) }, runValueName)
+		},
+		runValueName, s.home, out)
+}
+
+// installDirKey and installDirValue are where the installer records the
+// folder it installed into.
+const (
+	installDirKey   = `Software\DispatchQ`
+	installDirValue = "InstallDir"
+)
+
+// windowImage is the window app installed next to the daemon.
+const windowImage = "dispatchqapp.exe"
+
+func siblingWindow(daemon string) string { return filepath.Join(filepath.Dir(daemon), windowImage) }
+
+// killStrayDaemons stops this installation's daemon for the current data
+// directory and waits for the loopback port to come free, so the daemon the
+// caller starts next can bind it. This installation is the executable running
+// this command or the folder the installer last recorded: an upgrade into
+// another folder replaces that installation (the Run entry and the data
+// directory are per user). It never ends the calling process, a daemon of
+// another installation, or one serving another data directory
+// (DISPATCHQ_HOME); a data directory owned by such a process is an error.
+func killStrayDaemons() error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate dispatchqd: %w", err)
+	}
+	s, err := newDaemonStopper(installationDaemons(self, registeredInstallDir()))
+	if err != nil {
+		return err
+	}
+	if _, err := s.stop(); err != nil {
+		return err
+	}
+	if !waitPortFree(5 * time.Second) {
+		fmt.Fprintf(os.Stderr, "dispatchqd: %s is still in use by another program, perhaps DispatchQ for a different data directory. "+
+			"The daemon for %s will run queued work, but its dashboard stays unavailable until that program quits and this daemon is restarted\n",
+			defaultAddr, s.home)
+	}
 	return nil
 }
 
-// killStrayDaemons ends every other dispatchqd process and waits for the
-// loopback port to come free, so the daemon the caller starts next can bind it.
-// It never ends the calling process: `dispatchqd install` is itself a
-// dispatchqd.exe.
-func killStrayDaemons() {
-	for _, pid := range otherDaemonPIDs() {
-		terminate(pid)
+// stopInstallation is the installer's check before it changes anything: it
+// stops the window and the daemon of the installation in dir (and of the
+// folder the installer last recorded) and fails, stopping nothing, when the
+// data directory is used by another installation or an unidentifiable
+// process. The installer runs it from a copy of the new dispatchqd in its
+// temporary folder, never the installed one, which may be an older build.
+func stopInstallation(dir string, out io.Writer) error {
+	daemons := installationDaemons(filepath.Join(dir, daemonImage), registeredInstallDir())
+	windowsToStop := make([]string, len(daemons))
+	for i, d := range daemons {
+		windowsToStop[i] = siblingWindow(d)
 	}
-	_ = waitPortFree(5 * time.Second)
-}
-
-func terminate(pid uint32) {
-	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, pid)
+	if err := stopWindows(windowsToStop); err != nil {
+		return err
+	}
+	s, err := newDaemonStopper(daemons)
 	if err != nil {
-		return
+		return err
 	}
-	defer func() { _ = windows.CloseHandle(h) }()
-	_ = windows.TerminateProcess(h, 1)
-	_, _ = windows.WaitForSingleObject(h, 3000)
+	stopped, err := s.stop()
+	if err != nil {
+		return err
+	}
+	if len(stopped) == 0 {
+		fmt.Fprintf(out, "no daemon was running for %s\n", s.home)
+	} else {
+		fmt.Fprintf(out, "stopped the daemon for %s (pid %s)\n", s.home, joinPIDs(stopped))
+	}
+	return nil
 }
 
-// otherDaemonPIDs lists the processes running dispatchqd.exe apart from this one.
-func otherDaemonPIDs() []uint32 {
+// installationDaemons is the daemon executable of an installation plus the
+// one in the folder the installer recorded, when there is one.
+func installationDaemons(daemon, registeredDir string) []string {
+	images := []string{daemon}
+	if registeredDir != "" {
+		if prev := filepath.Join(registeredDir, daemonImage); !strings.EqualFold(filepath.Clean(prev), filepath.Clean(daemon)) {
+			images = append(images, prev)
+		}
+	}
+	return images
+}
+
+// newDaemonStopper builds the stopper for the current data directory that
+// accepts the given daemon executables.
+func newDaemonStopper(images []string) (daemonStopper, error) {
+	home, err := store.DefaultHome()
+	if err != nil {
+		return daemonStopper{}, err
+	}
+	return daemonStopper{
+		home:      home,
+		self:      uint32(os.Getpid()),
+		images:    images,
+		probe:     func() (store.DaemonHolder, error) { return store.ProbeDaemonLock(home) },
+		lockUsers: func() ([]processInstance, error) { return processesUsingFile(store.DaemonLockPath(home)) },
+		open:      openWindowsProcess,
+		sameFile:  sameExecutable,
+		sleep:     time.Sleep,
+		attempts:  30,
+		exitWait:  3 * time.Second,
+	}, nil
+}
+
+// registeredInstallDir is the folder the installer recorded, or "" when there
+// is none or it is not an absolute path.
+func registeredInstallDir() string {
+	k, err := registry.OpenKey(registry.CURRENT_USER, installDirKey, registry.QUERY_VALUE)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = k.Close() }()
+	dir, _, err := k.GetStringValue(installDirValue)
+	if err != nil || !filepath.IsAbs(dir) {
+		return ""
+	}
+	return dir
+}
+
+// stopWindows closes the window apps that run one of images. A window of
+// another installation keeps running.
+func stopWindows(images []string) error {
+	_, err := stopInstallationProcesses(processesNamed(windowImage), uint32(os.Getpid()),
+		images, openWindowsProcess, sameExecutable, 3*time.Second)
+	return err
+}
+
+// processesNamed lists the pids whose executable is called name. The name is
+// only a preselection: callers confirm the full path before acting.
+func processesNamed(name string) []uint32 {
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return nil
@@ -227,11 +344,133 @@ func otherDaemonPIDs() []uint32 {
 	var e windows.ProcessEntry32
 	e.Size = uint32(unsafe.Sizeof(e))
 	var pids []uint32
-	self := uint32(os.Getpid())
 	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
-		if e.ProcessID != self && strings.EqualFold(windows.UTF16ToString(e.ExeFile[:]), daemonImage) {
+		if strings.EqualFold(windows.UTF16ToString(e.ExeFile[:]), name) {
 			pids = append(pids, e.ProcessID)
 		}
 	}
 	return pids
 }
+
+// The Restart Manager reports which processes have a file open, by process
+// instance. https://learn.microsoft.com/windows/win32/rstmgr/restart-manager-portal
+var (
+	rstrtmgr                = windows.NewLazySystemDLL("rstrtmgr.dll")
+	procRmStartSession      = rstrtmgr.NewProc("RmStartSession")
+	procRmRegisterResources = rstrtmgr.NewProc("RmRegisterResources")
+	procRmGetList           = rstrtmgr.NewProc("RmGetList")
+	procRmEndSession        = rstrtmgr.NewProc("RmEndSession")
+)
+
+const (
+	cchRmSessionKey = 32 // CCH_RM_SESSION_KEY: sizeof(GUID) * 2
+	cchRmMaxAppName = 255
+	cchRmMaxSvcName = 63
+	errorMoreData   = 234
+)
+
+// rmUniqueProcess is RM_UNIQUE_PROCESS.
+type rmUniqueProcess struct {
+	ProcessID        uint32
+	ProcessStartTime windows.Filetime
+}
+
+// rmProcessInfo is RM_PROCESS_INFO.
+type rmProcessInfo struct {
+	Process          rmUniqueProcess
+	AppName          [cchRmMaxAppName + 1]uint16
+	ServiceShortName [cchRmMaxSvcName + 1]uint16
+	ApplicationType  uint32
+	AppStatus        uint32
+	TSSessionID      uint32
+	Restartable      int32
+}
+
+// processesUsingFile lists the processes that have path open, as the Restart
+// Manager reports them: pid and the start time the system recorded for that
+// process instance.
+func processesUsingFile(path string) ([]processInstance, error) {
+	var session uint32
+	var key [cchRmSessionKey + 1]uint16
+	if r, _, _ := procRmStartSession.Call(uintptr(unsafe.Pointer(&session)), 0, uintptr(unsafe.Pointer(&key[0]))); r != 0 {
+		return nil, fmt.Errorf("RmStartSession: %w", syscall.Errno(r))
+	}
+	defer func() { _, _, _ = procRmEndSession.Call(uintptr(session)) }()
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	names := []*uint16{name}
+	if r, _, _ := procRmRegisterResources.Call(uintptr(session), 1, uintptr(unsafe.Pointer(&names[0])), 0, 0, 0, 0); r != 0 {
+		return nil, fmt.Errorf("RmRegisterResources: %w", syscall.Errno(r))
+	}
+	for range 5 {
+		var needed, count, reasons uint32
+		infos := make([]rmProcessInfo, 8)
+		count = uint32(len(infos))
+		r, _, _ := procRmGetList.Call(uintptr(session), uintptr(unsafe.Pointer(&needed)), uintptr(unsafe.Pointer(&count)),
+			uintptr(unsafe.Pointer(&infos[0])), uintptr(unsafe.Pointer(&reasons)))
+		if r == errorMoreData {
+			infos = make([]rmProcessInfo, needed)
+			count = needed
+			r, _, _ = procRmGetList.Call(uintptr(session), uintptr(unsafe.Pointer(&needed)), uintptr(unsafe.Pointer(&count)),
+				uintptr(unsafe.Pointer(&infos[0])), uintptr(unsafe.Pointer(&reasons)))
+		}
+		if r == errorMoreData {
+			continue // the list grew in between; ask again
+		}
+		if r != 0 {
+			return nil, fmt.Errorf("RmGetList: %w", syscall.Errno(r))
+		}
+		out := make([]processInstance, 0, count)
+		for _, in := range infos[:count] {
+			out = append(out, processInstance{PID: in.Process.ProcessID, Started: time.Unix(0, in.Process.ProcessStartTime.Nanoseconds())})
+		}
+		return out, nil
+	}
+	return nil, errors.New("RmGetList: the list of processes kept changing")
+}
+
+// windowsProcess is a process handle opened for inspection and termination.
+type windowsProcess struct{ h windows.Handle }
+
+func openWindowsProcess(pid uint32) (daemonProcess, error) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, pid)
+	if err != nil {
+		return nil, err
+	}
+	return windowsProcess{h: h}, nil
+}
+
+func (p windowsProcess) Image() (string, error) {
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n := uint32(len(buf))
+	if err := windows.QueryFullProcessImageName(p.h, 0, &buf[0], &n); err != nil {
+		return "", err
+	}
+	return windows.UTF16ToString(buf[:n]), nil
+}
+
+func (p windowsProcess) Created() (time.Time, error) {
+	var created, exited, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(p.h, &created, &exited, &kernel, &user); err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(0, created.Nanoseconds()), nil
+}
+
+func (p windowsProcess) Terminate() error { return windows.TerminateProcess(p.h, 1) }
+
+func (p windowsProcess) Wait(d time.Duration) bool {
+	ev, err := windows.WaitForSingleObject(p.h, uint32(d.Milliseconds()))
+	return err == nil && ev == windows.WAIT_OBJECT_0
+}
+
+func (p windowsProcess) Close() error { return windows.CloseHandle(p.h) }
+
+// RM_PROCESS_INFO is 668 bytes on every Windows architecture; these fail to
+// compile when the Go layout differs.
+var (
+	_ [unsafe.Sizeof(rmProcessInfo{}) - 668]byte
+	_ [668 - unsafe.Sizeof(rmProcessInfo{})]byte
+)

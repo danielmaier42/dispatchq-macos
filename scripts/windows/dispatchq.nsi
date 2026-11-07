@@ -43,11 +43,13 @@ VIAddVersionKey "LegalCopyright" "DispatchQ contributors"
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_RUN "$INSTDIR\dispatchqapp.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Open DispatchQ"
+!define MUI_ABORTWARNING_TEXT "Cancel the DispatchQ setup?"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "${STAGE}\LICENSE"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipFinishAfterFailure
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -56,6 +58,8 @@ VIAddVersionKey "LegalCopyright" "DispatchQ contributors"
 
 ; Parameters: /PURGE (uninstaller) also deletes the data directory.
 Var Purge
+; "1" once the installation stopped without completing.
+Var InstallFailed
 
 ; Adds (ACTION=Add) or removes (ACTION=Remove) the install directory in the user's
 ; PATH. The directory is handed to the fixed script path-helper.ps1 through an
@@ -95,12 +99,36 @@ FunctionEnd
 
 Function StopRunning
   ; Upgrade or reinstall: the daemon holds the store lock and the dashboard port,
-  ; and the window keeps the program files open.
-  IfFileExists "$INSTDIR\dispatchqd.exe" 0 +2
-    nsExec::Exec '"$INSTDIR\dispatchqd.exe" uninstall'
-  nsExec::Exec 'taskkill /F /IM dispatchqapp.exe'
-  nsExec::Exec 'taskkill /F /IM dispatchqd.exe'
-  Sleep 800
+  ; and the window keeps the program files open. This runs before anything is
+  ; changed, from a copy of the new dispatchqd in the installer's temporary
+  ; folder: the installed dispatchqd may be an older build whose uninstall
+  ; ends every dispatchqd by name, so it is never run. The copy stops this
+  ; folder's window and the daemon that owns the data directory after
+  ; checking that it runs from this folder (or the folder the installer last
+  ; recorded). Nothing is ended by image name: another installation, or a
+  ; daemon for another DISPATCHQ_HOME, keeps running. When the data directory
+  ; is used by such a process, or its owner cannot be identified, setup
+  ; stops here with the reason and changes nothing.
+  StrCpy $InstallFailed ""
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\dispatchqd-setup.exe" "${STAGE}\dispatchqd.exe"
+  retry:
+  nsExec::ExecToStack '"$PLUGINSDIR\dispatchqd-setup.exe" stop-installation --dir "$INSTDIR"'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint "DispatchQ could not be stopped safely (exit code $0): $1"
+    MessageBox MB_RETRYCANCEL|MB_ICONSTOP "Setup has not changed anything and cannot continue, because the running DispatchQ cannot be stopped safely:$\r$\n$\r$\n$1$\r$\nDo what the message says, then choose Retry. Cancel leaves everything as it is." /SD IDCANCEL IDRETRY retry
+    StrCpy $InstallFailed "1"
+  ${EndIf}
+FunctionEnd
+
+; SkipFinishAfterFailure skips the finish page, and with it the offer to open
+; DispatchQ, when the installation did not complete.
+Function SkipFinishAfterFailure
+  ${If} $InstallFailed == "1"
+    Abort
+  ${EndIf}
 FunctionEnd
 
 ; ReadWebView2Version leaves the installed WebView2 Runtime version in $0, or
@@ -145,6 +173,10 @@ FunctionEnd
 
 Section "DispatchQ" SecMain
   Call StopRunning
+  ${If} $InstallFailed == "1"
+    SetErrorLevel 2
+    Abort "Setup stopped before changing anything: the running DispatchQ could not be stopped safely."
+  ${EndIf}
   SetOutPath "$INSTDIR"
   File "${STAGE}\dispatchqapp.exe"
   File "${STAGE}\dispatchqd.exe"
@@ -172,11 +204,15 @@ Section "DispatchQ" SecMain
   !insertmacro PathHelper Add
 
   ; Register the daemon to start at every sign-in and start it now.
-  nsExec::ExecToLog '"$INSTDIR\dispatchqd.exe" install'
+  nsExec::ExecToStack '"$INSTDIR\dispatchqd.exe" install'
   Pop $0
+  Pop $1
   ${If} $0 != 0
-    DetailPrint "Registering the daemon failed (exit code $0)"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ could not register its background service for sign-in (exit code $0). Start DispatchQ from the Start menu." /SD IDOK
+    DetailPrint "Registering the daemon failed (exit code $0): $1"
+    MessageBox MB_OK|MB_ICONSTOP "DispatchQ could not register and start its background service (exit code $0):$\r$\n$\r$\n$1$\r$\nThe installation is incomplete. Do what the message says and run setup again." /SD IDOK
+    StrCpy $InstallFailed "1"
+    SetErrorLevel 2
+    Abort "Setup stopped: the background service could not be registered."
   ${EndIf}
 
   WriteRegStr HKCU "Software\DispatchQ" "InstallDir" "$INSTDIR"
@@ -200,11 +236,23 @@ Function un.onInit
 FunctionEnd
 
 Section "Uninstall"
-  ; Stops the daemon and removes its autostart entry, then closes the window.
-  nsExec::Exec '"$INSTDIR\dispatchqd.exe" uninstall'
-  nsExec::Exec 'taskkill /F /IM dispatchqapp.exe'
-  nsExec::Exec 'taskkill /F /IM dispatchqd.exe'
-  Sleep 800
+  ; Closes this installation's window, stops its daemon and then removes the
+  ; autostart entry. The installed dispatchqd is the build this uninstaller
+  ; came with. Nothing is ended by image name. When the data directory is
+  ; used by another installation, or its owner cannot be identified, nothing
+  ; is removed.
+  ${If} ${FileExists} "$INSTDIR\dispatchqd.exe"
+    retry:
+    nsExec::ExecToStack '"$INSTDIR\dispatchqd.exe" uninstall'
+    Pop $0
+    Pop $1
+    ${If} $0 != 0
+      DetailPrint "DispatchQ could not be stopped safely (exit code $0): $1"
+      MessageBox MB_RETRYCANCEL|MB_ICONSTOP "DispatchQ was not removed, because it cannot be stopped safely:$\r$\n$\r$\n$1$\r$\nDo what the message says, then choose Retry. Cancel leaves DispatchQ installed." /SD IDCANCEL IDRETRY retry
+      SetErrorLevel 2
+      Abort "Uninstall stopped before removing anything."
+    ${EndIf}
+  ${EndIf}
 
   !insertmacro PathHelper Remove
 

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -81,6 +82,8 @@ func run(args []string) error {
 		return cmdInstall(newPlatform(system.Real{}))
 	case "uninstall":
 		return cmdUninstall(newPlatform(system.Real{}))
+	case "stop-installation":
+		return cmdStopInstallation(newPlatform(system.Real{}), args[1:], os.Stdout)
 	default:
 		fmt.Println("usage: dispatchqd run [--interval 5s] | install | uninstall | --version")
 		return fmt.Errorf("unknown command %q", args[0])
@@ -408,7 +411,9 @@ func cmdInstall(p platform) error {
 	if err := p.service.RetireLegacy(ctx); err != nil {
 		return err
 	}
-	p.stopStray()
+	if err := p.stopStray(); err != nil {
+		return err
+	}
 
 	home, err := store.DefaultHome()
 	if err != nil {
@@ -428,7 +433,9 @@ func cmdInstall(p platform) error {
 	// prior run/version that the service manager does not catch) so the freshly
 	// started one can bind and actually take over — otherwise an update
 	// wouldn't take effect until a reboot.
-	p.stopStray()
+	if err := p.stopStray(); err != nil {
+		return err
+	}
 
 	return p.service.Install(ctx, spec, os.Stdout)
 }
@@ -448,6 +455,24 @@ func waitPortFree(d time.Duration) bool {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// cmdStopInstallation is run by the Windows installer before it changes
+// anything: --dir names the installation folder whose window and daemon it
+// may stop. It is not part of the documented command set.
+func cmdStopInstallation(p platform, args []string, out io.Writer) error {
+	if p.stopInstallation == nil {
+		return fmt.Errorf("stop-installation: %w", errUnsupported)
+	}
+	fs := flag.NewFlagSet("stop-installation", flag.ContinueOnError)
+	dir := fs.String("dir", "", "installation folder")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *dir == "" || !filepath.IsAbs(*dir) || fs.NArg() != 0 {
+		return errors.New("stop-installation: --dir must name the installation folder as an absolute path")
+	}
+	return p.stopInstallation(filepath.Clean(*dir), out)
 }
 
 func cmdUninstall(p platform) error {

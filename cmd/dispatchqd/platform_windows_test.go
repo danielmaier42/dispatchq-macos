@@ -23,6 +23,7 @@ func TestWindowsPlatformServices(t *testing.T) {
 		"requestNotifyAuth": p.requestNotifyAuth != nil,
 		"notifyStatus":      p.notifyStatus != nil,
 		"stopStrayDaemons":  p.stopStrayDaemons != nil,
+		"stopInstallation":  p.stopInstallation != nil,
 	} {
 		if !ok {
 			t.Errorf("Windows platform has no %s", name)

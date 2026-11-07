@@ -45,10 +45,17 @@ type platform struct {
 	osVersion func() string
 	// uninstall opens the app's uninstaller.
 	uninstall func(ctx context.Context) error
-	// stopStrayDaemons ends every other running daemon of this app and waits for
-	// the dashboard port to come free, so the daemon that install starts next can
-	// bind it. It never ends the calling process. Nil where nothing is installed.
-	stopStrayDaemons func()
+	// stopStrayDaemons ends the running daemon of this app and waits for the
+	// dashboard port to come free, so the daemon that install starts next can
+	// bind it. It never ends the calling process. An error means a daemon that
+	// must not or could not be stopped still owns the data directory. Nil where
+	// nothing is installed.
+	stopStrayDaemons func() error
+	// stopInstallation stops the window and daemon of the installation in a
+	// folder before the installer replaces it, and fails without stopping
+	// anything when another installation owns the data directory. Nil where
+	// there is no such installer.
+	stopInstallation func(dir string, out io.Writer) error
 	// selfUpdate tells whether a downloaded release installs on this system.
 	selfUpdate bool
 }
@@ -73,8 +80,9 @@ type serviceManager interface {
 }
 
 // stopStray runs the platform's stray-daemon termination, if it has one.
-func (p platform) stopStray() {
+func (p platform) stopStray() error {
 	if p.stopStrayDaemons != nil {
-		p.stopStrayDaemons()
+		return p.stopStrayDaemons()
 	}
+	return nil
 }

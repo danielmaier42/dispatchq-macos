@@ -231,7 +231,17 @@ asks you to confirm), installs under `%LOCALAPPDATA%\Programs\DispatchQ`,
 registers the daemon to start at every sign-in, adds the CLI to your user
 `PATH`, and installs the Microsoft Edge WebView2 Runtime when it is missing.
 Uninstall it from Settings > Apps, the Start menu, or `dispatchq uninstall`
-(`/PURGE` also deletes `%APPDATA%\dispatchq`). The step-by-step notes and a
+(`/PURGE` also deletes `%APPDATA%\dispatchq`). Installing, upgrading and
+uninstalling stop only this installation's window and the daemon that has your
+data directory's lock file open, as Windows reports it, after checking that it
+runs from the installation folder (or, when installing, from the folder the
+previous installer recorded). Another copy of DispatchQ, or a daemon for a
+different `DISPATCHQ_HOME`, keeps running. When such a copy uses your data
+directory, or its owner cannot be identified, setup and the uninstaller stop
+before changing anything, show which process it is and offer Retry once you
+have quit it; `dispatchqd install` and `uninstall` fail the same way. Setup
+never runs the dispatchqd it is about to replace; it uses a copy of the new one.
+The step-by-step notes and a
 first-start checklist are in
 [`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt) in this repository;
 the installer does not copy them to the PC.
@@ -299,7 +309,10 @@ Platform layer: the Windows beta builds on the platform abstraction Lukas Wolfru
 [PR 159](https://github.com/danielmaier42/dispatchq-app/pull/159)
 (`cmd/dispatchqd/platform.go`), adopted in full, including its later fix that holds off idle
 sleep during `dispatchq run-now`, so PR 159 needs no separate merge. `platform_windows.go` supplies the Run-key service
-manager, the stray-daemon termination, the PowerShell dialogs, the Windows version and the
+manager, the termination of this installation's daemon (the process Windows reports as having
+the data directory's lock file open, checked by process instance and executable path,
+never by process name),
+the PowerShell dialogs, the Windows version and the
 no-console log setup; `internal/system` supplies the sleep inhibitor (the thread-pinned
 `SetThreadExecutionState` hold on Windows, `caffeinate -i` on macOS). Both the daemon and
 `dispatchq run-now` take it from `system.DefaultSleepInhibitor`. Linux and other systems

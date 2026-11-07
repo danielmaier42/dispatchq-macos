@@ -188,6 +188,25 @@ func systemPrompt(custom string) string {
 	return builtinSystemPrompt + customSystemPromptIntro + custom
 }
 
+// wslSystemPrompt tells a run inside WSL that the DispatchQ CLI it calls is
+// the Windows one, reached through interop, and that it takes Linux paths.
+const wslSystemPrompt = `
+
+This run is inside a Linux system of the Windows Subsystem for Linux (WSL). "$DISPATCHQ_BIN" is DispatchQ for Windows, started through WSL's Windows interop; it accepts Linux paths for --dir and --file and turns them into Windows ones. If starting it fails with an exec format or interop error, Windows interop is off in this Linux system: say so in your final answer instead of retrying.`
+
+// systemPromptFor is systemPrompt plus what a run outside the daemon's own
+// system needs to know. A native run gets exactly systemPrompt.
+func systemPromptFor(h provider.Host, custom string) string {
+	if h == nil || h.Execution().IsNative() {
+		return systemPrompt(custom)
+	}
+	custom = strings.TrimSpace(custom)
+	if custom == "" {
+		return builtinSystemPrompt + wslSystemPrompt
+	}
+	return builtinSystemPrompt + wslSystemPrompt + customSystemPromptIntro + custom
+}
+
 // Executor builds and runs provider invocations.
 type Executor struct {
 	// Registry holds the adapters; the request's provider instance selects one
@@ -259,7 +278,7 @@ func (r Request) providerRequest(h provider.Host, workDir string) provider.Reque
 		SessionID:       r.SessionID,
 		Resume:          r.Resume,
 		AccessMode:      r.AccessMode,
-		SystemPrompt:    systemPrompt(r.CustomSystemPrompt),
+		SystemPrompt:    systemPromptFor(h, r.CustomSystemPrompt),
 		ReasoningEffort: r.ReasoningEffort,
 	}
 }

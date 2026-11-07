@@ -254,7 +254,7 @@ func cmdAdd(st *store.Store, args []string) error {
 	}
 
 	t := task.Task{
-		ID: *id, Name: *name, Kind: task.Kind(s.kind), Prompt: *prompt, WorkingDir: *dir,
+		ID: *id, Name: *name, Kind: task.Kind(s.kind), Prompt: *prompt, WorkingDir: fromCaller(*dir),
 		Trigger: task.Trigger(*trig), Cron: *cronArg, Enabled: true,
 		Provider: s.provider, Pool: s.pool, Model: s.model, ReasoningEffort: s.reasoning,
 		Group:    strings.TrimSpace(s.group),
@@ -512,7 +512,7 @@ func buildQueuedTask(parentJSON, id string, o queueOpts, now time.Time) (task.Ta
 	t.WorkflowID = os.Getenv(executor.EnvWorkflowID)
 	t.OriginID, t.OriginName = originID, originName
 	if o.dir != "" {
-		t.WorkingDir = o.dir
+		t.WorkingDir = fromCaller(o.dir)
 	}
 	if t.Permissions == "" {
 		t.Permissions = task.PermissionsDefault
@@ -587,7 +587,7 @@ func cmdPublish(st *store.Store, args []string) error {
 	src := callingRun()
 	now := time.Now()
 	in := app.PublishInput{
-		SourcePath:  *file,
+		SourcePath:  fromCaller(*file),
 		Title:       *title,
 		Description: *desc,
 		TaskID:      src.taskID,

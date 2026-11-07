@@ -362,7 +362,7 @@ func (p taskPatch) apply(t task.Task) (task.Task, error) {
 		t.Prompt = p.prompt
 	}
 	if p.has("dir") {
-		t.WorkingDir = p.dir
+		t.WorkingDir = fromCaller(p.dir)
 	}
 	if p.has("enabled") {
 		t.Enabled = p.enabled

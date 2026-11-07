@@ -7,14 +7,18 @@
 // EBWebView folder from EdgeUpdate's ClientState key in the 32-bit registry
 // view, first per machine and then per user, takes the first entry whose
 // version is new enough, and loads EBWebView\<arch>\EmbeddedBrowserWebView.dll
-// from that folder. Probe repeats exactly that choice, so its answer is the
-// window's answer, and reports the documented "pv" entries next to it so a
-// wrong answer can be told apart from a missing runtime.
+// from that folder with LoadLibraryW, then needs its export
+// CreateWebViewEnvironmentWithOptionsInternal. Probe repeats exactly that
+// choice and hands the chosen library to a check (CheckClient, which loads it
+// the same way in a separate, time-limited process on Windows), and reports
+// the documented "pv" entries next to it so a wrong answer can be told apart
+// from a missing runtime.
 //
-// The library would use Microsoft's WebView2Loader.dll instead if Windows
-// found one on the window's DLL search path. DispatchQ does not ship it, so
-// Probe does not load it; such a DLL is the one case in which the window may
-// find a runtime Probe reports as not usable.
+// The library would use Microsoft's WebView2Loader.dll instead if
+// LoadLibraryW("WebView2Loader.dll") found one from the window's folder or the
+// Windows DLL search path. DispatchQ does not ship it and Probe does not look
+// for it; such a DLL is the one case in which the window's answer may differ
+// from Probe's, in either direction.
 package webview2
 
 import (
@@ -97,8 +101,8 @@ type Entry struct {
 
 // Status is what Probe found.
 type Status struct {
-	// Available is true when the window's loader picks a runtime and that
-	// runtime's client library exists.
+	// Available is true when the window's loader picks a runtime and the
+	// check accepted that runtime's client library.
 	Available bool
 	// Version and Scope ("per-machine", "per-user") of the runtime the
 	// loader picks; empty when it picks none.
@@ -115,8 +119,9 @@ type Status struct {
 }
 
 // Probe answers whether the window, built for arch (see Arch), will find a
-// usable WebView2 Runtime. exists reports whether a file exists.
-func Probe(reg Registry, exists func(path string) bool, arch string) Status {
+// usable WebView2 Runtime. check answers whether the window can use a client
+// library (nil) or why not; it is called at most once.
+func Probe(reg Registry, check func(client string) error, arch string) Status {
 	var st Status
 	for _, e := range []struct {
 		hive Hive
@@ -139,7 +144,7 @@ func Probe(reg Registry, exists func(path string) bool, arch string) Status {
 			continue
 		}
 		// The loader stops at the first acceptable entry, even when its
-		// client library turns out to be missing.
+		// client library turns out to be missing or broken.
 		st.Version = version
 		st.Scope = scope(hive)
 		if arch == "" {
@@ -147,8 +152,8 @@ func Probe(reg Registry, exists func(path string) bool, arch string) Status {
 			return st
 		}
 		st.Client = clientLibrary(folder, arch)
-		if !exists(st.Client) {
-			st.Reason = fmt.Sprintf("the %s runtime %s has no %s client library", st.Scope, version, arch)
+		if err := check(st.Client); err != nil {
+			st.Reason = fmt.Sprintf("the %s runtime %s has no usable %s client library: %v", st.Scope, version, arch, err)
 			return st
 		}
 		st.Available = true

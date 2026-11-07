@@ -1,6 +1,7 @@
 package windowstest
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -221,5 +222,60 @@ func TestWebView2WithoutBootstrapper(t *testing.T) {
 	res = runWebView2(t, wv2Scenario{checkBefore: "10"})
 	if w := res.warning(); !strings.Contains(w, "no runtime registered for the window's loader") {
 		t.Errorf("warning lacks the check's finding:\n%s", w)
+	}
+}
+
+// The window's check is ended by setup after at most a minute (nsExec ends a
+// process that stays silent that long; dispatchqd prints only when done), so
+// a client library whose loading hangs cannot hang setup.
+func TestWebView2CheckIsBounded(t *testing.T) {
+	res := runWebView2(t, wv2Scenario{checkBefore: "0"}, "-DBOOTSTRAPPER")
+	at := indexOf(res.run.trace, `run: "$INSTDIR\dispatchqd.exe" webview2-status`)
+	if at < 1 {
+		t.Fatalf("the check did not run\n%s", res.run.dump())
+	}
+	opt := strings.TrimPrefix(res.run.trace[at-1], "option: /TIMEOUT=")
+	ms, err := strconv.Atoi(opt)
+	if err != nil || ms <= 0 || ms > 120000 {
+		t.Fatalf("the check runs without a time limit of at most two minutes (%q)\n%s", res.run.trace[at-1], res.run.dump())
+	}
+}
+
+// A check that did not finish (nsExec "timeout") or failed (exit 1) is not
+// evidence of a usable runtime: setup does not fall back to the registration,
+// runs the bootstrapper and reports the runtime as not confirmed.
+func TestWebView2UnfinishedCheckIsNotUsable(t *testing.T) {
+	for _, code := range []string{"timeout", "1"} {
+		t.Run(code, func(t *testing.T) {
+			res := runWebView2(t, wv2Scenario{
+				registry:    map[string]string{wv2Machine32: "131.0.2903.70"},
+				checkBefore: code, checkAfter: code, bootstrapper: "0",
+			}, "-DBOOTSTRAPPER")
+			if !res.bootstrapped {
+				t.Errorf("an unfinished check was taken as a usable runtime\n%s", res.run.dump())
+			}
+			w := res.warning()
+			for _, want := range []string{"not confirmed usable", "did not complete (result: " + code + ")"} {
+				if !strings.Contains(w, want) {
+					t.Errorf("warning lacks %q:\n%s", want, w)
+				}
+			}
+		})
+	}
+}
+
+// A runtime whose client library cannot be loaded is not usable: the
+// bootstrapper runs, and the warning names the check's finding without
+// promising that the bootstrapper repaired anything.
+func TestWebView2BrokenClientWarnsWithoutRepairPromise(t *testing.T) {
+	res := runWebView2(t, wv2Scenario{
+		registry:    map[string]string{wv2Machine32: "131.0.2903.70"},
+		checkBefore: "10", checkAfter: "10", bootstrapper: wv2BootstrapperResult,
+	}, "-DBOOTSTRAPPER")
+	if !res.bootstrapped {
+		t.Fatalf("the bootstrapper did not run\n%s", res.run.dump())
+	}
+	if w := res.warning(); !strings.Contains(w, "Setup does not repair an installed runtime") || strings.Contains(w, "will be repaired") {
+		t.Errorf("warning:\n%s", w)
 	}
 }

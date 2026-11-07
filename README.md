@@ -231,9 +231,11 @@ asks you to confirm), installs under `%LOCALAPPDATA%\Programs\DispatchQ`,
 registers the daemon to start at every sign-in, adds the CLI to your user
 `PATH`, and installs the Microsoft Edge WebView2 Runtime only when the window
 would not find a usable one: `dispatchqd webview2-status` repeats the window's
-own lookup (it only reads the registry). When the runtime is still not usable
-after Microsoft's bootstrapper, setup shows the bootstrapper's result and what
-the check found, and finishes the rest of the installation.
+own lookup and loads the runtime's library the way the window does, in a
+separate process ended after 20 seconds (setup ends the check after a minute).
+When the runtime is still not confirmed usable after Microsoft's bootstrapper,
+setup shows the bootstrapper's result and what the check found, and finishes
+the rest of the installation; it does not repair a damaged runtime.
 Uninstall it from Settings > Apps, the Start menu, or `dispatchq uninstall`
 (`/PURGE` also deletes `%APPDATA%\dispatchq`). Installing, upgrading and
 uninstalling stop only this installation's window and the daemon that has your
@@ -1182,7 +1184,8 @@ dispatchqd webview2-status   # Windows: will the window find a usable WebView2 R
 The installer runs `install` for you; you rarely need these directly. On Windows,
 `webview2-status` prints one line with the answer and the registry entries behind
 it (profile folders shortened) and exits 0 when the runtime is usable, 10 when it
-is not.
+is not or could not be confirmed (for example a library whose loading did not
+finish). It changes nothing.
 
 ### `dispatchq` — the control CLI
 

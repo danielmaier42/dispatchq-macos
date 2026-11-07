@@ -59,6 +59,9 @@ type platform struct {
 	// webView2Status writes whether the window will find a usable WebView2
 	// Runtime and reports it. Nil where the window does not use WebView2.
 	webView2Status func(out io.Writer) (available bool, err error)
+	// loadWebView2Client loads a WebView2 client library the way the window
+	// does; webView2Status runs it in a separate, time-limited process.
+	loadWebView2Client func(path string) error
 	// selfUpdate tells whether a downloaded release installs on this system.
 	selfUpdate bool
 }

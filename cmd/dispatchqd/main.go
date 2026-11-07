@@ -43,6 +43,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/system"
 	"github.com/danielmaier42/claudeq/internal/update"
 	"github.com/danielmaier42/claudeq/internal/version"
+	"github.com/danielmaier42/claudeq/internal/webview2"
 )
 
 // defaultAddr is the loopback address the dashboard/API listens on. The
@@ -62,7 +63,13 @@ const daemonLockWait = engine.ShutdownGrace + 20*time.Second
 func main() {
 	platformInit(os.Args[1:])
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "dispatchqd:", err)
+		var refused errClientRefused
+		if errors.As(err, &refused) {
+			// The reason is quoted by webview2-status as it is.
+			fmt.Fprintln(os.Stderr, err)
+		} else {
+			fmt.Fprintln(os.Stderr, "dispatchqd:", err)
+		}
 		os.Exit(exitCode(err))
 	}
 }
@@ -74,9 +81,18 @@ const exitWebView2Missing = 10
 
 var errWebView2Missing = errors.New("webview2-status: the DispatchQ window will not find a usable WebView2 Runtime")
 
+// errClientRefused wraps why webview2-load-client could not use the library.
+type errClientRefused struct{ err error }
+
+func (e errClientRefused) Error() string { return e.err.Error() }
+
 func exitCode(err error) int {
-	if errors.Is(err, errWebView2Missing) {
+	var refused errClientRefused
+	switch {
+	case errors.Is(err, errWebView2Missing):
 		return exitWebView2Missing
+	case errors.As(err, &refused):
+		return webview2.ExitClientRefused
 	}
 	return 1
 }
@@ -100,6 +116,8 @@ func run(args []string) error {
 		return cmdStopInstallation(newPlatform(system.Real{}), args[1:], os.Stdout)
 	case "webview2-status":
 		return cmdWebView2Status(newPlatform(system.Real{}), args[1:], os.Stdout)
+	case "webview2-load-client":
+		return cmdWebView2LoadClient(newPlatform(system.Real{}), args[1:])
 	default:
 		fmt.Println("usage: dispatchqd run [--interval 5s] | install | uninstall | --version")
 		return fmt.Errorf("unknown command %q", args[0])
@@ -509,6 +527,23 @@ func cmdWebView2Status(p platform, args []string, out io.Writer) error {
 	}
 	if !ok {
 		return errWebView2Missing
+	}
+	return nil
+}
+
+// cmdWebView2LoadClient is the separate process webview2-status starts to
+// load the chosen WebView2 client library like the window does; it exits with
+// webview2.ExitClientRefused and the reason when that fails. It is not part of
+// the documented command set.
+func cmdWebView2LoadClient(p platform, args []string) error {
+	if p.loadWebView2Client == nil {
+		return fmt.Errorf("webview2-load-client: %w", errUnsupported)
+	}
+	if len(args) != 1 || !filepath.IsAbs(args[0]) {
+		return errors.New("webview2-load-client takes the library's absolute path")
+	}
+	if err := p.loadWebView2Client(args[0]); err != nil {
+		return errClientRefused{err}
 	}
 	return nil
 }

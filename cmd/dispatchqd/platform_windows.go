@@ -49,6 +49,11 @@ func platformInit(args []string) {
 		redirectToLog()
 		return
 	}
+	// The load check reports to the pipes of the webview2-status that started
+	// it, never to a console that one may have attached.
+	if len(args) > 0 && args[0] == "webview2-load-client" {
+		return
+	}
 	attachParentConsole()
 }
 
@@ -110,14 +115,26 @@ func newPlatform(r system.Runner) platform {
 		stopStrayDaemons: killStrayDaemons,
 		stopInstallation: stopInstallation,
 		webView2Status:   webView2Status,
+
+		loadWebView2Client: webview2.LoadClient,
 	}
 }
 
 // webView2Status repeats the window's own WebView2 lookup (the daemon and the
 // window are built for the same architecture) and prints what it found, with
 // the user's profile folders shortened.
+//
+// Loading the client library runs its code, so it happens in a copy of this
+// program (webview2-load-client) that is ended after
+// webview2.LoadCheckTimeout: a library that hangs is reported, not waited for.
 func webView2Status(out io.Writer) (bool, error) {
-	st := webview2.ProbeSystem()
+	self, err := os.Executable()
+	if err != nil {
+		return false, fmt.Errorf("locate dispatchqd: %w", err)
+	}
+	st := webview2.ProbeSystem(func(path string) error {
+		return webview2.RunLoadCheck(context.Background(), webview2.LoadCheckTimeout, self, "webview2-load-client", path)
+	})
 	return st.Available, st.Write(out, webview2.SystemSanitizer())
 }
 

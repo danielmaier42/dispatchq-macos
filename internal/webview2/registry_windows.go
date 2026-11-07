@@ -4,9 +4,11 @@ package webview2
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -36,12 +38,28 @@ func (SystemRegistry) String(hive Hive, view View, path, name string) (string, b
 }
 
 // ProbeSystem probes this PC for a window built for the running architecture
-// (the installer ships the daemon and the window for the same one).
-func ProbeSystem() Status {
-	return Probe(SystemRegistry{}, func(p string) bool {
-		info, err := os.Stat(p)
-		return err == nil && !info.IsDir()
-	}, Arch(runtime.GOARCH))
+// (the installer ships the daemon and the window for the same one). load is
+// the bounded native check of the chosen client library (see RunLoadCheck).
+func ProbeSystem(load func(path string) error) Status {
+	arch := Arch(runtime.GOARCH)
+	return Probe(SystemRegistry{}, func(p string) error { return CheckClient(p, arch, load) }, arch)
+}
+
+// LoadClient loads the client library the way the window's loader does
+// (LoadLibraryW with the full path, then GetProcAddress of RequiredExport).
+// It runs the library's initialisation code, so it belongs in the separate,
+// time-limited check process only. Windows error dialogs are suppressed.
+func LoadClient(path string) error {
+	windows.SetErrorMode(windows.SEM_FAILCRITICALERRORS | windows.SEM_NOOPENFILEERRORBOX)
+	h, err := windows.LoadLibrary(path)
+	if err != nil {
+		return fmt.Errorf("the system cannot load it: %w", err)
+	}
+	defer func() { _ = windows.FreeLibrary(h) }()
+	if _, err := windows.GetProcAddress(h, RequiredExport); err != nil {
+		return fmt.Errorf("it does not provide %s: %w", RequiredExport, err)
+	}
+	return nil
 }
 
 // SystemSanitizer shortens paths under the user's profile folders.

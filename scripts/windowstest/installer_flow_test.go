@@ -325,7 +325,13 @@ func (r *installerRun) call(name string) bool {
 				}
 			}
 		case op == "nsExec::ExecToStack" || op == "nsExec::ExecToLog" || op == "nsExec::Exec" || op == "Exec" || op == "ExecWait":
-			code, output := r.run(r.expand(arg(in, 0)))
+			// nsExec options (/TIMEOUT=ms, /OEM, /MBCS) come before the command.
+			k := 0
+			for strings.HasPrefix(op, "nsExec::") && strings.HasPrefix(arg(in, k), "/") {
+				r.trace = append(r.trace, "option: "+arg(in, k))
+				k++
+			}
+			code, output := r.run(r.expand(arg(in, k)))
 			switch op {
 			case "nsExec::ExecToStack":
 				r.stack = append(r.stack, output, code)

@@ -136,7 +136,8 @@ FunctionEnd
 ; ReadWebView2Registration leaves the WebView2 Runtime version registered in
 ; $R0, or "" when there is none. An empty or 0.0.0.0 entry is stale and the
 ; next location is read: per machine in the 32-bit view, per machine in the
-; 64-bit view, per user. Only used when CheckWebView2 cannot run its check.
+; 64-bit view, per user. Only used when CheckWebView2 cannot start its check;
+; a registration says nothing about whether the window can load the runtime.
 Function ReadWebView2Registration
   SetRegView 32
   ReadRegStr $R0 HKLM "${WEBVIEW2_CLIENTS}" "pv"
@@ -156,39 +157,47 @@ Function ReadWebView2Registration
 FunctionEnd
 
 ; CheckWebView2 sets $R1 to "yes" when the DispatchQ window will find a usable
-; WebView2 Runtime and to "no" when it will not, and leaves what was found in
-; $R2. The installed dispatchqd (this build, native to the payload's
-; architecture like the window) repeats the window's own lookup: exit code 0
-; usable, 10 not usable. When that check cannot run at all, the documented
-; registration decides.
+; WebView2 Runtime and to "no" otherwise, and leaves what was found in $R2.
+; The installed dispatchqd (this build, native to the payload's architecture
+; like the window) repeats the window's own lookup and loads the runtime's
+; client library in a separate process it ends after 20 seconds: exit code 0
+; usable, 10 not usable or not confirmed. The check is ended after 60 seconds;
+; a check that did not finish or failed counts as not confirmed, never as
+; usable. Only when dispatchqd cannot be started at all does the documented
+; registration decide.
 Function CheckWebView2
-  nsExec::ExecToStack '"$INSTDIR\dispatchqd.exe" webview2-status'
+  nsExec::ExecToStack /TIMEOUT=60000 '"$INSTDIR\dispatchqd.exe" webview2-status'
   Pop $R1
   Pop $R2
   ${If} $R1 == "0"
     StrCpy $R1 "yes"
   ${ElseIf} $R1 == "10"
     StrCpy $R1 "no"
-  ${Else}
-    DetailPrint "The WebView2 check did not run (exit code $R1): $R2"
+  ${ElseIf} $R1 == "error"
+    DetailPrint "The WebView2 check could not be started"
     Call ReadWebView2Registration
     ${If} $R0 == ""
       StrCpy $R1 "no"
-      StrCpy $R2 "No WebView2 Runtime registration was found (the window's own check did not run)."
+      StrCpy $R2 "No WebView2 Runtime registration was found (the window's own check could not be started)."
     ${Else}
       StrCpy $R1 "yes"
-      StrCpy $R2 "WebView2 Runtime $R0 is registered (the window's own check did not run)."
+      StrCpy $R2 "WebView2 Runtime $R0 is registered (the window's own check could not be started)."
     ${EndIf}
+  ${Else}
+    StrCpy $R2 "The WebView2 check did not complete (result: $R1), so it is not confirmed that the window can load the runtime. $R2"
+    StrCpy $R1 "no"
   ${EndIf}
   DetailPrint "$R2"
 FunctionEnd
 
 ; EnsureWebView2 installs the runtime only when the window would not find a
-; usable one. The installation of DispatchQ continues either way: the daemon
-; and CLI do not need WebView2, only the window does. The bootstrapper's exit
-; code alone decides nothing: the check runs again afterwards, and only a
-; runtime that is still not usable is reported, with the exit code (decimal
-; and hex) and what the check found.
+; confirmed usable one. The installation of DispatchQ continues either way:
+; the daemon and CLI do not need WebView2, only the window does. The
+; bootstrapper's exit code alone decides nothing: the check runs again
+; afterwards, and a runtime still not confirmed usable is reported, with the
+; exit code (decimal and hex) and what the check found. The bootstrapper
+; installs a missing runtime; it is not known to repair a damaged one, and the
+; message does not say it does.
 Function EnsureWebView2
   Call CheckWebView2
   ${If} $R1 == "yes"
@@ -208,10 +217,10 @@ Function EnsureWebView2
   DetailPrint "WebView2 installer result: $1"
   Call CheckWebView2
   ${If} $R1 != "yes"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "The Microsoft Edge WebView2 Runtime is still not usable after its installer ran (installer result: $1), so the DispatchQ window will not open yet. The background service and the dispatchq command work without it.$\r$\n$\r$\nWhat setup found: $R2$\r$\n$\r$\nInstall the Evergreen runtime from https://developer.microsoft.com/microsoft-edge/webview2/ (it needs an internet connection; an organisation may have to allow it), then start DispatchQ again. To check again later, run dispatchqd webview2-status in a new terminal." /SD IDOK
+    MessageBox MB_OK|MB_ICONEXCLAMATION "The Microsoft Edge WebView2 Runtime is still not confirmed usable after its installer ran (installer result: $1), so the DispatchQ window may not open. The background service and the dispatchq command work without it.$\r$\n$\r$\nWhat setup found: $R2$\r$\n$\r$\nIf the runtime is missing, install the Evergreen runtime from https://developer.microsoft.com/microsoft-edge/webview2/ (it needs an internet connection; an organisation may have to allow it), then start DispatchQ again. Setup does not repair an installed runtime that cannot be loaded. To check again later, run dispatchqd webview2-status in a new terminal." /SD IDOK
   ${EndIf}
 !else
-  MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ needs the Microsoft Edge WebView2 Runtime, which the window will not find:$\r$\n$\r$\n$R2$\r$\n$\r$\nWindows 11 includes it. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and start DispatchQ again." /SD IDOK
+  MessageBox MB_OK|MB_ICONEXCLAMATION "DispatchQ needs the Microsoft Edge WebView2 Runtime, which is not confirmed usable for the window:$\r$\n$\r$\n$R2$\r$\n$\r$\nWindows 11 includes it. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and start DispatchQ again." /SD IDOK
 !endif
 FunctionEnd
 

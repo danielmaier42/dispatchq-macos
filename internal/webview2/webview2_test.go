@@ -2,6 +2,7 @@ package webview2
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -36,14 +37,16 @@ func reg(pairs ...[2]string) fakeReg {
 
 func pair(k, v string) [2]string { return [2]string{k, v} }
 
-func files(paths ...string) func(string) bool {
-	return func(p string) bool {
+// files is a client check that accepts the given paths and refuses others
+// as missing.
+func files(paths ...string) func(string) error {
+	return func(p string) error {
 		for _, q := range paths {
 			if strings.EqualFold(p, q) {
-				return true
+				return nil
 			}
 		}
-		return false
+		return errors.New("the file does not exist")
 	}
 }
 
@@ -54,7 +57,7 @@ func TestProbeFollowsTheWindowLoader(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		reg       fakeReg
-		files     func(string) bool
+		files     func(string) error
 		arch      string
 		available bool
 		version   string
@@ -91,7 +94,7 @@ func TestProbeFollowsTheWindowLoader(t *testing.T) {
 			files:   files(userX64),
 			arch:    "x64",
 			version: "131.0.2903.70", scope: "per-machine",
-			reason: "has no x64 client library",
+			reason: "has no usable x64 client library: the file does not exist",
 		},
 		{
 			name:      "ARM64 window uses the arm64 client",
@@ -106,7 +109,7 @@ func TestProbeFollowsTheWindowLoader(t *testing.T) {
 			files:   files(machineX64),
 			arch:    "arm64",
 			version: "131.0.2903.70", scope: "per-machine",
-			reason: "has no arm64 client library",
+			reason: "has no usable arm64 client library",
 		},
 		{
 			name: "only documented pv entries, nothing for the loader",
@@ -165,7 +168,7 @@ func TestStatusLineIsDiagnosticAndSanitized(t *testing.T) {
 	}
 	line := b.String()
 	for _, want := range []string{
-		"WebView2 Runtime not usable: the per-user runtime 130.0.2849.80 has no x64 client library",
+		"WebView2 Runtime not usable: the per-user runtime 130.0.2849.80 has no usable x64 client library: the file does not exist",
 		`HKLM=none HKCU=%LOCALAPPDATA%\Microsoft\EdgeWebView\Application\130.0.2849.80`,
 		`client %LOCALAPPDATA%\Microsoft\EdgeWebView\Application\130.0.2849.80\EBWebView\x64\EmbeddedBrowserWebView.dll`,
 		"HKLM 32-bit view=0.0.0.0, HKLM 64-bit view=none, HKCU 32-bit view=130.0.2849.80.",

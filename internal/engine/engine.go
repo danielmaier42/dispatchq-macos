@@ -12,6 +12,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/danielmaier42/claudeq/internal/clock"
+	"github.com/danielmaier42/claudeq/internal/execenv"
 	"github.com/danielmaier42/claudeq/internal/executor"
 	"github.com/danielmaier42/claudeq/internal/limit"
 	"github.com/danielmaier42/claudeq/internal/notify"
@@ -55,6 +57,13 @@ type Waker interface {
 
 // SetWaker enables wake planning after each loop tick.
 func (e *Engine) SetWaker(w Waker) { e.waker = w }
+
+// SetSleepInhibitor lets the engine hold off idle system sleep while runs are
+// in flight. Without one, the machine may sleep during a run.
+func (e *Engine) SetSleepInhibitor(i SleepInhibitor) { e.awake.setInhibitor(i) }
+
+// SleepInhibitor returns the inhibitor set with SetSleepInhibitor, nil if none.
+func (e *Engine) SleepInhibitor() SleepInhibitor { return e.awake.current() }
 
 // SetNotifier enables outcome notifications (failure / auth error).
 func (e *Engine) SetNotifier(n notify.Notifier) { e.notifier = n }
@@ -191,7 +200,7 @@ type Engine struct {
 	// weighs its members by so concurrent starts spread out.
 	runningOn map[string]int
 	wg        sync.WaitGroup
-	awake     sleepGuard // keeps the Mac awake while runs are in flight
+	awake     sleepGuard // keeps the machine awake while runs are in flight
 
 	// providerHealth is the health state last announced per provider, so an
 	// unresolved problem is reported once instead of on every tick. It is seeded
@@ -485,7 +494,7 @@ func (e *Engine) assign(ctx context.Context, set provider.Set, due []task.Task, 
 		}
 		sel := selectionFor(t, st)
 		sel.Backfill, sel.MinUrgency = t.Backfill, backfill
-		res, err := set.ResolveAvailable(sel, av)
+		res, err := set.ResolveAvailable(sel, withFolder(av, t))
 		if errors.Is(err, provider.ErrNoSpare) {
 			// Waiting for spare allowance is the normal state of backfill work,
 			// not a provider problem worth announcing.
@@ -564,6 +573,17 @@ func (e *Engine) availability(ctx context.Context) provider.Availability {
 		},
 		Now: e.clock.Now,
 	}
+}
+
+// withFolder narrows av to the instances that can open t's folder, so a pool
+// or a fallback never hands the task to an environment that cannot reach it
+// (a native Windows instance and a Linux path, or a WSL instance and a folder
+// in another distribution). The provider a task names directly is not
+// replaced; its run fails with the reason instead.
+func withFolder(av provider.Availability, t task.Task) provider.Availability {
+	dir := t.WorkingDir
+	av.Reaches = func(inst provider.Instance) error { return execenv.CanReach(inst.Execution, dir, runtime.GOOS) }
+	return av
 }
 
 // inheritedProvider is the instance a job queued by this run should inherit
@@ -703,7 +723,7 @@ func (h providerHealth) reason(res provider.Resolved) string {
 // it may run under, or why it may not. It is the single-task form of
 // refreshProviderHealth, for the manual "run now".
 func (e *Engine) resolveRunnable(ctx context.Context, set provider.Set, st *store.State, t task.Task) (provider.Resolved, error) {
-	res, err := set.ResolveAvailable(selectionFor(t, st), e.availability(ctx))
+	res, err := set.ResolveAvailable(selectionFor(t, st), withFolder(e.availability(ctx), t))
 	if err != nil {
 		return provider.Resolved{}, err
 	}

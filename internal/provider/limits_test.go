@@ -24,7 +24,7 @@ type limitAnswer struct {
 	err     error
 }
 
-func (a *limitAdapter) ReadLimits(context.Context, Instance) (LimitReading, error) {
+func (a *limitAdapter) ReadLimits(context.Context, Instance, Host) (LimitReading, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	i := min(a.reads, len(a.answers)-1)

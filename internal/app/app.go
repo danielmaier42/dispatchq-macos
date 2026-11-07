@@ -41,6 +41,9 @@ func AddTask(s *store.Store, t task.Task) error {
 		if indexOf(cfg.Tasks, t.ID) >= 0 {
 			return fmt.Errorf("task %q already exists", t.ID)
 		}
+		if err := placeFolder(*cfg, &t); err != nil {
+			return err
+		}
 		cfg.Tasks = append(cfg.Tasks, t)
 		// A task that names a group joins that group's block rather than sitting
 		// alone at the end of the file: the stored order stays the order the
@@ -147,11 +150,19 @@ func EditTask(s *store.Store, id string, apply func(*task.Task) error) error {
 			return fmt.Errorf("task %q not found", id)
 		}
 		edited := cfg.Tasks[idx]
+		before := edited
 		if err := apply(&edited); err != nil {
 			return err
 		}
 		if edited.ID != id {
 			return fmt.Errorf("task id cannot be changed (%q -> %q)", id, edited.ID)
+		}
+		// Only an edit that moves the task's folder or where it runs is
+		// checked, so switching a task off never fails over its folder.
+		if edited.WorkingDir != before.WorkingDir || edited.Provider != before.Provider || edited.Pool != before.Pool {
+			if err := placeFolder(*cfg, &edited); err != nil {
+				return err
+			}
 		}
 		cfg.Tasks[idx] = edited
 		// An edit may have moved the task to another group; keep the file in the

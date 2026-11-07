@@ -21,7 +21,7 @@ export function AppearanceSection() {
     <>
       <Section
         title="Appearance"
-        description="Follow macOS, or keep DispatchQ light or dark whatever the Mac is doing"
+        description="Follow the system, or keep DispatchQ light or dark whatever the system is doing"
         actions={<SaveMode mode="instant" />}
       >
         <RowGroup className="p-4">
@@ -31,7 +31,7 @@ export function AppearanceSection() {
 
       <Section
         title="Accent colour"
-        description="Buttons, selections and highlights. System follows the accent set in macOS."
+        description="Buttons, selections and highlights. System follows the accent colour set in the system settings."
         actions={<SaveMode mode="instant" />}
       >
         <RowGroup>

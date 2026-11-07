@@ -15,7 +15,6 @@ import (
 
 	"github.com/danielmaier42/claudeq/internal/app"
 	"github.com/danielmaier42/claudeq/internal/provider"
-	"github.com/danielmaier42/claudeq/internal/provider/adapters"
 	"github.com/danielmaier42/claudeq/internal/store"
 )
 
@@ -30,6 +29,7 @@ Usage:
                         [--config-dir PATH] [--default-model MODEL]
                         [--fallback ID] [--fallback-model MODEL]
                         [--env NAME=VALUE]...
+                        [--wsl-distro DISTRO [--wsl-user USER]]   (Windows: run inside WSL)
   dispatchq provider edit ID [--name N] [--path PATH]
                         [--config-dir PATH] [--default-model MODEL]
                         [--fallback ID|none] [--fallback-model MODEL|none]
@@ -107,7 +107,7 @@ type providerView struct {
 // passes; the other commands run in a fresh process, where the cache is empty
 // anyway, so it makes no difference to them.
 func checkProviders(set provider.Set, only string, fresh bool) ([]providerView, error) {
-	checker := provider.NewChecker(adapters.Default())
+	checker := provider.NewChecker(cliRegistry())
 	ctx, cancel := context.WithTimeout(context.Background(), providerCheckTimeout)
 	defer cancel()
 
@@ -225,6 +225,8 @@ type providerPatch struct {
 	fallbackModel string
 	env           repeatedFlag
 	unsetEnv      repeatedFlag
+	wslDistro     string
+	wslUser       string
 }
 
 // repeatedFlag collects every occurrence of a flag that may be given more than
@@ -241,6 +243,9 @@ func (r *repeatedFlag) Set(v string) error {
 func (p *providerPatch) register(fs *flag.FlagSet, withKind bool) {
 	if withKind {
 		fs.StringVar(&p.kind, "kind", "", "adapter kind the instance runs on (required)")
+		// Where the instance runs is chosen once, when it is created.
+		fs.StringVar(&p.wslDistro, "wsl-distro", "", "DispatchQ for Windows: run the CLI inside this WSL distribution instead of Windows (paths are then Linux paths)")
+		fs.StringVar(&p.wslUser, "wsl-user", "", "with --wsl-distro: the Linux user to run as (empty = the distribution's default user)")
 	}
 	fs.StringVar(&p.name, "name", "", "display name (defaults to the id)")
 	fs.StringVar(&p.path, "path", "", "absolute path to the harness CLI (empty = auto-detect)")
@@ -337,13 +342,19 @@ func cmdProviderAdd(st *store.Store, args []string) error {
 		return fmt.Errorf("--kind is required")
 	}
 	inst := provider.Instance{ID: id, Kind: provider.Kind(p.kind), Name: id, Enabled: true}
+	switch {
+	case p.wslDistro != "":
+		inst.Execution = provider.Execution{Type: provider.ExecWSL, Distro: p.wslDistro, User: p.wslUser}
+	case p.wslUser != "":
+		return fmt.Errorf("--wsl-user needs --wsl-distro")
+	}
 	if err := p.apply(&inst); err != nil {
 		return err
 	}
 	if inst.Name == "" {
 		inst.Name = id
 	}
-	if err := app.AddProvider(st, adapters.Default(), inst); err != nil {
+	if err := app.AddProvider(st, cliRegistry(), inst); err != nil {
 		return err
 	}
 	fmt.Printf("added provider %q\n", id)
@@ -367,7 +378,7 @@ func cmdProviderEdit(st *store.Store, args []string) error {
 	if len(p.set) == 0 {
 		return fmt.Errorf("no changes given")
 	}
-	if err := app.EditProvider(st, adapters.Default(), id, func(inst *provider.Instance) error {
+	if err := app.EditProvider(st, cliRegistry(), id, func(inst *provider.Instance) error {
 		return p.apply(inst)
 	}); err != nil {
 		return err

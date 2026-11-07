@@ -253,6 +253,8 @@ var commands = []Command{
 		flag("fallback", "ID", "provider that takes over when this one is limited"),
 		flag("fallback-model", "MODEL", "model on the fallback"),
 		{Name: "env", Value: "NAME=VALUE", Repeat: true, Secret: true, Help: "environment variable for the harness, such as an API key"},
+		flag("wsl-distro", "DISTRO", "Windows only: run the harness inside this WSL distribution (paths are then Linux paths; fixed once added)"),
+		flag("wsl-user", "USER", "with --wsl-distro: the Linux user to run as (empty = the distribution's default user)"),
 	}, Access: Write, Help: "add a provider instance"},
 	{Path: []string{"provider", "edit"}, Args: []Arg{arg("ID")}, Flags: []Flag{
 		flag("name", "N", "display name"),

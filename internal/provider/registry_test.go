@@ -34,11 +34,11 @@ func (f *fakeAdapter) ResolveBinary(inst Instance) string {
 	return f.binary
 }
 
-func (f *fakeAdapter) CheckHealth(_ context.Context, _ Instance, _ Prober) Health {
+func (f *fakeAdapter) CheckHealth(_ context.Context, _ Instance, _ Host) Health {
 	return f.health
 }
 
-func (f *fakeAdapter) ListModels(context.Context, Instance, Prober) []Model {
+func (f *fakeAdapter) ListModels(context.Context, Instance, Host) []Model {
 	return []Model{{ID: "fake-model", Label: "Fake model"}}
 }
 

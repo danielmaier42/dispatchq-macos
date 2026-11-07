@@ -94,7 +94,7 @@ func (a *healthAdapter) DetectBinary() string { return "" }
 
 func (a *healthAdapter) ResolveBinary(inst provider.Instance) string { return inst.BinaryPath }
 
-func (a *healthAdapter) CheckHealth(context.Context, provider.Instance, provider.Prober) provider.Health {
+func (a *healthAdapter) CheckHealth(context.Context, provider.Instance, provider.Host) provider.Health {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.during != nil {
@@ -103,7 +103,7 @@ func (a *healthAdapter) CheckHealth(context.Context, provider.Instance, provider
 	return a.health
 }
 
-func (a *healthAdapter) ListModels(context.Context, provider.Instance, provider.Prober) []provider.Model {
+func (a *healthAdapter) ListModels(context.Context, provider.Instance, provider.Host) []provider.Model {
 	return nil
 }
 

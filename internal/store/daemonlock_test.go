@@ -139,3 +139,55 @@ func openTempStore(t *testing.T) *Store {
 	}
 	return st
 }
+
+// The probe names the holder and the time it wrote the lock file, and does not
+// create a data directory where none exists.
+func TestProbeDaemonLock(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent")
+	h, err := ProbeDaemonLock(missing)
+	if err != nil || h.Held {
+		t.Fatalf("probe of a missing store = %+v, %v; want not held", h, err)
+	}
+	if _, err := os.Stat(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("probe created %s: %v", missing, err)
+	}
+
+	st := openTempStore(t)
+	h, err = ProbeDaemonLock(st.Home())
+	if err != nil || h.Held {
+		t.Fatalf("probe before any daemon = %+v, %v; want not held", h, err)
+	}
+
+	lock, err := st.LockDaemon(0)
+	if err != nil {
+		t.Fatalf("LockDaemon: %v", err)
+	}
+	h, err = ProbeDaemonLock(st.Home())
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if !h.Held || h.PID != os.Getpid() {
+		t.Errorf("probe = %+v, want held by pid %d", h, os.Getpid())
+	}
+	if got := DaemonLockPath(st.Home()); got != filepath.Join(st.Home(), ".daemon.lock") {
+		t.Errorf("DaemonLockPath = %q", got)
+	}
+	// The probe must not have taken the lock from the holder.
+	if _, err := st.LockDaemon(0); err == nil {
+		t.Fatal("lock was free while the daemon held it")
+	}
+
+	if err := lock.Close(); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	h, err = ProbeDaemonLock(st.Home())
+	if err != nil || h.Held {
+		t.Fatalf("probe after release = %+v, %v; want not held", h, err)
+	}
+	// The probe left the lock free for the next daemon.
+	next, err := st.LockDaemon(0)
+	if err != nil {
+		t.Fatalf("LockDaemon after probe: %v", err)
+	}
+	_ = next.Close()
+}

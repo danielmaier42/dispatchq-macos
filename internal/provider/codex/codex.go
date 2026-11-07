@@ -89,6 +89,11 @@ func (a *Adapter) ResolveBinary(inst provider.Instance) string {
 	if inst.BinaryPath != "" {
 		return inst.BinaryPath
 	}
+	if !inst.Execution.IsNative() {
+		// Detection looks at this computer. An instance that runs in Linux is
+		// found on its own login PATH there, when it is started.
+		return BinaryName
+	}
 	return a.DetectBinary()
 }
 
@@ -167,7 +172,7 @@ func (a *Adapter) Command(inst provider.Instance, req provider.Request) (provide
 	}
 	// The override replaces the configured value, so the instance's own
 	// developer instructions are read and carried along rather than dropped.
-	if prompt := developerInstructions(req.SystemPrompt, ownInstructions(inst.ConfigDir)); prompt != "" {
+	if prompt := developerInstructions(req.SystemPrompt, ownInstructions(req.Host, inst)); prompt != "" {
 		args = append(args, "-c", developerInstructionsKey+"="+tomlString(prompt))
 	}
 	if req.Resume {

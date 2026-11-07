@@ -20,6 +20,9 @@ import type {ProviderKind} from '@/lib/types'
 import {addProvider} from './actions'
 import {EnvEditor} from './EnvEditor'
 import {envPayload, envProblem, type EnvRow} from './env-logic'
+import {executionPayload} from './execution-logic'
+import {ExecutionFields, type ExecutionChoice} from './ExecutionFields'
+import {linuxConfigDir} from './provider-logic'
 
 // AddProviderDialog asks for the things that cannot be changed afterwards (the
 // id and the kind) plus the two that decide what the new provider is. The rest
@@ -45,6 +48,9 @@ function AddForm({onDone}: {onDone: () => void}) {
   const [name, setName] = useState('')
   const [dir, setDir] = useState('')
   const [env, setEnv] = useState<EnvRow[]>([])
+  const [exec, setExec] = useState<ExecutionChoice>({runsIn: 'native', distro: '', user: ''})
+  const [binary, setBinary] = useState('')
+  const linux = exec.runsIn === 'wsl'
   const [idError, setIdError] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -58,6 +64,10 @@ function AddForm({onDone}: {onDone: () => void}) {
       return
     }
     if (!chosen) return
+    if (linux && !exec.distro) {
+      setError('Choose the Linux system this provider runs in.')
+      return
+    }
     const problem = envProblem(env)
     if (problem) {
       setError(problem)
@@ -72,6 +82,7 @@ function AddForm({onDone}: {onDone: () => void}) {
         name: name.trim() || trimmed,
         config_dir: dir.trim(),
         env: envPayload(env),
+        ...(linux ? {binary_path: binary, execution: executionPayload('wsl', exec.distro, exec.user)} : {}),
       })
       toast.success('Provider added')
       onDone()
@@ -127,10 +138,23 @@ function AddForm({onDone}: {onDone: () => void}) {
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
+        <ExecutionFields
+          kind={chosen?.kind ?? ''}
+          value={exec}
+          onChange={(v) => {
+            setExec(v)
+            setBinary('')
+          }}
+          onDetected={(d) => setBinary(d.binary ?? '')}
+        />
         <Field
           label="Configuration directory"
           htmlFor="np-dir"
-          hint="Where the CLI keeps its account and sessions. Empty uses the CLI's own default, shown as the placeholder."
+          hint={
+            linux
+              ? 'Where the CLI keeps its account and sessions inside Linux. Linux path (~ is the Linux home); empty uses its own default.'
+              : "Where the CLI keeps its account and sessions. Empty uses the CLI's own default, shown as the placeholder."
+          }
         >
           {/* The placeholder is the chosen harness's own location, so an empty
               field says what it falls back to rather than leaving it to be guessed. */}
@@ -138,7 +162,9 @@ function AddForm({onDone}: {onDone: () => void}) {
             id="np-dir"
             className="font-mono text-[12.5px]"
             value={dir}
-            placeholder={chosen?.default_config_dir || "the CLI's own"}
+            placeholder={
+              linux ? linuxConfigDir(chosen?.kind ?? '') : chosen?.default_config_dir || "the CLI's own"
+            }
             onChange={(e) => setDir(e.target.value)}
             spellCheck={false}
           />

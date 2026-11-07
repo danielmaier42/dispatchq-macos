@@ -16,12 +16,12 @@ import {Input} from '@/components/ui/input'
 import {Select} from '@/components/ui/select'
 import {toast} from '@/components/ui/toaster'
 import {errorMessage} from '@/lib/api'
-import {useProviderList} from '@/lib/providers'
+import {executionLabel, useProviderList} from '@/lib/providers'
 import type {Provider} from '@/lib/types'
 import {saveProvider} from './actions'
 import {EnvEditor} from './EnvEditor'
 import {envPayload, envProblem, envRowsFor} from './env-logic'
-import {fallbackOptions} from './provider-logic'
+import {fallbackOptions, linuxConfigDir} from './provider-logic'
 
 export function ProviderEditDialog({
   provider,
@@ -53,6 +53,8 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
   const [env, setEnv] = useState(() => envRowsFor(p.env ?? []))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const runsIn = executionLabel(p.execution)
+  const linux = p.execution?.type === 'wsl'
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -90,8 +92,9 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
         title={`Edit ${p.name || p.id}`}
         description={
           <>
-            <span className="font-mono">{p.id}</span> · {p.type_name || p.kind}. The id and the type cannot
-            change.
+            <span className="font-mono">{p.id}</span> · {p.type_name || p.kind}
+            {runsIn && <> · runs in {runsIn}</>}. The id, the type{runsIn ? ' and where it runs' : ''} cannot
+            change{runsIn ? '; to run it elsewhere, add a new provider' : ''}.
           </>
         }
       />
@@ -113,17 +116,24 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
           label="Binary"
           htmlFor="pe-binary"
           hint={
-            <>
-              Absolute path to the CLI. The background daemon can't see your shell's PATH, so a full path is
-              safest. Empty auto-detects
-              {p.detected ? (
-                <>
-                  : <span className="font-mono">{p.detected}</span>
-                </>
-              ) : (
-                '.'
-              )}
-            </>
+            linux ? (
+              <>
+                Linux path to the CLI inside {p.execution?.distro}. Empty finds it on the Linux user's login
+                PATH; Windows programs are never used.
+              </>
+            ) : (
+              <>
+                Absolute path to the CLI. The background daemon can't see your shell's PATH, so a full path is
+                safest. Empty auto-detects
+                {p.detected ? (
+                  <>
+                    : <span className="font-mono">{p.detected}</span>
+                  </>
+                ) : (
+                  '.'
+                )}
+              </>
+            )
           }
           aside={
             p.detected && binary !== p.detected ? (
@@ -137,7 +147,7 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
             id="pe-binary"
             className="font-mono text-[12.5px]"
             value={binary}
-            placeholder={p.detected || '/path/to/the CLI'}
+            placeholder={linux ? '~/.local/bin/claude' : p.detected || '/path/to/the CLI'}
             onChange={(e) => setBinary(e.target.value)}
             spellCheck={false}
           />
@@ -145,13 +155,17 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
         <Field
           label="Configuration directory"
           htmlFor="pe-dir"
-          hint="Where the CLI keeps its account and sessions; another directory is another account. Absolute path (~ is fine); empty uses its own default."
+          hint={
+            linux
+              ? 'Where the CLI keeps its account and sessions inside Linux; another directory is another account. Linux path (~ is the Linux home); empty uses its own default.'
+              : 'Where the CLI keeps its account and sessions; another directory is another account. Absolute path (~ is fine); empty uses its own default.'
+          }
         >
           <Input
             id="pe-dir"
             className="font-mono text-[12.5px]"
             value={dir}
-            placeholder={p.default_config_dir || "the CLI's own"}
+            placeholder={linux ? linuxConfigDir(p.kind) : p.default_config_dir || "the CLI's own"}
             onChange={(e) => setDir(e.target.value)}
             spellCheck={false}
           />
@@ -164,10 +178,10 @@ function EditForm({provider: p, onDone}: {provider: Provider; onDone: () => void
                 Passed to the CLI on every run and check. Set{' '}
                 <span className="font-mono">ANTHROPIC_API_KEY</span> to run this provider on API billing
                 instead of its login; it then shows no plan limits and its runs count in Usage with their real
-                cost. Values are stored on this Mac and are never shown again.
+                cost. Values are stored on this computer and are never shown again.
               </>
             ) : (
-              'Passed to the CLI on every run and check. Values are stored on this Mac and are never shown again.'
+              'Passed to the CLI on every run and check. Values are stored on this computer and are never shown again.'
             )
           }
         >

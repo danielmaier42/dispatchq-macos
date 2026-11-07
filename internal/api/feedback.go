@@ -25,7 +25,8 @@ type feedbackStatus struct {
 	// AppVersion is this build's version. It is appended to the issue body and
 	// named in the review step, so the user knows what travels along.
 	AppVersion string `json:"app_version"`
-	// OSVersion is the macOS product version, appended the same way.
+	// OSVersion names the system and its version ("macOS 15.6"), appended the
+	// same way.
 	OSVersion string `json:"os_version,omitempty"`
 	// MaxTurns is how many messages the user may send before the assistant has
 	// to deliver a draft.
@@ -118,7 +119,7 @@ func envFooter(app, osv string) string {
 		parts = append(parts, "DispatchQ "+app)
 	}
 	if osv = oneLine(osv, 60); osv != "" {
-		parts = append(parts, "macOS "+osv)
+		parts = append(parts, osv)
 	}
 	if len(parts) == 0 {
 		return ""

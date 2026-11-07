@@ -1,4 +1,5 @@
 import type {SelectOption} from '@/components/ui/select'
+import {executionLabel} from '@/lib/providers'
 import type {HealthState, Provider, ProviderLimits} from '@/lib/types'
 
 export type HealthTone = 'success' | 'warning' | 'danger'
@@ -53,7 +54,11 @@ export function fallbackOptions(self: string, providers: Provider[], stored: str
   const others = providers.filter((p) => p.id !== self)
   const opts: SelectOption[] = [
     {value: '', label: 'Wait for the limit'},
-    ...others.map((p) => ({value: p.id, label: (p.name || p.id) + (p.enabled ? '' : ' (switched off)')})),
+    ...others.map((p) => ({
+      value: p.id,
+      label: (p.name || p.id) + (p.enabled ? '' : ' (switched off)'),
+      description: executionLabel(p.execution) || undefined,
+    })),
   ]
   if (stored && !others.some((p) => p.id === stored))
     opts.push({value: stored, label: `${stored} (unavailable)`})
@@ -70,4 +75,17 @@ export function windowTone(left: number): 'danger' | 'warning' | 'accent' {
 // allowance) gets no Limits row rather than a row saying so.
 export function hasLimitsRow(l: ProviderLimits | undefined): l is ProviderLimits {
   return !!l && ((l.windows?.length ?? 0) > 0 || l.state === 'unavailable')
+}
+
+// Where each CLI keeps its configuration inside Linux when nothing points it
+// elsewhere, for the placeholder of a Linux (WSL) provider's field. The
+// daemon's own default is this computer's, which a Linux provider never uses.
+const LINUX_CONFIG_DIRS: Record<string, string> = {
+  'claude-code': '~/.claude',
+  codex: '~/.codex',
+  opencode: '~/.config/opencode',
+}
+
+export function linuxConfigDir(kind: string): string {
+  return LINUX_CONFIG_DIRS[kind] ?? "the CLI's own, inside Linux"
 }

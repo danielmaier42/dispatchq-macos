@@ -2,6 +2,7 @@ import {CircleDot} from 'lucide-react'
 import {useEffect} from 'react'
 import {Button} from '@/components/ui/button'
 import {Kbd} from '@/components/ui/kbd'
+import {keyCombo} from '@/lib/platform'
 import {saveDraft} from '../actions'
 import {SECTIONS} from '../sections'
 import {discardDraft, useSettingsUi} from '../store'
@@ -43,7 +44,7 @@ export function SaveBar({sections}: {sections: Set<string>}) {
         <Button variant="primary" onClick={() => void saveDraft()} loading={saving}>
           Save
           <Kbd className="ml-0.5 border-accent-foreground/30 bg-transparent text-accent-foreground/80">
-            ⌘S
+            {keyCombo('S')}
           </Kbd>
         </Button>
       </div>

@@ -70,6 +70,7 @@ workflow engine:
 
 - [How it works](#how-it-works)
 - [Install](#install)
+- [Windows (beta)](#windows-beta)
 - [Coming from ClaudeQ](#coming-from-claudeq)
 - [Using it](#using-it)
 - [The app](#the-app)
@@ -143,8 +144,10 @@ The nightly cycle looks like this:
 
 ## Install
 
-1. Download the latest `dispatchq-<version>.pkg` from the
-   [Releases](https://github.com/danielmaier42/dispatchq-app/releases) page.
+1. Download the latest `dispatchq-<version>-macos-arm64.pkg` from the
+   [Releases](https://github.com/danielmaier42/dispatchq-app/releases) page
+   (older releases name it `dispatchq-<version>.pkg`). It runs on Apple silicon
+   Macs only; there is no Intel build.
 2. Open it and follow the installer.
 
 The package installs **DispatchQ** to `/Applications`, sets up a per-user
@@ -198,12 +201,148 @@ dashboard shows it if a wake ever fails):
 echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/dispatchq
 ```
 
+## Windows (beta)
+
+There is a native Windows beta for x64 and ARM64 PCs. It needs no WSL. It is
+**not published yet**: no release so far carries a Windows installer. From the
+next release on, every release attaches both Windows installers next to the
+macOS one, under the release's own version:
+`dispatchq-<version>-windows-x64-beta.exe` and
+`dispatchq-<version>-windows-arm64-beta.exe`. Only the file name marks them as
+beta; the version number and the release are the same as for macOS. Until then,
+every CI run builds both installers for beta testing and keeps them as workflow
+artifacts of that run (`dispatchq-<version>-windows-<x64|arm64>-beta`, kept 14
+days, for signed-in GitHub users). Or build the installer yourself on a Mac (or
+Linux) and copy it over:
+
+```sh
+brew install mingw-w64 makensis librsvg imagemagick   # once
+scripts/build-windows.sh                              # x64, writes dist/windows/
+scripts/build-windows.sh --arch arm64                 # ARM64, writes dist/windows-arm64/
+```
+
+That produces `dispatchq-<version>-windows-<x64|arm64>-beta.exe`, a
+`SHA256SUMS` file and a `BUILD-INFO.json` naming the source commit and
+toolchain. The ARM64 build needs [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
+for the window's C++ part; on a Mac the script downloads the pinned official
+release into `build/windows/cache` (checksum verified, nothing installed
+system-wide), or uses `DISPATCHQ_LLVM_MINGW=<dir>` or one on `PATH`. The build
+checks that the three programs carry the target's machine type.
+
+Each installer holds programs for one architecture. The installer itself is a
+32-bit x86 program for both (NSIS has no ARM64 stub), which Windows on ARM runs
+emulated. The ARM64 installer refuses to run on a non-ARM PC; the x64 one runs
+on 64-bit Windows, including Windows 11 on ARM, where its programs run emulated.
+The installer is per user (no administrator rights), unsigned (SmartScreen
+asks you to confirm), installs under `%LOCALAPPDATA%\Programs\DispatchQ`,
+registers the daemon to start at every sign-in, adds the CLI to your user
+`PATH`, and installs the Microsoft Edge WebView2 Runtime only when the window
+would not find a usable one: `dispatchqd webview2-status` repeats the window's
+own lookup and loads the runtime's library the way the window does, in a
+separate process ended after 20 seconds (setup ends the check after a minute).
+When the runtime is still not confirmed usable after Microsoft's bootstrapper,
+setup shows the bootstrapper's result and what the check found, and finishes
+the rest of the installation; it does not repair a damaged runtime.
+Uninstall it from Settings > Apps, the Start menu, or `dispatchq uninstall`
+(`/PURGE` also deletes `%APPDATA%\dispatchq`). Installing, upgrading and
+uninstalling stop only this installation's window and the daemon that has your
+data directory's lock file open, as Windows reports it, after checking that it
+runs from the installation folder (or, when installing, from the folder the
+previous installer recorded). Another copy of DispatchQ, or a daemon for a
+different `DISPATCHQ_HOME`, keeps running. When such a copy uses your data
+directory, or its owner cannot be identified, setup and the uninstaller stop
+before changing anything, show which process it is and offer Retry once you
+have quit it; `dispatchqd install` and `uninstall` fail the same way. Setup
+never runs the dispatchqd it is about to replace; it uses a copy of the new one.
+The step-by-step notes and a
+first-start checklist are in
+[`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt) in this repository;
+the installer does not copy them to the PC.
+
+It reuses the same daemon, queue and dashboard. What differs on Windows:
+
+| Area | Windows beta |
+| --- | --- |
+| Window | WebView2, the same dashboard |
+| Background service | `dispatchqd.exe`, started from the per-user Run key at sign-in; runs only while you are signed in |
+| Data | `%APPDATA%\dispatchq`; the daemon log is `dispatchqd.log` there |
+| Providers | native `claude`, `codex`, `opencode` found in the usual install folders, npm and scoop shims, then `PATH`; an npm or scoop `.cmd` shim is resolved to the program it starts; a Claude login is read from `.credentials.json` |
+| Cancel | every run starts suspended, joins a Windows Job Object and is then resumed, so even a child started at once belongs to it; cancelling, the idle watchdog or the daemon dying ends the whole process tree, and a run whose job cannot be set up does not start. The assistant, prompt reviews, readiness probes and the Codex limits reading start the same way, so a cancelled or timed-out request also ends every tool its provider started |
+| Script jobs | run as Windows PowerShell, written as UTF-8 with a byte order mark so non-ASCII text survives; a `#!` line is refused |
+| Agent jobs | the built-in guidance tells the agent to call the CLI in PowerShell through `$env:DISPATCHQ_BIN` (a bare `dispatchq` when it is unset) and names Windows paths; a provider in WSL gets the Linux shell version |
+| Keep awake | held while a run is active (the display may still sleep) |
+| Folder and save dialogs | the native Windows dialogs, opened by the daemon through PowerShell |
+| Providers in WSL | optional, per provider (see below); a PC without WSL is unaffected |
+| Notifications | Windows toasts, sent through Windows PowerShell 5.1 under the Start menu entry's app identity, which the daemon registers at start; a link opens in the default browser. Pushover, ntfy and webhooks work as on macOS. Whether a toast without a link stays in the notification center and what clicking it does is not yet verified on Windows |
+| Shortcuts and wording | every shortcut hint shows **Ctrl** where this README says **⌘** (**Ctrl+K**, **Ctrl+J**, **Ctrl+1**–**Ctrl+8**, **Ctrl+S**, **Ctrl+Enter**); **⌘N** and **⌘R** come from the macOS menu bar and have no Windows equivalent. Settings speak of *this computer* and name Windows' own places (Settings > System > Notifications, Installed apps) instead of System Settings or the macOS Installer |
+| Updates | About > **Check for updates** (and `dispatchq update check`) looks for the newest release with an installer for this PC's architecture, `dispatchq-<version>-windows-<x64\|arm64>-beta.exe` or the same name without `-beta`; for one version the name without `-beta` wins. **Download & install** saves it to Downloads and opens setup; when you continue there, setup stops and replaces this installation |
+| Not available | wake from sleep, continue in a terminal, uninstall button, appearance pinning, script jobs in WSL |
+
+### Providers in WSL (optional)
+
+A provider can run inside a Linux distribution of the Windows Subsystem for
+Linux instead of in Windows. It is a property of one provider, chosen when you
+add it (Settings > Providers > Add provider > Runs in: Linux (WSL), or
+`dispatchq provider add ID --kind claude-code --wsl-distro Ubuntu [--wsl-user dm]`)
+and fixed afterwards: to run elsewhere, add another provider. So a Windows
+Claude and a Linux Claude sit side by side with their own sessions, readiness
+and limits, and a task, pool or fallback picks between them like any two
+providers.
+
+**Native Windows stays the default and needs no WSL.** Every existing and new
+provider runs in Windows unless you choose Linux for it. Nothing starts
+`wsl.exe` at start-up, for scheduling, readiness, models, limits or asides of a
+Windows provider; the dashboard asks for the distribution list only after you
+pick Linux. A test installs the WSL service with a recording fake `wsl.exe`
+and fails if a native provider's readiness, models, run, aside or folder check
+starts it. On macOS the choice does not exist.
+
+| | Linux (WSL) provider |
+| --- | --- |
+| Login and settings | the Linux ones: install the CLI and run `claude auth login` (or the Codex or OpenCode login) inside Linux as that user; nothing is copied between Windows and Linux |
+| Paths | binary and configuration directory are Linux paths (`~` is the Linux home); empty binary finds the CLI on the Linux login `PATH`, never a Windows `.exe`. Provider executables must be readable; Windows programs are rejected for explicit paths and symlinks too. The Windows CLI bridge for follow-ups remains available. |
+| Task folders | stored as Windows sees them: `C:\repo` (opened as `/mnt/c/repo`, slower) or `\\wsl.localhost\Ubuntu\home\you\repo` (fast). A Linux path typed for a task that runs in exactly one distribution is stored as that share. A pool or fallback skips a provider that cannot open the task's folder; a provider named directly that cannot is refused when the task is saved |
+| How it runs | `wsl.exe --distribution D [--user U] --cd / --exec <helper> <operation>`, with nothing else on the command line. The program's arguments, environment (including API keys) and input go to DispatchQ's Linux helper as frames on its standard input, never on a command line, in a file or in `WSLENV` |
+| Helper | `dispatchq-wsl`, a static Linux program shipped for x86-64 and arm64 in both installers; the distribution's own processor picks it (an x64 installer on Windows on Arm still runs arm64 distributions), and its ELF machine is checked before it starts |
+| Cancel and watchdog | the helper stops the whole Linux process tree, then the Windows side ends `wsl.exe` |
+| Daemon gone | the helper stops the tree when its channel closes or when it hears nothing for 15 s (the daemon pings every 3 s). If the helper itself was killed, the next daemon start stops the trees of this installation whose helper is provably gone, checked by process start time; nothing else in Linux is touched, and DispatchQ never stops a distribution or WSL |
+| Follow-up jobs, artifacts, notifications | the run calls DispatchQ for Windows through WSL interop (`$DISPATCHQ_BIN`); Linux paths given to `--dir` and `--file` become Windows ones. The run's guidance uses Linux shell commands; `DISPATCHQ_HOME` belongs to the Windows daemon and must be translated with `wslpath` for direct file access. No network port is opened. With interop off in the distribution, runs work but these calls fail |
+| Not supported | script jobs in WSL (scripts run in Windows; call `wsl.exe` from one), WSL 1 (warned), drive mounting off (the helper cannot be reached; the error says so) |
+
+Nothing of this has run on a real WSL installation yet. The transport, the
+helper's process-tree handling, cancel, daemon-death and clean-up are tested on
+macOS by running the real helper code behind a fake `wsl.exe` with real
+processes; whether `wsl.exe` forwards end of file and exit codes as documented,
+and how long a distribution takes to start, are checked on the PC
+([`INSTALL-WINDOWS.txt`](scripts/windows/INSTALL-WINDOWS.txt), "Providers in
+WSL"). An older build ignores a provider's `[providers.execution]` table and
+would drop it when it rewrites the configuration; no released build has one.
+
+Platform layer: the Windows beta builds on the platform abstraction Lukas Wolfrum
+([@Kryolisc](https://github.com/Kryolisc)) contributed in
+[PR 159](https://github.com/danielmaier42/dispatchq-app/pull/159)
+(`cmd/dispatchqd/platform.go`), adopted in full, including its later fix that holds off idle
+sleep during `dispatchq run-now`, so PR 159 needs no separate merge. `platform_windows.go` supplies the Run-key service
+manager, the termination of this installation's daemon (the process Windows reports as having
+the data directory's lock file open, checked by process instance and executable path,
+never by process name),
+the PowerShell dialogs, the Windows version and the
+no-console log setup; `internal/system` supplies the sleep inhibitor (the thread-pinned
+`SetThreadExecutionState` hold on Windows, `caffeinate -i` on macOS). Both the daemon and
+`dispatchq run-now` take it from `system.DefaultSleepInhibitor`. Linux and other systems
+keep the explicit unsupported fallback (`platform_other.go`).
+
+The Windows code has been cross-compiled and its portable parts (shim resolution, the installer PATH script,
+the build's architecture handling) are unit-tested on macOS; the Windows-only Job Object tests are compiled but have not run.
+An x64 build has been installed on one Windows PC and first testing there is under way; the ARM64 build has **not** been run
+on Windows at all (see [docs/windows/PLAN.md](docs/windows/PLAN.md) for the verification gaps).
+
 ## Coming from ClaudeQ
 
 DispatchQ was called **ClaudeQ** up to version 1.x. Version 2.0 renames the
 app, the binaries and everything they write, and moves an existing
 installation over on its own. Update as usual, from the update banner or by
-opening the new `dispatchq-<version>.pkg`; the GitHub repository keeps its old
+opening the new release's `.pkg`; the GitHub repository keeps its old
 name for now, so updates keep arriving from the same place.
 
 What the update does:
@@ -1053,9 +1192,14 @@ dispatchqd run [--interval 5s] [--no-wake] [--addr 127.0.0.1:10765]
 dispatchqd install      # install & start the LaunchAgent (autostart at login)
 dispatchqd uninstall    # stop & remove the LaunchAgent
 dispatchqd --version
+dispatchqd webview2-status   # Windows: will the window find a usable WebView2 Runtime?
 ```
 
-The installer runs `install` for you; you rarely need these directly.
+The installer runs `install` for you; you rarely need these directly. On Windows,
+`webview2-status` prints one line with the answer and the registry entries behind
+it (profile folders shortened) and exits 0 when the runtime is usable, 10 when it
+is not or could not be confirmed (for example a library whose loading did not
+finish). It changes nothing.
 
 ### `dispatchq` — the control CLI
 
@@ -2121,8 +2265,9 @@ Requires Go 1.26+, Node.js 22+ with npm (for the web UI) and `librsvg`
 
 ```sh
 scripts/build-app.sh    # build/DispatchQ.app          (double-click or `open` it)
-scripts/build-pkg.sh    # dist/dispatchq-<version>.pkg  (installer)
+scripts/build-pkg.sh    # dist/dispatchq-<version>-macos-arm64.pkg  (installer)
 make web                # only the web UI, into internal/api/web
+scripts/build-windows.sh  # dist/windows/…-windows-x64-beta.exe  (local Windows beta build, see above)
 ```
 
 The daemon embeds the web UI when it is compiled, so build the UI first
@@ -2134,7 +2279,9 @@ run `npm run dev` in `web/` (it proxies `/api` to `127.0.0.1:10765`, or to
 Run the same quality gates CI enforces with `make check` (format, vet, lint,
 race tests, and the web UI's typecheck, lint and tests). Releases are built automatically: pushing a `v*` tag runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the
-universal `.pkg` on macOS and attaches it to the GitHub Release.
+Apple silicon `.pkg` and both Windows beta installers, checks each one's file
+name, architecture, version and source commit, and publishes the GitHub Release
+only when all three succeeded.
 
 ## Architecture
 
@@ -2157,7 +2304,7 @@ verification notes are in [PLAN.md](PLAN.md).
 
 ## Requirements
 
-- macOS 12 or newer
+- macOS 12 or newer on an Apple silicon Mac
 - The [Claude Code](https://claude.com/claude-code) CLI, installed and
   authenticated
 - Optionally the [Codex](https://learn.chatgpt.com/docs/developer-commands?surface=cli)

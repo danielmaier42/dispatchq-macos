@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -199,19 +198,6 @@ func TestArtifactNotifyIdleTickDoesNotRewriteState(t *testing.T) {
 	if after := inodeOf(t, statePath); after == before {
 		t.Fatal("state.json should have been rewritten after a new artifact")
 	}
-}
-
-func inodeOf(t *testing.T, path string) uint64 {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat %s: %v", path, err)
-	}
-	sys, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Skip("no inode information on this platform")
-	}
-	return sys.Ino
 }
 
 // With artifact notifications switched off, a new artifact raises nothing on

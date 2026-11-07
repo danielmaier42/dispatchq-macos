@@ -3,11 +3,12 @@ package store
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -55,7 +56,7 @@ func (l *DaemonLock) Close() error {
 	}
 	f := l.f
 	l.f = nil
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	_ = unlockFile(f)
 	return f.Close()
 }
 
@@ -65,7 +66,7 @@ func (l *DaemonLock) Close() error {
 // and each one's startup reconciliation writes off the other's in-flight run as
 // interrupted.
 //
-// The claim is an flock, so it dies with the process: a daemon killed with
+// The claim is an OS file lock (flock on macOS, LockFileEx on Windows), so it dies with the process: a daemon killed with
 // SIGKILL or lost to a power cut leaves no stale lock behind to clear by hand.
 // It waits up to wait for a predecessor to let go, which covers the hand-over
 // during an update (the new daemon is bootstrapped while the old one is still
@@ -81,11 +82,11 @@ func (s *Store) LockDaemon(wait time.Duration) (*DaemonLock, error) {
 	}
 	deadline := time.Now().Add(wait)
 	for {
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err = tryLockExclusive(f)
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
+		if !errors.Is(err, errLockHeld) {
 			_ = f.Close()
 			return nil, fmt.Errorf("acquire daemon lock: %w", err)
 		}
@@ -116,4 +117,43 @@ func readLockPID(path string) int {
 		return 0
 	}
 	return pid
+}
+
+// DaemonLockPath is the daemon lock file of the data directory at home.
+func DaemonLockPath(home string) string { return filepath.Join(home, daemonLockFile) }
+
+// DaemonHolder says whether a daemon owns a data directory and which process
+// the lock file names. The pid is informational: it is written best-effort
+// after the lock is taken and can be stale, so it never identifies a process
+// to act on.
+type DaemonHolder struct {
+	// Held reports whether a process holds the daemon lock right now.
+	Held bool
+	// PID is the process the lock file names, or 0 when it names none.
+	PID int
+}
+
+// ProbeDaemonLock reports whether a daemon owns the data directory at home,
+// without creating the directory or the lock file. It takes the lock for an
+// instant when nobody holds it; a daemon starting at that moment waits for it
+// like for any predecessor.
+func ProbeDaemonLock(home string) (DaemonHolder, error) {
+	path := DaemonLockPath(home)
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return DaemonHolder{}, nil
+	}
+	if err != nil {
+		return DaemonHolder{}, fmt.Errorf("open daemon lock: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	err = tryLockExclusive(f)
+	if err == nil {
+		_ = unlockFile(f)
+		return DaemonHolder{}, nil
+	}
+	if !errors.Is(err, errLockHeld) {
+		return DaemonHolder{}, fmt.Errorf("probe daemon lock: %w", err)
+	}
+	return DaemonHolder{Held: true, PID: readLockPID(path)}, nil
 }

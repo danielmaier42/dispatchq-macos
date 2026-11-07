@@ -15,7 +15,7 @@ import {
 import {Switch} from '@/components/ui/switch'
 import {Tooltip} from '@/components/ui/tooltip'
 import {fullTime, relTime} from '@/lib/format'
-import {modelLabel} from '@/lib/providers'
+import {executionLabel, modelLabel} from '@/lib/providers'
 import {useModels} from '@/lib/queries'
 import type {Provider, ProviderLimits as Limits} from '@/lib/types'
 import {cn} from '@/lib/utils'
@@ -44,6 +44,7 @@ export function ProviderCard({
   const reason = p.health.reason || p.health.detail
   const fallback = p.fallback_provider ? providers.find((x) => x.id === p.fallback_provider) : undefined
   const label = p.name || p.id
+  const runsIn = executionLabel(p.execution)
 
   const check = async () => {
     setChecking(true)
@@ -70,6 +71,11 @@ export function ProviderCard({
             <h3 className={cn('text-[13.5px] font-semibold', !p.enabled && 'text-muted-foreground')}>
               {label}
             </h3>
+            {runsIn && (
+              <Tooltip content="Runs inside this Linux system of WSL, with its own login and folders">
+                <Badge tone="neutral">{runsIn}</Badge>
+              </Tooltip>
+            )}
             {p.default && (
               <Tooltip content="Tasks that name no provider run here">
                 <Badge tone="accent">

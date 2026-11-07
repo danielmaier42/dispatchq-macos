@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build dispatchq-<version>.pkg — a macOS installer that drops DispatchQ.app into
+# Build dispatchq-<version>-macos-<arm64|x64>.pkg — a macOS installer that drops DispatchQ.app into
 # /Applications and (via postinstall) sets up the per-user LaunchAgent so the
 # daemon starts at login.
 #
@@ -50,7 +50,21 @@ ditto "$APP" "$STAGE/Applications/DispatchQ.app"
 
 echo "==> Building installer package"
 mkdir -p "$OUT"
-PKG="$OUT/dispatchq-$VERSION.pkg"
+# The name follows the release asset pattern
+# dispatchq-<version>-<platform>-<architecture>.<ending>. build-app.sh builds for
+# the host's architecture only, so the name takes the architecture the built
+# programs actually carry.
+ARCHES="$(lipo -archs "$APP/Contents/MacOS/dispatchqd")"
+for exe in dispatchqapp dispatchq; do
+  [ "$(lipo -archs "$APP/Contents/MacOS/$exe")" = "$ARCHES" ] \
+    || { echo "build-pkg: $exe is $(lipo -archs "$APP/Contents/MacOS/$exe"), dispatchqd is $ARCHES" >&2; exit 1; }
+done
+case "$ARCHES" in
+  arm64) ARCH_LABEL=arm64 ;;
+  x86_64) ARCH_LABEL=x64 ;;
+  *) echo "build-pkg: unexpected architectures '$ARCHES'" >&2; exit 1 ;;
+esac
+PKG="$OUT/dispatchq-$VERSION-macos-$ARCH_LABEL.pkg"
 
 # Disable bundle relocation. By default pkgbuild marks .app bundles relocatable,
 # so if a copy of de.maierdaniel.dispatchq is already indexed by Spotlight the installer

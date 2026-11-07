@@ -354,7 +354,7 @@ type perProviderHealth struct {
 	broken  map[string]provider.Health
 }
 
-func (a *perProviderHealth) CheckHealth(_ context.Context, inst provider.Instance, _ provider.Prober) provider.Health {
+func (a *perProviderHealth) CheckHealth(_ context.Context, inst provider.Instance, _ provider.Host) provider.Health {
 	if h, ok := a.broken[inst.ID]; ok {
 		return h
 	}

@@ -5,8 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
+
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 // DetectBinary finds the Claude Code CLI. It returns an absolute path, or ""
@@ -25,13 +28,7 @@ func DetectBinary() string {
 		return p
 	}
 	home, _ := os.UserHomeDir()
-	for _, c := range []string{
-		filepath.Join(home, ".local", "bin", "claude"),
-		filepath.Join(home, ".claude", "local", "claude"),
-		"/opt/homebrew/bin/claude",
-		"/usr/local/bin/claude",
-		filepath.Join(home, "bin", "claude"),
-	} {
+	for _, c := range installCandidates(home) {
 		if isExecutableFile(c) {
 			return c
 		}
@@ -45,6 +42,21 @@ func DetectBinary() string {
 	return ""
 }
 
+// installCandidates lists the common install locations of the CLI, most likely
+// first. Native Windows installs live in other places than the Unix ones.
+func installCandidates(home string) []string {
+	if runtime.GOOS == "windows" {
+		return binpath.CurrentWindowsCandidates("claude", ".claude\\local")
+	}
+	return []string{
+		filepath.Join(home, ".local", "bin", "claude"),
+		filepath.Join(home, ".claude", "local", "claude"),
+		"/opt/homebrew/bin/claude",
+		"/usr/local/bin/claude",
+		filepath.Join(home, "bin", "claude"),
+	}
+}
+
 // loginShellTimeout bounds the profile-sourcing probe below. A shell profile is
 // arbitrary code; an interactive one that blocks (a prompt, a slow network
 // call) must not hold up whoever asked where the CLI is.
@@ -53,6 +65,9 @@ const loginShellTimeout = 5 * time.Second
 // viaLoginShell asks the user's login+interactive shell to resolve `claude`, so
 // PATH additions in their profile (~/.zprofile, ~/.zshrc, …) are honoured.
 func viaLoginShell() string {
+	if runtime.GOOS == "windows" {
+		return "" // no POSIX login shell; the PATH lookup covers the profile
+	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/zsh"
@@ -85,10 +100,4 @@ func viaLoginShell() string {
 	return ""
 }
 
-func isExecutableFile(p string) bool {
-	fi, err := os.Stat(p)
-	if err != nil || fi.IsDir() {
-		return false
-	}
-	return fi.Mode()&0o111 != 0
-}
+func isExecutableFile(p string) bool { return binpath.IsExecutableFile(p) }

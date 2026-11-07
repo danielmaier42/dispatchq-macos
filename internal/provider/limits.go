@@ -33,7 +33,7 @@ type LimitWindow struct {
 // harness has an allowance to report: opencode runs whatever backend it is
 // pointed at, a local model included.
 type LimitReader interface {
-	ReadLimits(ctx context.Context, inst Instance) (LimitReading, error)
+	ReadLimits(ctx context.Context, inst Instance, h Host) (LimitReading, error)
 }
 
 // LimitReading is one successful read of an account's allowance.
@@ -316,7 +316,11 @@ func (m *LimitMonitor) read(ctx context.Context, inst Instance, prev Limits) Lim
 	}
 	ctx, cancel := context.WithTimeout(ctx, LimitsTimeout)
 	defer cancel()
-	reading, err := r.ReadLimits(ctx, inst)
+	var reading LimitReading
+	host, err := m.Registry.HostFor(inst)
+	if err == nil {
+		reading, err = r.ReadLimits(ctx, inst, host)
+	}
 	if errors.Is(err, ErrNoPlanLimits) {
 		// Nothing failed and the next read will find the same: an account on an
 		// API key has no plan, so there is no allowance to show, not a broken one.

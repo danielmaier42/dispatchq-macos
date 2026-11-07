@@ -92,7 +92,7 @@ func TestReadLimitsReadsTheInstancesOwnAccount(t *testing.T) {
 		_, _ = w.Write([]byte(usageBody))
 	})
 
-	reading, err := a.ReadLimits(context.Background(), provider.Instance{ID: "team", ConfigDir: dir})
+	reading, err := a.ReadLimits(context.Background(), provider.Instance{ID: "team", ConfigDir: dir}, provider.NativeHost{})
 	if err != nil {
 		t.Fatalf("ReadLimits: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestReadLimitsFallsBackToTheCredentialsFile(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 		_, _ = w.Write([]byte(usageBody))
 	})
-	if _, err := a.ReadLimits(context.Background(), provider.Instance{ConfigDir: dir}); err != nil {
+	if _, err := a.ReadLimits(context.Background(), provider.Instance{ConfigDir: dir}, provider.NativeHost{}); err != nil {
 		t.Fatalf("ReadLimits: %v", err)
 	}
 	if gotAuth != "Bearer file-token" {
@@ -162,7 +162,7 @@ func TestReadLimitsFailures(t *testing.T) {
 				items[keychainService(dir)] = tc.item
 			}
 			a := limitsAdapter(t, items, now, tc.handler)
-			_, err := a.ReadLimits(context.Background(), provider.Instance{ConfigDir: dir})
+			_, err := a.ReadLimits(context.Background(), provider.Instance{ConfigDir: dir}, provider.NativeHost{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want it to mention %q", err, tc.want)
 			}

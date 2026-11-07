@@ -1,10 +1,11 @@
+import {executionLabel} from '@/lib/providers'
 import type {Pool, Provider} from '@/lib/types'
 import {POOL_PREFIX, poolOf} from './form'
 
 export interface TargetOption {
   value: string
   label: string
-  // Shown under the label: why a kept choice cannot run.
+  // Shown under the label: why a kept choice cannot run, or where it runs.
   note?: string
   broken?: boolean
 }
@@ -40,7 +41,7 @@ export function targetOptions(providers: Provider[], pools: Pool[], current: str
         value: p.id,
         label: nameOf(p),
         broken: !ready,
-        note: ready ? undefined : healthText(p),
+        note: ready ? executionLabel(p.execution) || undefined : healthText(p),
       }
     }),
   ]

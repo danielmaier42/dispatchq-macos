@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -188,6 +189,84 @@ func systemPrompt(custom string) string {
 	return builtinSystemPrompt + customSystemPromptIntro + custom
 }
 
+// wslSystemPrompt tells a run inside WSL that the DispatchQ CLI it calls is
+// the Windows one, reached through interop, and that it takes Linux paths.
+const wslSystemPrompt = `
+
+This run is inside a Linux system of the Windows Subsystem for Linux (WSL). "$DISPATCHQ_BIN" is DispatchQ for Windows, started through WSL's Windows interop; it accepts Linux paths for --dir and --file and turns them into Windows ones. If starting it fails with an exec format or interop error, Windows interop is off in this Linux system: say so in your final answer instead of retrying.`
+
+// WSL keeps POSIX shell syntax, but its store and notification owner is Windows.
+// Keep these replacements separate from the native PowerShell instructions.
+var wslRewrites = []string{
+	"dispatchq stores its data in the directory named by the DISPATCHQ_HOME environment variable (falling back to ~/Library/Application Support/dispatchq when unset).",
+	"The Windows daemon owns DispatchQ's data. DISPATCHQ_HOME names its Windows directory; do not invent a Linux-home fallback. For direct file access, translate that supplied Windows path with wslpath first. Use the provided Windows CLI bridge for queue operations.",
+	"(macOS Notification Center, and whichever",
+	"(Windows notifications, and whichever",
+	"no find /, find ~, rg --files ~, or mdfind without -onlyin. Such a sweep walks into Music, Photos, cloud-synced folders (~/Library/CloudStorage) and network volumes, and macOS answers with a privacy prompt that names DispatchQ, blocks the run until someone clicks, and looks to the operator as if DispatchQ were reading their private data. Find tools with command -v or their known install locations,",
+	"no find /, find ~, rg --files ~, or recursive sweeps of whole mounted Windows drives. Such a sweep crosses Linux files, Windows user folders, cloud-synced folders and network mounts; it may download files on demand, stall the run or read unrelated private data. Find tools with command -v or their known Linux install locations,",
+}
+
+var wslBuiltinSystemPrompt = strings.NewReplacer(wslRewrites...).Replace(builtinSystemPrompt) + wslSystemPrompt
+
+// powerShellRewrites turn the built-in prompt, written for a POSIX shell on
+// macOS, into what a native Windows run needs: PowerShell calls of the CLI,
+// Windows' data directory and notification center, and a disk-sweep warning
+// about Windows' own pitfalls. Every old text must occur in
+// builtinSystemPrompt; a test holds them to it, so an edit of the prompt cannot
+// silently leave Bash syntax in Windows runs.
+var powerShellRewrites = []string{
+	`"${DISPATCHQ_BIN:-dispatchq}"`,
+	`& $(if ($env:DISPATCHQ_BIN) { $env:DISPATCHQ_BIN } else { 'dispatchq' })`,
+
+	"dispatchq stores its data in the directory named by the DISPATCHQ_HOME environment variable (falling back to ~/Library/Application Support/dispatchq when unset).",
+	"dispatchq stores its data in the directory named by the DISPATCHQ_HOME environment variable ($env:DISPATCHQ_HOME, falling back to $env:APPDATA\\dispatchq when unset).",
+
+	"(macOS Notification Center, and whichever",
+	"(Windows notifications, and whichever",
+
+	"no find /, find ~, rg --files ~, or mdfind without -onlyin. Such a sweep walks into Music, Photos, cloud-synced folders (~/Library/CloudStorage) and network volumes, and macOS answers with a privacy prompt that names DispatchQ, blocks the run until someone clicks, and looks to the operator as if DispatchQ were reading their private data. Find tools with command -v or their known install locations,",
+	"no Get-ChildItem -Recurse over C:\\ or $HOME, no where.exe /R over a drive, no rg --files over $HOME. Such a sweep walks into OneDrive and other cloud-synced folders, which can download every file on demand, and into network drives; it takes very long and looks to the operator as if DispatchQ were reading their private data. Find tools with Get-Command or their known install locations,",
+
+	"queue a program instead of a prompt: --prompt is then the script itself, run without any model",
+	"queue a program instead of a prompt: --prompt is then the script itself, a PowerShell script on this system, run without any model",
+}
+
+// windowsShellPrompt closes the built-in prompt for a native Windows run.
+const windowsShellPrompt = `
+
+This run is on Windows. The shell commands above are PowerShell: run them as written, in PowerShell, never through Bash or cmd.exe, and quote values with single quotes where nothing inside must expand. Paths are Windows paths and environment variables are $env:NAME. This is not a Mac: never use macOS tools such as osascript, open or pbcopy.`
+
+// windowsBuiltinSystemPrompt is builtinSystemPrompt for a native Windows run.
+var windowsBuiltinSystemPrompt = strings.NewReplacer(powerShellRewrites...).Replace(builtinSystemPrompt) + windowsShellPrompt
+
+// hostGOOS is the system native runs happen on, a variable for tests.
+var hostGOOS = runtime.GOOS
+
+// builtinPromptFor is the built-in prompt for a run on host h. Where the run
+// happens is the provider's execution: a WSL run is a Linux shell whatever the
+// daemon's system, a native run uses the daemon's own system. macOS and other
+// POSIX systems get builtinSystemPrompt unchanged.
+func builtinPromptFor(h provider.Host) string {
+	if h != nil && !h.Execution().IsNative() {
+		return wslBuiltinSystemPrompt
+	}
+	if hostGOOS == "windows" {
+		return windowsBuiltinSystemPrompt
+	}
+	return builtinSystemPrompt
+}
+
+// systemPromptFor is the built-in prompt for the run's host (builtinPromptFor)
+// with the operator's custom prompt, introduced, at the end.
+func systemPromptFor(h provider.Host, custom string) string {
+	base := builtinPromptFor(h)
+	custom = strings.TrimSpace(custom)
+	if custom == "" {
+		return base
+	}
+	return base + customSystemPromptIntro + custom
+}
+
 // Executor builds and runs provider invocations.
 type Executor struct {
 	// Registry holds the adapters; the request's provider instance selects one
@@ -249,15 +328,17 @@ type Request struct {
 }
 
 // providerRequest is the neutral description of this run handed to the adapter.
-func (r Request) providerRequest() provider.Request {
+// workDir is the task's directory in the form the run's environment uses.
+func (r Request) providerRequest(h provider.Host, workDir string) provider.Request {
 	return provider.Request{
+		Host:            h,
 		Prompt:          r.Task.Prompt,
-		WorkingDir:      r.Task.WorkingDir,
+		WorkingDir:      workDir,
 		Model:           r.Model,
 		SessionID:       r.SessionID,
 		Resume:          r.Resume,
 		AccessMode:      r.AccessMode,
-		SystemPrompt:    systemPrompt(r.CustomSystemPrompt),
+		SystemPrompt:    systemPromptFor(h, r.CustomSystemPrompt),
 		ReasoningEffort: r.ReasoningEffort,
 	}
 }
@@ -286,15 +367,30 @@ func (e *Executor) Command(req Request) (provider.Command, error) {
 	if err != nil {
 		return provider.Command{}, err
 	}
-	return ad.Command(req.Provider, req.providerRequest())
+	host, err := e.Registry.HostFor(req.Provider)
+	if err != nil {
+		return provider.Command{}, err
+	}
+	dir, err := host.WorkDir(context.Background(), req.Task.WorkingDir)
+	if err != nil {
+		return provider.Command{}, err
+	}
+	return ad.Command(req.Provider, req.providerRequest(host, dir))
 }
 
-// runEnv is the environment for a run: the daemon's own environment, the
-// variables a run needs to queue follow-up tasks (see selfQueueSystemPrompt),
-// and finally the adapter's own additions. Appended keys win over any inherited
-// value of the same name.
+// runEnv is the native environment for a run: the daemon's own environment,
+// the run variables (see runVars) and finally the adapter's own additions.
+// Appended keys win over any inherited value of the same name. It is what the
+// native host builds for an agent run, and what a script job always gets.
 func (e *Executor) runEnv(req Request, adapterEnv []string) []string {
-	env := os.Environ()
+	return append(provider.WithLegacyNames(append(os.Environ(), e.runVars(req)...)), adapterEnv...)
+}
+
+// runVars are the variables a run needs to queue follow-up tasks (see
+// selfQueueSystemPrompt). The run's host puts them after its own environment
+// and before the adapter's additions, so the adapter's keys win.
+func (e *Executor) runVars(req Request) []string {
+	var env []string
 	if e.Home != "" {
 		env = append(env, store.EnvHome+"="+e.Home)
 	}
@@ -325,20 +421,7 @@ func (e *Executor) runEnv(req Request, adapterEnv []string) []string {
 	if req.WorkflowID != "" {
 		env = append(env, EnvWorkflowID+"="+req.WorkflowID)
 	}
-	return append(withLegacyNames(env), adapterEnv...)
-}
-
-// withLegacyNames repeats each dispatchq variable under the CLAUDEQ_ name it
-// had before the rename, so a script outside dispatchq that still reads
-// $CLAUDEQ_BIN or $CLAUDEQ_HOME keeps working after the update.
-func withLegacyNames(env []string) []string {
-	var legacy []string
-	for _, kv := range env {
-		if rest, ok := strings.CutPrefix(kv, "DISPATCHQ_"); ok {
-			legacy = append(legacy, "CLAUDEQ_"+rest)
-		}
-	}
-	return append(env, legacy...)
+	return env
 }
 
 // pipeReleaseDelay is how long a run waits for its output to close once the
@@ -362,21 +445,33 @@ func (e *Executor) Run(ctx context.Context, req Request) (provider.Result, error
 	if err != nil {
 		return provider.Result{}, err
 	}
-	invocation, err := ad.Command(req.Provider, req.providerRequest())
+	// The run's environment: the daemon's own system for a native instance,
+	// a Linux distribution for a WSL one. The task's folder is translated
+	// into that environment's form before the adapter embeds it.
+	host, err := e.Registry.HostFor(req.Provider)
+	if err != nil {
+		return provider.Result{}, err
+	}
+	workDir, err := host.WorkDir(ctx, req.Task.WorkingDir)
+	if err != nil {
+		return provider.Result{}, err
+	}
+	invocation, err := ad.Command(req.Provider, req.providerRequest(host, workDir))
 	if err != nil {
 		return provider.Result{}, err
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, invocation.Path, invocation.Args...) //nolint:gosec // the path comes from the configured provider instance or its adapter's detection
-	cmd.Dir = req.Task.WorkingDir
-	cmd.Env = e.runEnv(req, invocation.Env) // lets the run queue follow-up tasks (self-queue)
-	configureProcessGroup(cmd)              // so a killed run takes its whole process tree with it
-	// A harness that takes its prompt on stdin gets it here. One that does not
-	// sees stdin closed immediately, which is what it wants: a headless run must
-	// never sit waiting for input nobody will type.
-	cmd.Stdin = strings.NewReader(invocation.Stdin)
+	// The native host resolves an npm or scoop .cmd shim to the program it
+	// starts (a batch file cannot be started directly, and cmd.exe would
+	// reinterpret the prompt), and passes the run variables that let the run
+	// queue follow-up tasks (self-queue).
+	proc, err := host.Command(runCtx, invocation, provider.CmdOptions{Dir: workDir, Vars: e.runVars(req)})
+	if err != nil {
+		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
+	}
+	cmd := proc.Cmd
 
 	// Output goes through exec's own copying, not a pipe read here until EOF:
 	// a daemon a tool call left behind holds the pipe open long after the
@@ -387,9 +482,15 @@ func (e *Executor) Run(ctx context.Context, req Request) (provider.Result, error
 	cmd.Stderr = log
 	cmd.WaitDelay = pipeReleaseDelay
 
-	if err := cmd.Start(); err != nil {
+	// Started as the owner of its whole process tree, so a killed run takes
+	// every descendant with it. The environment stops its own tree first (a
+	// Linux tree a Windows Job Object cannot see), then the hard stop runs as
+	// for any run.
+	release, err := proc.Start()
+	if err != nil {
 		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
 	}
+	defer release()
 
 	// Idle watchdog: kill the process if it stops producing output for too long.
 	var idleKilled atomic.Bool

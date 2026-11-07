@@ -1,49 +1,56 @@
 package engine
 
-import (
-	"os/exec"
-	"runtime"
-	"sync"
-)
+import "sync"
 
-// sleepGuard keeps the Mac awake while runs are in flight by holding a
-// `caffeinate -i` assertion (prevents idle system sleep), so a task can't be
-// frozen mid-run when the machine would otherwise idle-sleep. It is
-// reference-counted, so concurrent runs share a single assertion. No-op off
-// macOS or if caffeinate can't start.
+// SleepInhibitor holds off idle system sleep. Inhibit takes the hold, and the
+// returned release gives it back. system.Hold satisfies it.
+type SleepInhibitor interface {
+	Inhibit() (release func(), err error)
+}
+
+// sleepGuard keeps the machine awake while runs are in flight. Without it, an
+// idle sleep can freeze a task mid-run. It is reference-counted, so concurrent
+// runs share a single hold. Without an inhibitor (see Engine.SetSleepInhibitor)
+// it does nothing. A hold that cannot be taken is tried again by the next run
+// that starts.
 type sleepGuard struct {
-	mu  sync.Mutex
-	n   int
-	cmd *exec.Cmd
+	mu        sync.Mutex
+	n         int
+	inhibitor SleepInhibitor
+	hold      func() // releases the current hold, nil when none is held
+}
+
+func (g *sleepGuard) setInhibitor(i SleepInhibitor) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.inhibitor = i
+}
+
+func (g *sleepGuard) current() SleepInhibitor {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.inhibitor
 }
 
 func (g *sleepGuard) acquire() {
-	if runtime.GOOS != "darwin" {
-		return
-	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.n++
-	if g.n == 1 && g.cmd == nil {
-		cmd := exec.Command("caffeinate", "-i")
-		if err := cmd.Start(); err == nil {
-			g.cmd = cmd
-			go func() { _ = cmd.Wait() }() // reap once it's killed
+	if g.hold == nil && g.inhibitor != nil {
+		if release, err := g.inhibitor.Inhibit(); err == nil {
+			g.hold = release
 		}
 	}
 }
 
 func (g *sleepGuard) release() {
-	if runtime.GOOS != "darwin" {
-		return
-	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.n > 0 {
 		g.n--
 	}
-	if g.n == 0 && g.cmd != nil {
-		_ = g.cmd.Process.Kill()
-		g.cmd = nil
+	if g.n == 0 && g.hold != nil {
+		g.hold()
+		g.hold = nil
 	}
 }

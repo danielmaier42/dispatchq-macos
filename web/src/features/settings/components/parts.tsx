@@ -2,6 +2,7 @@ import type {ReactNode} from 'react'
 import {Badge} from '@/components/ui/badge'
 import {Skeleton} from '@/components/ui/skeleton'
 import {Tooltip} from '@/components/ui/tooltip'
+import {keyCombo} from '@/lib/platform'
 
 // SectionTitle heads the content side with what the open section is for.
 export function SectionTitle({title, description}: {title: string; description: string}) {
@@ -27,7 +28,7 @@ export function SaveMode({mode, dirty}: {mode: 'instant' | 'draft'; dirty?: bool
       content={
         mode === 'instant'
           ? 'Changes here apply as soon as you make them'
-          : 'Typed changes wait for Save (⌘S)'
+          : `Typed changes wait for Save (${keyCombo('S')})`
       }
     >
       <span className="cursor-default text-[11.5px] text-subtle-foreground">

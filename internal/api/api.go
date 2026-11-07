@@ -88,8 +88,8 @@ type Deps struct {
 	// Holds reports, per task, why the scheduler's last pass did not start it
 	// although it was due, and since when it waits. Optional (engine.Engine.Holds).
 	Holds func() map[string]schedule.Hold
-	// NotifyStatus reports whether macOS will actually show notifications
-	// (notify.MacAuthorization). Optional; empty means "don't know".
+	// NotifyStatus reports whether the system will actually show notifications
+	// (notify.MacAuthorization on macOS, notify.Toast.Status on Windows). Optional; empty means "don't know".
 	NotifyStatus func() string
 	// WarmFileAccess reads the given directories so macOS raises its file-access
 	// consent prompt now — called right after a task is created or its folder
@@ -104,8 +104,9 @@ type Deps struct {
 	// Assistant is the chat that operates dispatchq. Optional; when nil the
 	// dashboard says the chat is not available.
 	Assistant *assistant.Service
-	// OSVersion reports the macOS product version (e.g. "15.6") for the
-	// environment line of a feedback issue. Optional; empty leaves it out.
+	// OSVersion names the operating system and its version (e.g. "macOS 15.6",
+	// "Windows 10.0 (build 26100)") for the environment line of a feedback
+	// issue. Optional; empty leaves it out.
 	OSVersion func() string
 	// Review checks a draft prompt against this machine before it is queued.
 	// Optional; when nil the dashboard shows no suggestions.
@@ -127,8 +128,9 @@ type Deps struct {
 	// Credits is what is known about the prepaid credit of accounts on an API
 	// key, and pings them when the Dashboard's Read now asks. Optional.
 	Credits CreditMonitor
-	// Uninstall opens DispatchQ's uninstaller in the macOS Installer (Settings >
-	// System). Optional; when nil the endpoint reports "not implemented".
+	// Uninstall opens DispatchQ's uninstaller (on macOS the macOS Installer,
+	// from Settings > System). Optional; when nil the endpoint reports "not
+	// implemented" and GET /api/host says uninstall is false.
 	Uninstall func(ctx context.Context) error
 }
 
@@ -168,6 +170,10 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/notifications/{id}/read", s.readNotification)
 	mux.HandleFunc("GET /api/providers", s.listProviders)
 	mux.HandleFunc("GET /api/providers/kinds", s.listProviderKinds)
+	mux.HandleFunc("GET /api/wsl", s.wslStatus)
+	mux.HandleFunc("GET /api/wsl/distros", s.wslDistros)
+	mux.HandleFunc("GET /api/wsl/users", s.wslUsers)
+	mux.HandleFunc("POST /api/wsl/detect", s.wslDetect)
 	mux.HandleFunc("GET /api/limits", s.listLimits)
 	mux.HandleFunc("GET /api/pools", s.listPools)
 	mux.HandleFunc("GET /api/pools/{id}", s.getPool)
@@ -194,6 +200,7 @@ func Handler(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/stats", s.getStats)
 	mux.HandleFunc("GET /api/health", s.getHealth)
 	mux.HandleFunc("GET /api/ping", s.getPing)
+	mux.HandleFunc("GET /api/host", s.getHost)
 	mux.HandleFunc("GET /api/update", s.getUpdate)
 	mux.HandleFunc("POST /api/update/check", s.checkUpdate)
 	mux.HandleFunc("POST /api/update/dismiss", s.dismissUpdate)
@@ -1442,7 +1449,12 @@ func (s *server) listModels(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, err)
 		return
 	}
-	models := ad.ListModels(r.Context(), resolved.Instance, provider.ExecProber{})
+	var models []provider.Model
+	// An instance whose environment cannot be reached has no suggestions; the
+	// readiness check is what explains why.
+	if host, err := s.d.Registry.HostFor(resolved.Instance); err == nil {
+		models = ad.ListModels(r.Context(), resolved.Instance, host)
+	}
 	if models == nil {
 		models = []provider.Model{}
 	}

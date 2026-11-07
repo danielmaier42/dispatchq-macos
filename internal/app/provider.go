@@ -7,7 +7,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
+	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
 	"github.com/danielmaier42/claudeq/internal/store"
@@ -50,7 +52,9 @@ func EnsureRunnable(ctx context.Context, set provider.Set, ch *provider.Checker,
 // AddProvider stores a new provider instance. The id must be free and the whole
 // configuration must still be valid afterwards.
 func AddProvider(s *store.Store, reg *provider.Registry, inst provider.Instance) error {
-	expandPaths(&inst)
+	if err := prepareExecution(reg, &inst); err != nil {
+		return err
+	}
 	normalizeFallback(&inst)
 	if err := provider.Validate(reg, inst); err != nil {
 		return err
@@ -77,13 +81,23 @@ func EditProvider(s *store.Store, reg *provider.Registry, id string, apply func(
 			return unknownProvider(cfg, id)
 		}
 		edited := provider.InstanceOf(cfg.Providers[idx])
+		before := edited.Execution
 		if err := apply(&edited); err != nil {
 			return err
 		}
 		if edited.ID != id {
 			return fmt.Errorf("provider id cannot be changed (%q -> %q)", id, edited.ID)
 		}
-		expandPaths(&edited)
+		if edited.Execution != before {
+			// Sessions, pending resumes and limit state belong to the
+			// environment they were made in; moving the instance would point
+			// them at an account that never saw them.
+			return fmt.Errorf("provider %q runs in %s; that cannot be changed. To run in another environment, add a new provider",
+				id, before.Label())
+		}
+		if err := prepareExecution(reg, &edited); err != nil {
+			return err
+		}
 		normalizeFallback(&edited)
 		if err := provider.Validate(reg, edited); err != nil {
 			return err
@@ -156,6 +170,59 @@ func SetDefaultProvider(s *store.Store, id string) error {
 		cfg.Settings.DefaultProvider = id
 		return nil
 	})
+}
+
+// wslSaveTimeout bounds the questions saving a WSL provider asks WSL.
+const wslSaveTimeout = 30 * time.Second
+
+// prepareExecution resolves a leading "~" in the instance's two paths before
+// anything is checked or stored. A native instance expands it with this
+// computer's home, without asking anything else. A WSL instance expands it
+// with the Linux user's home, and its distribution must be installed: that is
+// the one moment saving a provider starts wsl.exe, and only because the
+// operator chose Linux.
+func prepareExecution(reg *provider.Registry, inst *provider.Instance) error {
+	if inst.Execution.IsNative() {
+		expandPaths(inst)
+		return nil
+	}
+	if err := provider.CheckExecution(reg, inst.Execution); err != nil {
+		return fmt.Errorf("%w %q: %w", provider.ErrInvalidProvider, inst.ID, err)
+	}
+	svc := reg.WSL()
+	ctx, cancel := context.WithTimeout(context.Background(), wslSaveTimeout)
+	defer cancel()
+	distros, err := svc.Distros(ctx)
+	if err != nil {
+		return fmt.Errorf("listing the WSL distributions: %w", err)
+	}
+	known := false
+	for _, d := range distros {
+		known = known || d.Name == inst.Execution.Distro
+	}
+	if !known {
+		return fmt.Errorf("%w %q: WSL has no distribution called %q", provider.ErrInvalidProvider, inst.ID, inst.Execution.Distro)
+	}
+	if !hasTilde(inst.BinaryPath) && !hasTilde(inst.ConfigDir) {
+		return nil
+	}
+	found, err := svc.Detect(ctx, inst.Execution, inst.Kind)
+	if err != nil {
+		return fmt.Errorf("finding the Linux home directory: %w", err)
+	}
+	inst.BinaryPath = linuxHome(inst.BinaryPath, found.Home)
+	inst.ConfigDir = linuxHome(inst.ConfigDir, found.Home)
+	return nil
+}
+
+func hasTilde(p string) bool { return p == "~" || strings.HasPrefix(p, "~/") }
+
+// linuxHome expands "~" and "~/…" against a Linux home directory.
+func linuxHome(p, home string) string {
+	if !hasTilde(p) || home == "" {
+		return p
+	}
+	return path.Join(home, strings.TrimPrefix(p, "~"))
 }
 
 // expandPaths resolves a leading "~" in the instance's two paths before anything

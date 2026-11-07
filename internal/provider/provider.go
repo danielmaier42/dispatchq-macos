@@ -80,6 +80,9 @@ type Instance struct {
 	FallbackModel string `json:"fallback_model"`
 	// Enabled turns the instance off without removing it.
 	Enabled bool `json:"enabled"`
+	// Execution is the environment the instance runs in. The zero value is the
+	// daemon's own operating system (see [Execution]).
+	Execution Execution `json:"execution"`
 }
 
 // InstanceOf reads a stored provider entry as an instance.
@@ -95,6 +98,7 @@ func InstanceOf(p store.Provider) Instance {
 		FallbackProvider: p.FallbackProvider,
 		FallbackModel:    p.FallbackModel,
 		Enabled:          p.Enabled,
+		Execution:        executionOf(p.Execution),
 	}
 }
 
@@ -111,6 +115,7 @@ func (i Instance) Stored() store.Provider {
 		FallbackProvider: i.FallbackProvider,
 		FallbackModel:    i.FallbackModel,
 		Enabled:          i.Enabled,
+		Execution:        i.Execution.stored(),
 	}
 }
 
@@ -213,6 +218,10 @@ type Request struct {
 	// take such a setting. Empty leaves it to the harness. An adapter whose
 	// Capabilities do not claim ReasoningEffort ignores it.
 	ReasoningEffort string
+	// Host is the environment the run executes in, for an adapter that reads
+	// the instance's own files while building the command. Nil is the daemon's
+	// own operating system.
+	Host Host
 }
 
 // Command is the process invocation an adapter produced for a [Request].
@@ -378,14 +387,14 @@ type Adapter interface {
 	// the CLI cannot be located at all.
 	ResolveBinary(inst Instance) string
 	// CheckHealth reports whether the instance can run a job right now. It may
-	// look at the filesystem and ask the CLI cheap questions through p — its
+	// look at the instance's filesystem and ask the CLI cheap questions through h — its
 	// version, whether it is logged in — but must never consume model usage.
-	CheckHealth(ctx context.Context, inst Instance, p Prober) Health
+	CheckHealth(ctx context.Context, inst Instance, h Host) Health
 	// ListModels returns the models this instance suggests, best effort. It may
-	// ask the CLI through p, must never consume model usage, and returns its own
+	// ask the CLI through h, must never consume model usage, and returns its own
 	// fallback list rather than nothing when discovery fails — a provider whose
 	// catalog cannot be read is still perfectly able to run.
-	ListModels(ctx context.Context, inst Instance, p Prober) []Model
+	ListModels(ctx context.Context, inst Instance, h Host) []Model
 	// Command builds the invocation for a run on the given instance.
 	Command(inst Instance, req Request) (Command, error)
 	// InteractiveResumeCommand builds the command that reopens a finished run's

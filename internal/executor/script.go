@@ -19,18 +19,16 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/danielmaier42/claudeq/internal/procown"
 	"github.com/danielmaier42/claudeq/internal/provider"
 	"github.com/danielmaier42/claudeq/internal/store"
 )
 
-// defaultShell runs a script that does not name its own interpreter.
-const defaultShell = "/bin/sh"
-
 // RunsScripts reports whether this build can run a script job on goos (a
-// runtime.GOOS value). runScript needs /bin/sh or a #! line, which a native
-// Windows system has neither of, so there it reports false until a Windows
-// script runner exists. The assistant reads this instead of assuming.
-func RunsScripts(goos string) bool { return goos != "windows" }
+// runtime.GOOS value). Every system it builds for has a script runner: /bin/sh
+// or a #! line on Unix (script_unix.go), Windows PowerShell on Windows
+// (script_windows.go). The assistant reads this instead of assuming.
+func RunsScripts(goos string) bool { return goos != "" }
 
 // runScript executes a script task and classifies the outcome by its exit
 // status: zero is a success, anything else a failure. There is nothing to parse
@@ -48,13 +46,13 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	src := req.Task.Prompt
-	path := filepath.Join(dir, "job")
-	if err := os.WriteFile(path, []byte(src), 0o700); err != nil { //nolint:gosec // the script must be executable to honour its own shebang
+	path := filepath.Join(dir, scriptFileName)
+	if err := os.WriteFile(path, scriptFileBytes(src), 0o700); err != nil { //nolint:gosec // the script must be executable to honour its own shebang
 		return provider.Result{}, fmt.Errorf("write script: %w", err)
 	}
-	name, args := defaultShell, []string{path}
-	if strings.HasPrefix(src, "#!") {
-		name, args = path, nil
+	name, args, err := scriptCommand(path, src)
+	if err != nil {
+		return provider.Result{}, err
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -62,7 +60,6 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 	cmd := exec.CommandContext(runCtx, name, args...) //nolint:gosec // the script is the operator's own job definition
 	cmd.Dir = req.Task.WorkingDir
 	cmd.Env = e.runEnv(req, nil) // lets the script queue agent jobs (self-queue)
-	configureProcessGroup(cmd)   // so a killed run takes its whole process tree with it
 	// What the jobs it waited for answered arrives on stdin, where a script can
 	// read it. Without dependencies that is the empty string, which closes stdin
 	// immediately — an unattended run must never sit waiting for input.
@@ -80,9 +77,11 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 	cmd.Stderr = live
 	cmd.WaitDelay = pipeReleaseDelay // a daemon the script left behind must not hold the run open
 
-	if err := cmd.Start(); err != nil {
+	release, err := procown.Start(cmd, nil) // so a killed run takes its whole process tree with it
+	if err != nil {
 		return provider.Result{}, fmt.Errorf("start script: %w", err)
 	}
+	defer release()
 
 	var idleKilled atomic.Bool
 	if req.IdleTimeout > 0 {
@@ -197,4 +196,16 @@ func (t *tailBuffer) String() string {
 		b = b[1:]
 	}
 	return string(b)
+}
+
+// withUTF8BOM returns src as UTF-8 that starts with a byte order mark, adding
+// one only when src does not already begin with it. Windows PowerShell 5.1
+// reads a .ps1 file without a BOM in the system's ANSI code page, which turns
+// every non-ASCII character of a script job into mojibake.
+func withUTF8BOM(src string) []byte {
+	const bom = "\uFEFF"
+	if strings.HasPrefix(src, bom) {
+		return []byte(src)
+	}
+	return []byte(bom + src)
 }

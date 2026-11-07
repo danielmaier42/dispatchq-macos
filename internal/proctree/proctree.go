@@ -1,49 +1,28 @@
 //go:build unix
 
-package executor
+// Package proctree finds and stops a process's whole descendant tree on Unix
+// systems. The daemon uses it for a run's harness on macOS; the WSL helper
+// (cmd/dispatchq-wsl) uses the same code for the tree it owns inside Linux.
+package proctree
 
 import (
 	"context"
-	"os/exec"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 )
-
-// configureProcessGroup puts the CLI in its own process group and, on context
-// cancellation (a user cancel, the idle watchdog, shutdown), tears down its
-// whole descendant tree.
-//
-// Killing the harness's own process group is not enough. The Codex spike
-// measured it: a tool process Codex starts lands in a *different* process group,
-// so killing the parent's group left `/bin/sleep` running, reparented to PID 1.
-// A cancelled run that leaves work behind is worse than one that never started,
-// so the descendants are enumerated and their groups killed leaf-first, then the
-// harness's own group, and what is left is checked.
-func configureProcessGroup(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		killTree(cmd.Process.Pid)
-		return cmd.Process.Kill()
-	}
-}
 
 // killTreeTimeout bounds the whole teardown, including the check afterwards. A
 // cancel has to return promptly even when the process table is being awkward.
 const killTreeTimeout = 5 * time.Second
 
-// killTree terminates root, every process descended from it, and every process
+// KillTree terminates root, every process descended from it, and every process
 // group any of them belongs to.
 //
 // The order is leaf-first, so a parent cannot spawn a replacement for a child
 // that has just been killed. Groups are collected before anything is signalled,
 // because a dying process disappears from the table and would take the record of
 // its group with it.
-func killTree(root int) {
+func KillTree(root int) {
 	ctx, cancel := context.WithTimeout(context.Background(), killTreeTimeout)
 	defer cancel()
 
@@ -81,33 +60,6 @@ func killTree(root int) {
 // procEntry is one row of the process table dispatchq cares about.
 type procEntry struct {
 	pid, ppid, pgid int
-}
-
-// processSnapshot reads the process table. It shells out to `ps` because there
-// is no portable syscall for "list every process", and the alternative — walking
-// /proc — does not exist on macOS. A snapshot that cannot be taken yields
-// nothing, and the caller falls back to killing the harness's own group, which
-// is what dispatchq did before.
-func processSnapshot(ctx context.Context) []procEntry {
-	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,pgid=").Output()
-	if err != nil {
-		return nil
-	}
-	var entries []procEntry
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 3 {
-			continue
-		}
-		pid, err1 := strconv.Atoi(fields[0])
-		ppid, err2 := strconv.Atoi(fields[1])
-		pgid, err3 := strconv.Atoi(fields[2])
-		if err1 != nil || err2 != nil || err3 != nil {
-			continue
-		}
-		entries = append(entries, procEntry{pid: pid, ppid: ppid, pgid: pgid})
-	}
-	return entries
 }
 
 // descendants groups the processes below root by depth: index 0 holds root's

@@ -18,12 +18,14 @@ import (
 	"github.com/danielmaier42/claudeq/internal/app"
 	"github.com/danielmaier42/claudeq/internal/clock"
 	"github.com/danielmaier42/claudeq/internal/engine"
+	"github.com/danielmaier42/claudeq/internal/execenv"
 	"github.com/danielmaier42/claudeq/internal/executor"
 	"github.com/danielmaier42/claudeq/internal/limit"
 	"github.com/danielmaier42/claudeq/internal/provider"
 	"github.com/danielmaier42/claudeq/internal/provider/adapters"
 	"github.com/danielmaier42/claudeq/internal/randid"
 	"github.com/danielmaier42/claudeq/internal/store"
+	"github.com/danielmaier42/claudeq/internal/system"
 	"github.com/danielmaier42/claudeq/internal/task"
 	"github.com/danielmaier42/claudeq/internal/version"
 )
@@ -255,7 +257,7 @@ func cmdAdd(st *store.Store, args []string) error {
 	}
 
 	t := task.Task{
-		ID: *id, Name: *name, Kind: task.Kind(s.kind), Prompt: *prompt, WorkingDir: *dir,
+		ID: *id, Name: *name, Kind: task.Kind(s.kind), Prompt: *prompt, WorkingDir: fromCaller(*dir),
 		Trigger: task.Trigger(*trig), Cron: *cronArg, Enabled: true,
 		Provider: s.provider, Pool: s.pool, Model: s.model, ReasoningEffort: s.reasoning,
 		Group:    strings.TrimSpace(s.group),
@@ -300,7 +302,20 @@ func cmdAdd(st *store.Store, args []string) error {
 // newProviderChecker builds the readiness checker the task commands use. It is
 // a variable so tests can answer for a harness that is not installed on the
 // machine running them.
-var newProviderChecker = func() *provider.Checker { return provider.NewChecker(adapters.Default()) }
+var newProviderChecker = func() *provider.Checker { return provider.NewChecker(cliRegistry()) }
+
+// cliRegistry is the adapter registry of a CLI command. DispatchQ for Windows
+// adds its WSL service, which starts nothing unless a WSL provider is
+// configured; everywhere else the registry knows native providers only.
+func cliRegistry() *provider.Registry {
+	reg := adapters.Default()
+	if home, err := store.DefaultHome(); err == nil {
+		if svc := execenv.Platform(home); svc != nil {
+			reg.SetWSL(svc)
+		}
+	}
+	return reg
+}
 
 // ensureRunnable refuses to file work for a provider (or a pool none of whose
 // members) can run it. The point of the queue is unattended execution, so a
@@ -500,7 +515,7 @@ func buildQueuedTask(parentJSON, id string, o queueOpts, now time.Time) (task.Ta
 	t.WorkflowID = os.Getenv(executor.EnvWorkflowID)
 	t.OriginID, t.OriginName = originID, originName
 	if o.dir != "" {
-		t.WorkingDir = o.dir
+		t.WorkingDir = fromCaller(o.dir)
 	}
 	if t.Permissions == "" {
 		t.Permissions = task.PermissionsDefault
@@ -575,7 +590,7 @@ func cmdPublish(st *store.Store, args []string) error {
 	src := callingRun()
 	now := time.Now()
 	in := app.PublishInput{
-		SourcePath:  *file,
+		SourcePath:  fromCaller(*file),
 		Title:       *title,
 		Description: *desc,
 		TaskID:      src.taskID,
@@ -724,16 +739,25 @@ func cmdMove(st *store.Store, args []string) error {
 	return cmdList(st, nil)
 }
 
+// newRunNowEngine is the engine of a manual run. It gets the platform's sleep
+// inhibitor like the daemon's engine, so a long `dispatchq run-now` is not
+// frozen by idle sleep when the user walks away.
+func newRunNowEngine(st *store.Store, c clock.Clock, queueBin string) *engine.Engine {
+	registry := cliRegistry()
+	eng := engine.New(st, limit.NewGates(c), &executor.Executor{
+		Registry: registry, Home: st.Home(), QueueBin: queueBin,
+	}, c, provider.NewChecker(registry))
+	eng.SetSleepInhibitor(system.DefaultSleepInhibitor())
+	return eng
+}
+
 func cmdRunNow(st *store.Store, id string) error {
 	c := clock.Real{}
 	// Give the manual run the same self-queue context the daemon provides, so a
 	// task tested with run-now can queue follow-up work too. This process is the
 	// dispatchq CLI, so its own path is the queue binary.
 	self, _ := os.Executable()
-	registry := adapters.Default()
-	eng := engine.New(st, limit.NewGates(c), &executor.Executor{
-		Registry: registry, Home: st.Home(), QueueBin: self,
-	}, c, provider.NewChecker(registry))
+	eng := newRunNowEngine(st, c, self)
 	fmt.Printf("running task %q now...\n", id)
 	started := c.Now()
 	if err := eng.RunTaskNow(context.Background(), id); err != nil {

@@ -233,6 +233,12 @@ type Availability struct {
 	// hop that cannot take the work is stepped over, which substitutes nothing,
 	// because it is not the provider the task named. Nil accepts every hop.
 	CanTakeWork func(inst Instance) bool
+	// Reaches reports why an instance cannot work in the task's folder: a
+	// Linux (WSL) instance and a folder inside another Linux system, say. A
+	// hop or pool member that cannot is stepped over like one that is not
+	// ready, so a rate limit never sends work to an environment that cannot
+	// open its folder. Nil reaches every folder.
+	Reaches func(inst Instance) error
 
 	// Limits, Running and Now are what a pool ranks its members by (see
 	// RankPool). Nil Limits ranks every member as unread; nil Now is the zero
@@ -292,6 +298,8 @@ func (a Availability) rankInputs() RankInputs {
 		switch {
 		case a.OutOfAllowance != nil && a.OutOfAllowance(inst.ID):
 			return false, "waiting for its rate limit"
+		case a.Reaches != nil && a.Reaches(inst) != nil:
+			return false, "can't reach this task's folder"
 		case !a.usable(inst):
 			return false, "cannot run right now"
 		}
@@ -347,6 +355,9 @@ func (a Availability) readUsedUp(inst Instance) bool {
 // its readiness says it could run.
 func (a Availability) usable(inst Instance) bool {
 	if !inst.Enabled {
+		return false
+	}
+	if a.Reaches != nil && a.Reaches(inst) != nil {
 		return false
 	}
 	return a.CanTakeWork == nil || a.CanTakeWork(inst)
@@ -413,6 +424,9 @@ func (s Set) resolvePool(sel Selection, av Availability) (Resolved, error) {
 		// rest rank as unable to, saying why.
 		base := in
 		in.Usable = func(inst Instance) (bool, string) {
+			if ok, why := base.Usable(inst); !ok {
+				return false, why
+			}
 			if sc := ScoreProvider(inst, base); !sc.Spare(sel.MinUrgency) {
 				return false, spareNote(sc, sel.MinUrgency)
 			}

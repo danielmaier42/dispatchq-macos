@@ -1,8 +1,10 @@
 // Package update checks GitHub for newer dispatchq releases and downloads the
-// installer package, so the app can offer an in-app "Check for updates" flow
-// plus a background hourly check (see the app's Settings pane). It talks only to
-// GitHub's public releases API and downloads the release's own signed-off `.pkg`
-// asset — nothing else leaves the machine (NFA-04).
+// installer, so the app can offer an in-app "Check for updates" flow plus a
+// background hourly check (see the app's Settings pane). It talks only to
+// GitHub's public releases API and downloads the release's own installer asset
+// for this system (a `.pkg` on macOS, an `.exe` on Windows); nothing else
+// leaves the machine (NFA-04). Opening the downloaded installer is the
+// platform's job, handed in with [WithOpener].
 package update
 
 import (
@@ -27,10 +29,12 @@ type Release struct {
 	Version string `json:"version"`
 	// Tag is the original git tag, e.g. "v0.1.4".
 	Tag string `json:"tag"`
-	// PkgURL is the browser download URL of the release's `.pkg` asset, empty if
-	// the release has no installer attached.
+	// PkgURL is the browser download URL of the release's installer for this
+	// system (see [SelectInstaller]), empty if the release has none. The name
+	// predates the Windows installers and is kept for compatibility.
 	PkgURL string `json:"pkg_url"`
-	// PkgName is the asset file name, e.g. "dispatchq-0.1.4.pkg".
+	// PkgName is the installer's file name, e.g. "dispatchq-2.1.0-macos-arm64.pkg"
+	// or "dispatchq-2.1.0-windows-x64-beta.exe".
 	PkgName string `json:"pkg_name"`
 	// Notes is the release body (GitHub-flavoured markdown).
 	Notes string `json:"notes"`
@@ -47,15 +51,25 @@ type Fetcher interface {
 	Releases(ctx context.Context) ([]Release, error)
 }
 
-// Latest returns the highest-versioned release in the list, or nil if empty.
-// GitHub returns releases newest-first, but we pick by version so an
-// out-of-order publish can't hide a newer version.
+// Latest returns the highest-versioned release that has an installer for this
+// system, or, when none has, the highest-versioned release at all; nil if the
+// list is empty. A newer release published without this system's installer
+// thus never hides an older one that can be installed. GitHub returns releases
+// newest-first, but we pick by version so an out-of-order publish can't hide a
+// newer version.
 func Latest(releases []Release) *Release {
-	var latest *Release
+	var latest, installable *Release
 	for i := range releases {
-		if latest == nil || IsNewer(releases[i].Version, latest.Version) {
-			latest = &releases[i]
+		r := &releases[i]
+		if latest == nil || IsNewer(r.Version, latest.Version) {
+			latest = r
 		}
+		if r.PkgURL != "" && (installable == nil || IsNewer(r.Version, installable.Version)) {
+			installable = r
+		}
+	}
+	if installable != nil {
+		return installable
 	}
 	return latest
 }

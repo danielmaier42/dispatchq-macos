@@ -59,7 +59,7 @@ export function WhereSection({
             className="font-mono text-[12.5px]"
             onChange={(e) => onChange(e.target.value)}
           />
-          <Tooltip content="Choose a folder in Finder">
+          <Tooltip content="Choose a folder">
             <Button type="button" onClick={choose} loading={choosing} aria-label="Choose folder">
               {!choosing && <FolderOpen />}
               Choose…

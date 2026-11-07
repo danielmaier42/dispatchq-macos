@@ -8,6 +8,7 @@ import {Meter} from '@/components/ui/progress'
 import {toast} from '@/components/ui/toaster'
 import {errorMessage, get, post} from '@/lib/api'
 import {invalidate, keys} from '@/lib/queries'
+import {keyCombo} from '@/lib/platform'
 import type {RenameApplyRequest, RenameApplyResult, RenameCheck} from '@/lib/types'
 import {useWhatsNew, useWhatsNewStatus, whatsNewKey} from './store'
 
@@ -68,9 +69,9 @@ export function WhatsNewDialog() {
             works through a link, but it is deprecated and goes away in a later release.
           </Item>
           <Item icon={<Palette />} title="A complete redesign">
-            The app was rebuilt from the ground up: a Dashboard overview, a command palette (⌘K), shortcuts
-            for every view (⌘1 to ⌘8), a slide-in task panel, a new log view and artifact viewer, and an
-            accent colour that follows macOS or can be pinned.
+            The app was rebuilt from the ground up: a Dashboard overview, a command palette ({keyCombo('K')}),
+            shortcuts for every view ({keyCombo('1')} to {keyCombo('8')}), a slide-in task panel, a new log
+            view and artifact viewer, and an accent colour that follows macOS or can be pinned.
           </Item>
           <Item icon={<Unlock />} title="Every beta feature is public">
             Codex, opencode, adding your own providers and provider pools are no longer behind the beta

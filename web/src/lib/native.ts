@@ -13,6 +13,9 @@ export interface NotificationTarget {
 declare global {
   interface Window {
     cqOpenExternal?: (url: string) => void
+    // Opens the notification settings of the OS the window runs on; rejects
+    // with the reason when the OS refused.
+    cqOpenNotificationSettings?: () => Promise<void>
     cqSetAppearance?: (mode: string) => void
     cqReadAccent?: () => Promise<string>
     cqTakePendingNotification?: () => Promise<NotificationTarget | null>

@@ -20,7 +20,7 @@ type limitsStub struct {
 	reads *atomic.Int32
 }
 
-func (s limitsStub) ReadLimits(context.Context, provider.Instance) (provider.LimitReading, error) {
+func (s limitsStub) ReadLimits(context.Context, provider.Instance, provider.Host) (provider.LimitReading, error) {
 	n := s.reads.Add(1)
 	return provider.LimitReading{Windows: []provider.LimitWindow{{ID: "week", Label: "Week", UsedPercent: float64(n)}}}, nil
 }
@@ -108,7 +108,7 @@ func TestListLimitsNamesAUsedUpCreditBalance(t *testing.T) {
 // apiKeyStub is a harness on an API key: no plan windows to read.
 type apiKeyStub struct{ stubAdapter }
 
-func (apiKeyStub) ReadLimits(context.Context, provider.Instance) (provider.LimitReading, error) {
+func (apiKeyStub) ReadLimits(context.Context, provider.Instance, provider.Host) (provider.LimitReading, error) {
 	return provider.LimitReading{}, provider.ErrNoPlanLimits
 }
 

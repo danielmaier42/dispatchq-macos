@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
@@ -19,6 +18,11 @@ import (
 func (a *Adapter) ResolveBinary(inst provider.Instance) string {
 	if inst.BinaryPath != "" {
 		return inst.BinaryPath
+	}
+	if !inst.Execution.IsNative() {
+		// Detection looks at this computer. An instance that runs in Linux is
+		// found on its own login PATH there, when it is started.
+		return BinaryName
 	}
 	return a.DetectBinary()
 }
@@ -34,9 +38,9 @@ type authStatus struct {
 // CheckHealth implements provider.Adapter. It costs no model usage: it looks at
 // the filesystem, asks the CLI for its version, and asks whether anyone is
 // logged in.
-func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p provider.Prober) provider.Health {
-	if h, ok := a.checkConfigDir(inst); !ok {
-		return h
+func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, h provider.Host) provider.Health {
+	if bad, ok := provider.CheckConfigDir(ctx, h, inst); !ok {
+		return bad
 	}
 
 	bin := a.ResolveBinary(inst)
@@ -47,7 +51,7 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 				"Settings → Providers.",
 		}
 	}
-	if err := executableFile(bin); err != nil {
+	if err := executableFile(ctx, h, bin); err != nil {
 		return provider.Health{
 			State:  provider.HealthNotInstalled,
 			Binary: bin,
@@ -60,7 +64,7 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 	// a busy machine. Reporting that as "not installed" would be a verdict —
 	// KnownUnready, so follow-up tasks are not even filed for the provider —
 	// where dispatchq in fact knows nothing yet.
-	version, err := p.Probe(ctx, a.probeCommand(inst, bin, "--version"))
+	version, err := h.Probe(ctx, a.probeCommand(inst, bin, "--version"))
 	if err != nil {
 		return provider.Health{
 			State:  provider.HealthCheckFailed,
@@ -74,7 +78,7 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 	// logged in. Reading the exit code first would report a logged-out account as
 	// "could not be checked" — vaguer than the truth, and weak enough that new
 	// tasks would be filed for a provider that cannot run them.
-	out, probeErr := p.Probe(ctx, a.probeCommand(inst, bin, "auth", "status", "--json"))
+	out, probeErr := h.Probe(ctx, a.probeCommand(inst, bin, "auth", "status", "--json"))
 	var st authStatus
 	if err := decodeStatus(out, &st); err != nil {
 		reason := "Claude Code reported its login status in a format dispatchq does not understand."
@@ -103,30 +107,6 @@ func (a *Adapter) CheckHealth(ctx context.Context, inst provider.Instance, p pro
 	}
 }
 
-// checkConfigDir reports the instance's own settings as invalid when the
-// configuration directory it names cannot be used. An unreadable account
-// directory is a configuration problem, not a missing installation, and saying
-// so is what tells the operator where to look.
-func (a *Adapter) checkConfigDir(inst provider.Instance) (provider.Health, bool) {
-	if inst.ConfigDir == "" {
-		return provider.Health{}, true
-	}
-	fi, err := os.Stat(inst.ConfigDir)
-	switch {
-	case err != nil:
-		return provider.Health{
-			State:  provider.HealthInvalidConfiguration,
-			Reason: fmt.Sprintf("The configuration directory %s is not accessible: %s.", inst.ConfigDir, redact(err.Error())),
-		}, false
-	case !fi.IsDir():
-		return provider.Health{
-			State:  provider.HealthInvalidConfiguration,
-			Reason: fmt.Sprintf("The configuration directory %s is not a directory.", inst.ConfigDir),
-		}, false
-	}
-	return provider.Health{}, true
-}
-
 // probeCommand builds a readiness probe for this instance — same binary, same
 // configuration directory as a run, so the answer is about the account the jobs
 // would actually use.
@@ -144,16 +124,12 @@ func (a *Adapter) env(inst provider.Instance) []string {
 	return inst.Environ(base...)
 }
 
-// executableFile reports why a path cannot be run, or nil when it can.
-func executableFile(p string) error {
-	fi, err := os.Stat(p)
-	switch {
-	case err != nil:
+// executableFile reports why a path cannot be run, or nil when it can. The
+// instance's host applies the rule of its platform; only the reason is
+// redacted here.
+func executableFile(ctx context.Context, h provider.Host, p string) error {
+	if err := h.Executable(ctx, p); err != nil {
 		return fmt.Errorf("%s", redact(err.Error()))
-	case fi.IsDir():
-		return fmt.Errorf("it is a directory")
-	case fi.Mode()&0o111 == 0:
-		return fmt.Errorf("it is not executable")
 	}
 	return nil
 }
@@ -205,13 +181,13 @@ var quotedRe = regexp.MustCompile(`'([a-zA-Z0-9-]+)'`)
 // alias this binary's own `--help` advertises for --model. A binary that cannot
 // be asked still yields the known tiers, because a model list is a suggestion
 // and a provider whose catalog cannot be read runs perfectly well.
-func (a *Adapter) ListModels(ctx context.Context, inst provider.Instance, p provider.Prober) []provider.Model {
+func (a *Adapter) ListModels(ctx context.Context, inst provider.Instance, h provider.Host) []provider.Model {
 	return a.catalog.Lookup(inst, func() ([]provider.Model, bool) {
 		bin := a.ResolveBinary(inst)
 		if bin == "" {
 			return orderAliases(nil), false
 		}
-		out, err := p.Probe(ctx, a.probeCommand(inst, bin, "--help"))
+		out, err := h.Probe(ctx, a.probeCommand(inst, bin, "--help"))
 		if err != nil {
 			return orderAliases(nil), false
 		}

@@ -49,7 +49,7 @@ export function AccentPicker() {
     <div role="radiogroup" aria-label="Accent colour" className="flex flex-wrap items-start gap-x-2 gap-y-3">
       <Swatch
         label="System"
-        tip={`Follow the Mac's accent colour${systemAccent ? ` (now ${systemAccent})` : ''}`}
+        tip={`Follow the system accent colour${systemAccent ? ` (now ${systemAccent})` : ''}`}
         color={systemAccent}
         selected={!accent}
         onSelect={() => pick('')}

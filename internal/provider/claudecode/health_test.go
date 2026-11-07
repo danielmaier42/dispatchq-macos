@@ -5,10 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 // fakeProber answers the adapter's probes from a script keyed by the first
@@ -55,7 +57,7 @@ func TestCheckHealthReady(t *testing.T) {
 	p := loggedIn()
 	h := newAdapter("").CheckHealth(context.Background(), provider.Instance{
 		ID: "claude", Kind: provider.KindClaudeCode, BinaryPath: bin, Enabled: true,
-	}, p)
+	}, provider.NativeHost{Prober: p})
 
 	if h.State != provider.HealthReady {
 		t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
@@ -78,7 +80,7 @@ func TestCheckHealthNeverLeaksAccountDetails(t *testing.T) {
 	p := loggedIn()
 	h := newAdapter("").CheckHealth(context.Background(), provider.Instance{
 		ID: "claude", Kind: provider.KindClaudeCode, BinaryPath: fakeBinary(t), Enabled: true,
-	}, p)
+	}, provider.NativeHost{Prober: p})
 	for _, field := range []string{h.Reason, h.Detail} {
 		if strings.Contains(field, "me@example.com") {
 			t.Fatalf("the verdict carries the account's email: %q", field)
@@ -194,7 +196,7 @@ func TestCheckHealthUnreadyStates(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newAdapter(tc.detect).CheckHealth(context.Background(), tc.inst(t), tc.prober)
+			h := newAdapter(tc.detect).CheckHealth(context.Background(), tc.inst(t), provider.NativeHost{Prober: tc.prober})
 			if h.State != tc.want {
 				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
 			}
@@ -213,7 +215,7 @@ func TestCheckHealthProbesTheInstancesOwnAccount(t *testing.T) {
 	p := loggedIn()
 	newAdapter("").CheckHealth(context.Background(), provider.Instance{
 		ID: "claude-secondary", BinaryPath: fakeBinary(t), ConfigDir: dir, Enabled: true,
-	}, p)
+	}, provider.NativeHost{Prober: p})
 	for _, c := range p.cmds {
 		if len(c.Env) != 1 || c.Env[0] != ConfigDirEnv+"="+dir {
 			t.Fatalf("probe env = %v, want %s pointing at the instance's directory", c.Env, ConfigDirEnv)
@@ -230,7 +232,7 @@ func TestReadinessFallsBackToDetection(t *testing.T) {
 	if got := a.ResolveBinary(inst); got != bin {
 		t.Fatalf("ResolveBinary = %q, want the detected binary", got)
 	}
-	if h := a.CheckHealth(context.Background(), inst, loggedIn()); h.State != provider.HealthReady {
+	if h := a.CheckHealth(context.Background(), inst, provider.NativeHost{Prober: loggedIn()}); h.State != provider.HealthReady {
 		t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
 	}
 }
@@ -271,9 +273,58 @@ func TestCheckHealthToleratesNoiseAroundTheStatus(t *testing.T) {
 			}}
 			h := newAdapter("").CheckHealth(context.Background(), provider.Instance{
 				ID: "claude", BinaryPath: fakeBinary(t), Enabled: true,
-			}, p)
+			}, provider.NativeHost{Prober: p})
 			if h.State != provider.HealthReady {
 				t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
+			}
+		})
+	}
+}
+
+// TestCheckHealthAppliesThePlatformExecutableRule drives the readiness check
+// through both platforms' rules. Windows reports no execute bit on any file, so
+// a real claude.exe used to be refused as "not executable" while the CLI ran
+// fine from a terminal.
+func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
+	file := func(name string, mode os.FileMode) func(t *testing.T) string {
+		return func(t *testing.T) string {
+			p := filepath.Join(t.TempDir(), name)
+			if err := os.WriteFile(p, []byte("x"), mode); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+			return p
+		}
+	}
+	tests := []struct {
+		name   string
+		goos   string
+		path   func(t *testing.T) string
+		want   provider.HealthState
+		reason string
+	}{
+		{name: "windows exe without execute bits", goos: "windows", path: file("claude.exe", 0o600), want: provider.HealthReady},
+		{name: "windows npm cmd shim", goos: "windows", path: file("claude.CMD", 0o600), want: provider.HealthReady},
+		{name: "windows bat launcher", goos: "windows", path: file("claude.bat", 0o600), want: provider.HealthReady},
+		{name: "windows text file", goos: "windows", path: file("claude.txt", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows extensionless file", goos: "windows", path: file("claude", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows directory", goos: "windows", path: func(t *testing.T) string { return t.TempDir() }, want: provider.HealthNotInstalled, reason: "directory"},
+		{name: "windows missing file", goos: "windows", path: func(t *testing.T) string { return filepath.Join(t.TempDir(), "claude.exe") }, want: provider.HealthNotInstalled, reason: "cannot be run"},
+		{name: "unix exe name without execute bits", goos: "linux", path: file("claude.exe", 0o644), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "unix file with execute bits", goos: "darwin", path: file("claude", 0o755), want: provider.HealthReady},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && tc.goos != "windows" && tc.want == provider.HealthReady {
+				t.Skip("Windows file metadata cannot represent Unix execute bits")
+			}
+			bin := tc.path(t)
+			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
+			h := newAdapter("").CheckHealth(context.Background(), provider.Instance{ID: "claude", Kind: provider.KindClaudeCode, BinaryPath: bin, Enabled: true}, provider.NativeHost{Prober: loggedIn()})
+			if h.State != tc.want {
+				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
+			}
+			if !strings.Contains(h.Reason, tc.reason) {
+				t.Fatalf("reason = %q, want it to mention %q", h.Reason, tc.reason)
 			}
 		})
 	}

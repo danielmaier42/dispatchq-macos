@@ -73,3 +73,104 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  # Beta test downloads of the Windows edition: both installers, built from the
+  # commit under test by scripts/build-windows.sh exactly as on a maintainer's
+  # Mac, and uploaded as workflow artifacts of this run. Nothing is released or
+  # published here; the tag-driven release workflow builds the same installers
+  # for every release.
+  windows-installer:
+    name: windows-installer (${{ matrix.label }})
+    # The script cross-compiles from macOS: Homebrew's mingw-w64 for x64 and the
+    # pinned official llvm-mingw macOS build for ARM64, the toolchains local
+    # builds use. Both payloads are native to their target (cgo WebView2 window
+    # included); only the NSIS stub is x86.
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            label: x64
+          - arch: arm64
+            label: arm64
+    env:
+      # A pull request builds its head commit, not GitHub's merge preview, so the
+      # artifact matches a commit on the branch testers can name.
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+          check-latest: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install build tools
+        run: |
+          tools="makensis librsvg imagemagick"
+          if [ "${{ matrix.arch }}" = amd64 ]; then tools="$tools mingw-w64"; fi
+          # shellcheck disable=SC2086 # word splitting is intended
+          brew install $tools
+
+      # The ARM64 toolchain is the llvm-mingw release pinned in the script; the
+      # script verifies the download's checksum, the cache only saves the fetch.
+      - name: Read the pinned llvm-mingw release
+        if: matrix.arch == 'arm64'
+        id: llvm
+        run: echo "release=$(sed -n 's/^LLVM_MINGW_RELEASE=//p' scripts/build-windows.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache llvm-mingw
+        if: matrix.arch == 'arm64'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/windows/cache/toolchains
+          key: llvm-mingw-${{ steps.llvm.outputs.release }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build the installer
+        id: build
+        run: |
+          short="${SOURCE_SHA:0:7}"
+          if [ -n "$PR_NUMBER" ]; then
+            version="dev-pr${PR_NUMBER}-${short}"
+          else
+            version="dev-${GITHUB_REF_NAME//\//-}-${short}"
+          fi
+          out="dist/windows-ci-${{ matrix.label }}"
+          DISPATCHQ_VERSION="$version" scripts/build-windows.sh --arch "${{ matrix.arch }}" "$out"
+          {
+            echo "version=$version"
+            echo "out=$out"
+          } >> "$GITHUB_OUTPUT"
+
+      # The script already refuses a payload of the wrong machine type; this
+      # checks the result independently, as the release workflow does.
+      - name: Verify the installer
+        env:
+          OUT: ${{ steps.build.outputs.out }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ] || { echo "::error::checked out $(git rev-parse HEAD), expected $SOURCE_SHA"; exit 1; }
+          scripts/windows/verify-build.sh "${{ matrix.arch }}" "$VERSION" "$SOURCE_SHA" "$OUT"
+          cat "$OUT/BUILD-INFO.json"
+
+      - name: Upload the beta installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dispatchq-${{ steps.build.outputs.version }}-windows-${{ matrix.label }}-beta
+          path: ${{ steps.build.outputs.out }}/
+          if-no-files-found: error
+          retention-days: 14

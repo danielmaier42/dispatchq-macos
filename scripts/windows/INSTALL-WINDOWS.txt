@@ -1,0 +1,121 @@
+DispatchQ for Windows (beta)
+============================
+
+What this is
+  A first native Windows edition of DispatchQ: the same dashboard and queue as the
+  Mac app, in a WebView2 window, with the same daemon running in your signed-in
+  session. It has had little testing on real Windows machines. Keep the macOS app
+  as the reference. Releases attach it as a beta next to the macOS installer, with
+  the same version number; "beta" is only in the file name.
+
+Requirements
+  - Windows 11 on an x64 PC: the x64 installer.
+    Windows 11 on an ARM PC (for example Snapdragon): the ARM64 installer. The x64
+    installer also works there, emulated. Windows 10 may work, it is untested.
+    The ARM64 installer refuses to run on a non-ARM PC.
+  - Microsoft Edge WebView2 Runtime. Windows 11 includes it. The installer checks
+    it the way the window finds it (dispatchqd webview2-status) and runs the bundled
+    bootstrapper only when the check does not confirm a usable runtime. The check
+    reads the registry and loads the runtime's library the way the window does,
+    in a separate process it ends after 20 seconds (setup ends the whole check
+    after a minute). If the runtime is still not confirmed usable afterwards (no
+    internet, blocked by policy, a damaged runtime, a check that did not finish),
+    the installer says so with the bootstrapper's result (decimal and hex), what
+    the check found and the download link, and finishes: the background service
+    and the dispatchq command work. Setup does not repair a damaged runtime.
+    The check's findings are also in the installer's "Show details" list; run
+    dispatchqd webview2-status in a new terminal to repeat it (it changes nothing
+    and prints the runtime folders with your profile folder shortened).
+  - A provider CLI you already use: Claude Code, Codex or OpenCode, installed natively
+    and signed in. WSL is not needed. Optionally a provider can run inside a WSL 2
+    Linux distribution instead (see "Providers in WSL" below); that CLI is installed
+    and signed in inside Linux.
+
+Install
+  1. Double-click dispatchq-<version>-windows-<x64|arm64>-beta.exe. No administrator rights
+     are needed; it installs for your user under %LOCALAPPDATA%\Programs\DispatchQ.
+  2. Windows SmartScreen will warn that the publisher is unknown (the installer is not
+     signed). Choose "More info", then "Run anyway".
+  3. Finish the wizard. The background service starts and the DispatchQ window opens.
+
+What gets installed
+  - dispatchqapp.exe   the window
+  - dispatchqd.exe     the background service; starts at every sign-in (registry value
+                       HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DispatchQ)
+  - dispatchq.exe      the command line; the install folder is added to your user PATH
+  - wsl\dispatchq-wsl-linux-amd64, wsl\dispatchq-wsl-linux-arm64
+                       Linux helpers, started only for a provider set to run in WSL
+  - Start menu folder DispatchQ with the app and the uninstaller
+  - Your data lives in %APPDATA%\dispatchq (tasks, history, settings, logs).
+    The daemon's own log is %APPDATA%\dispatchq\dispatchqd.log.
+
+Providers in WSL (optional, untested on real WSL)
+  Settings > Providers > Add provider > Runs in: Linux (WSL). The choice is fixed once the
+  provider exists; a Windows provider and a Linux provider of the same CLI can sit side by
+  side. Nothing starts wsl.exe unless such a provider exists or you open that choice.
+  Check on the PC:
+  1. Without WSL installed: the daemon starts, native providers run, and Task Manager
+     shows no wsl.exe. "Runs in: Linux (WSL)" says WSL isn't installed.
+  2. With WSL 2: the distribution list appears; "Find the CLI in Linux" finds
+     ~/.local/bin/claude, never a Windows claude.exe; readiness says "Not logged in"
+     until you run "claude auth login" inside Linux, then Ready.
+  3. Cancel a running WSL job that started "sleep 600" children: "ps -ef" in Linux
+     shows none left; other Linux programs and the distribution keep running.
+  4. End dispatchqd.exe in Task Manager during a WSL run: within about 15 seconds the
+     Linux tree is gone (or the next daemon start removes it). Note which happened.
+  5. From a WSL run: "$DISPATCHQ_BIN" queue / publish --file ./out.md / notify work and
+     the artifact opens on Windows. With [interop] enabled=false in /etc/wsl.conf the
+     run still works and the CLI start fails with an interop message.
+  6. Folders: C:\repo and \\wsl.localhost\<distro>\home\you\repo on a Linux and on a
+     Windows provider; a pool of both skips the member that cannot open the folder.
+  7. A second Linux user (Linux user field) and a non-existent one (clear error).
+  8. ARM64 PC: the arm64 helper runs in an arm64 distribution (also from the x64
+     installer).
+
+Uninstall
+  - Settings > Apps > Installed apps > DispatchQ > Uninstall, or the Start menu entry
+    "Uninstall DispatchQ", or in a terminal: dispatchq uninstall
+  - This stops the service, removes the autostart entry, the shortcuts and the PATH entry.
+    Your tasks and history are kept. To delete them as well run
+      "%LOCALAPPDATA%\Programs\DispatchQ\Uninstall DispatchQ.exe" /PURGE
+    or delete %APPDATA%\dispatchq yourself afterwards.
+
+What works and what does not (first version)
+  Works (by design, not yet verified on Windows hardware unless noted in the PR):
+    queue, schedules, history, artifacts, dashboard, folder and save dialogs,
+    Pushover/ntfy/webhook notifications, process-tree cancel, one daemon per data
+    directory, keeping the PC awake while a run is active.
+  Not available, and shown as unavailable instead of failing silently:
+    native Windows notifications, waking the PC from sleep for a scheduled run,
+    "continue in a terminal", the in-app uninstall button,
+    Appearance pinning of the window frame.
+  Differences:
+    Script jobs run as PowerShell, not sh; a script that starts with #! is refused.
+    The daemon runs only while you are signed in. After a sign-out or reboot, queued
+    work waits until you sign in again.
+
+First-start checklist
+  [ ] The installer finished and the DispatchQ window shows the dashboard.
+  [ ] On a PC with the runtime (every Windows 11 PC), setup showed no WebView2
+      warning and "Show details" has a "WebView2 Runtime available" line without a
+      bootstrapper run. dispatchqd webview2-status prints the same.
+  [ ] Settings > Providers shows your CLI as ready (a missing CLI says so).
+  [ ] Add a task in a scratch folder with a one-line prompt and run it now; the run
+      appears in History with output.
+  [ ] Start a long task and cancel it; check Task Manager that the CLI and its tools
+      are gone.
+  [ ] If your provider is an npm install (a .cmd shim), run a task with a prompt that
+      contains quotes, % and & characters; it reaches the provider unchanged, or the run
+      fails with an explanation naming the character.
+  [ ] Install into a folder such as C:\Apps\$cash\DispatchQ (custom folder page), open a new
+      terminal: `dispatchq` resolves; uninstall removes that PATH entry.
+  [ ] Close the window; the queue keeps running (dispatchqd.exe stays in Task Manager).
+  [ ] Sign out and in again; dispatchqd.exe is running without opening the window.
+  [ ] ARM PC with the ARM64 installer: Task Manager > Details (Architecture column)
+      shows ARM64 for dispatchqapp.exe and dispatchqd.exe.
+  [ ] Report anything that fails, with %APPDATA%\dispatchq\dispatchqd.log.
+
+Verify the download
+  A CI or locally built installer comes with SHA256SUMS; compare its SHA-256:
+    Get-FileHash .\dispatchq-<version>-windows-<x64|arm64>-beta.exe -Algorithm SHA256
+  BUILD-INFO.json next to it names the source commit and the architecture.

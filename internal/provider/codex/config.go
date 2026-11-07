@@ -1,13 +1,20 @@
 package codex
 
 import (
+	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	toml "github.com/pelletier/go-toml/v2"
+
+	"github.com/danielmaier42/claudeq/internal/provider"
 )
+
+// configFileLimit bounds a configuration file read from another environment.
+const configFileLimit = 1 << 20
 
 // cachedProbe holds the answer to a question that is expensive to ask and
 // cannot change while the daemon runs (where the CLI is) or changes rarely
@@ -51,12 +58,27 @@ func configHome(configDir string) string {
 // no instructions rather than an error: a Codex configuration dispatchq cannot
 // read is not a reason to refuse to run, and a misread would be reported by
 // Codex itself. The value is never logged.
-func ownInstructions(configDir string) string {
-	home := configHome(configDir)
-	if home == "" {
-		return ""
+//
+// An instance that runs in another environment is read there, through its
+// host: its configuration is that environment's file, not this computer's.
+func ownInstructions(h provider.Host, inst provider.Instance) string {
+	var data []byte
+	var err error
+	if h == nil || h.Execution().IsNative() {
+		home := configHome(inst.ConfigDir)
+		if home == "" {
+			return ""
+		}
+		data, err = os.ReadFile(filepath.Join(home, "config.toml")) //nolint:gosec // the instance's own configuration directory
+	} else {
+		home := inst.ConfigDir
+		if home == "" {
+			home = "~/.codex" // the CLI's default, expanded by the environment
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), provider.ProbeTimeout)
+		defer cancel()
+		data, err = h.ReadFile(ctx, path.Join(home, "config.toml"), configFileLimit)
 	}
-	data, err := os.ReadFile(filepath.Join(home, "config.toml")) //nolint:gosec // the instance's own configuration directory
 	if err != nil {
 		return ""
 	}

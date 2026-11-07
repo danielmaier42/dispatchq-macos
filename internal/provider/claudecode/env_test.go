@@ -54,7 +54,7 @@ func TestAnAPIKeyInstanceHasNoPlanLimits(t *testing.T) {
 	a := limitsAdapter(t, map[string][]byte{
 		keychainService("/tmp/claude-api"): creds("plan-token", now.Add(time.Hour)),
 	}, now, func(http.ResponseWriter, *http.Request) { t.Error("the usage endpoint must not be asked") })
-	_, err := a.ReadLimits(context.Background(), apiKeyInstance())
+	_, err := a.ReadLimits(context.Background(), apiKeyInstance(), provider.NativeHost{})
 	if !errors.Is(err, provider.ErrNoPlanLimits) {
 		t.Fatalf("err = %v, want ErrNoPlanLimits", err)
 	}

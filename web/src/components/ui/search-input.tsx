@@ -1,12 +1,13 @@
 import {Search, X} from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
+import {keyCombo} from '@/lib/platform'
 import {cn} from '@/lib/utils'
 import {inputClass} from './input'
 import {Kbd} from './kbd'
 
 // SearchInput filters as you type, after a short pause so a fast typist does not
 // rebuild a long list on every key. Escape clears it; a second Escape leaves it.
-// With `hotkey`, ⌘F focuses it while no dialog is open.
+// With `hotkey`, ⌘F (Ctrl+F off a Mac) focuses it while no dialog is open.
 export function SearchInput({
   value,
   onChange,
@@ -85,7 +86,7 @@ export function SearchInput({
       ) : (
         hotkey && (
           <Kbd className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 peer-focus:hidden">
-            ⌘F
+            {keyCombo('F')}
           </Kbd>
         )
       )}

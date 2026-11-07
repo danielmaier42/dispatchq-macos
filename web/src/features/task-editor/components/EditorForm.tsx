@@ -6,6 +6,7 @@ import {Separator} from '@/components/ui/separator'
 import {SheetBody, SheetClose, SheetFooter, SheetHeader} from '@/components/ui/sheet'
 import {toast} from '@/components/ui/toaster'
 import {api, errorMessage} from '@/lib/api'
+import {enterKey, modifierKey} from '@/lib/platform'
 import {invalidate, keys, usePools, useProviders} from '@/lib/queries'
 import type {Task, TaskKind} from '@/lib/types'
 import {
@@ -200,8 +201,8 @@ export function EditorForm({session, onDirty}: {session: EditorSession; onDirty:
             {summary}
           </p>
           <span className="flex items-center gap-1 text-[12px] text-subtle-foreground">
-            <Kbd>⌘</Kbd>
-            <Kbd>↵</Kbd>
+            <Kbd>{modifierKey()}</Kbd>
+            <Kbd>{enterKey()}</Kbd>
             <span className="ml-1">to {session.submitLabel.toLowerCase()}</span>
           </span>
         </div>

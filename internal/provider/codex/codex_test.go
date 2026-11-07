@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 func newAdapter(detected string) *Adapter {
@@ -363,7 +365,7 @@ func fakeBinary(t *testing.T) string {
 func TestCheckHealthReady(t *testing.T) {
 	bin := fakeBinary(t)
 	p := loggedIn()
-	h := newAdapter("").CheckHealth(context.Background(), instance(bin), p)
+	h := newAdapter("").CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: p})
 	if h.State != provider.HealthReady {
 		t.Fatalf("state = %q (%s), want ready", h.State, h.Reason)
 	}
@@ -434,7 +436,7 @@ func TestCheckHealthUnreadyStates(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newAdapter("").CheckHealth(context.Background(), tc.inst(t), tc.prober)
+			h := newAdapter("").CheckHealth(context.Background(), tc.inst(t), provider.NativeHost{Prober: tc.prober})
 			if h.State != tc.want {
 				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
 			}
@@ -448,7 +450,7 @@ func TestCheckHealthUnreadyStates(t *testing.T) {
 func TestListModels(t *testing.T) {
 	catalog := []byte(`{"models":[{"slug":"gpt-5.6-sol","display_name":"GPT-5.6 Sol"},{"slug":"gpt-6-astra"}]}`)
 	p := &fakeProber{out: map[string][]byte{"debug": catalog}}
-	got := newAdapter("").ListModels(context.Background(), instance(fakeBinary(t)), p)
+	got := newAdapter("").ListModels(context.Background(), instance(fakeBinary(t)), provider.NativeHost{Prober: p})
 	want := []provider.Model{
 		{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol"},
 		{ID: "gpt-6-astra", Label: "gpt-6-astra"},
@@ -471,7 +473,7 @@ func TestListModelsFallsBackToTheBundledList(t *testing.T) {
 		{name: "an empty catalog", prober: &fakeProber{out: map[string][]byte{"debug": []byte(`{"models":[]}`)}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := newAdapter("").ListModels(context.Background(), instance(fakeBinary(t)), tc.prober)
+			got := newAdapter("").ListModels(context.Background(), instance(fakeBinary(t)), provider.NativeHost{Prober: tc.prober})
 			if !reflect.DeepEqual(got, bundledModels) {
 				t.Fatalf("models = %+v, want the bundled fallback %+v", got, bundledModels)
 			}
@@ -488,11 +490,11 @@ func TestCatalogIsPerInstance(t *testing.T) {
 	p := &fakeProber{out: map[string][]byte{
 		"debug": []byte(`{"models":[{"slug":"only-here","display_name":"Only here"}]}`),
 	}}
-	if got := a.ListModels(context.Background(), first, p); len(got) != 1 || got[0].ID != "only-here" {
+	if got := a.ListModels(context.Background(), first, provider.NativeHost{Prober: p}); len(got) != 1 || got[0].ID != "only-here" {
 		t.Fatalf("models = %+v, want the discovered one", got)
 	}
 	p.out["debug"] = []byte(`{"models":[{"slug":"other-build"}]}`)
-	if got := a.ListModels(context.Background(), second, p); len(got) != 1 || got[0].ID != "other-build" {
+	if got := a.ListModels(context.Background(), second, provider.NativeHost{Prober: p}); len(got) != 1 || got[0].ID != "other-build" {
 		t.Fatalf("models = %+v, want the second instance asked for itself", got)
 	}
 }
@@ -503,13 +505,13 @@ func TestAFallbackCatalogIsNotRemembered(t *testing.T) {
 	a := newAdapter("")
 	inst := instance(fakeBinary(t))
 	failing := &fakeProber{err: map[string]error{"debug": errors.New("unknown command")}}
-	if got := a.ListModels(context.Background(), inst, failing); len(got) != len(bundledModels) {
+	if got := a.ListModels(context.Background(), inst, provider.NativeHost{Prober: failing}); len(got) != len(bundledModels) {
 		t.Fatalf("models = %+v, want the fallback", got)
 	}
 	working := &fakeProber{out: map[string][]byte{
 		"debug": []byte(`{"models":[{"slug":"now-installed"}]}`),
 	}}
-	if got := a.ListModels(context.Background(), inst, working); len(got) != 1 || got[0].ID != "now-installed" {
+	if got := a.ListModels(context.Background(), inst, provider.NativeHost{Prober: working}); len(got) != 1 || got[0].ID != "now-installed" {
 		t.Fatalf("models = %+v, want the real catalog once it can be read", got)
 	}
 }
@@ -521,7 +523,7 @@ func TestLoginStatusThatCouldNotBeAskedIsNotALogout(t *testing.T) {
 		out: map[string][]byte{"--version": []byte("codex-cli 0.154.0")},
 		err: map[string]error{"login": errors.New("signal: killed")},
 	}
-	h := newAdapter("").CheckHealth(context.Background(), instance(fakeBinary(t)), p)
+	h := newAdapter("").CheckHealth(context.Background(), instance(fakeBinary(t)), provider.NativeHost{Prober: p})
 	if h.State != provider.HealthCheckFailed {
 		t.Fatalf("state = %q (%s), want check_failed", h.State, h.Reason)
 	}
@@ -543,5 +545,54 @@ func TestOperatorEnvironmentTravelsWithTheCommand(t *testing.T) {
 	want := []string{ConfigDirEnv + "=" + inst.ConfigDir, "OPENAI_API_KEY=sk-secret"}
 	if !reflect.DeepEqual(cmd.Env, want) {
 		t.Fatalf("env = %q, want %q", cmd.Env, want)
+	}
+}
+
+// TestCheckHealthAppliesThePlatformExecutableRule drives the readiness check
+// through both platforms' rules. Windows reports no execute bit on any file, so
+// a real codex.exe used to be refused as "not executable" while the CLI ran
+// fine from a terminal.
+func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
+	file := func(name string, mode os.FileMode) func(t *testing.T) string {
+		return func(t *testing.T) string {
+			p := filepath.Join(t.TempDir(), name)
+			if err := os.WriteFile(p, []byte("x"), mode); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+			return p
+		}
+	}
+	tests := []struct {
+		name   string
+		goos   string
+		path   func(t *testing.T) string
+		want   provider.HealthState
+		reason string
+	}{
+		{name: "windows exe without execute bits", goos: "windows", path: file("codex.exe", 0o600), want: provider.HealthReady},
+		{name: "windows npm cmd shim", goos: "windows", path: file("codex.CMD", 0o600), want: provider.HealthReady},
+		{name: "windows bat launcher", goos: "windows", path: file("codex.bat", 0o600), want: provider.HealthReady},
+		{name: "windows text file", goos: "windows", path: file("codex.txt", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows extensionless file", goos: "windows", path: file("codex", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows directory", goos: "windows", path: func(t *testing.T) string { return t.TempDir() }, want: provider.HealthNotInstalled, reason: "directory"},
+		{name: "windows missing file", goos: "windows", path: func(t *testing.T) string { return filepath.Join(t.TempDir(), "codex.exe") }, want: provider.HealthNotInstalled, reason: "cannot be run"},
+		{name: "unix exe name without execute bits", goos: "linux", path: file("codex.exe", 0o644), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "unix file with execute bits", goos: "darwin", path: file("codex", 0o755), want: provider.HealthReady},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && tc.goos != "windows" && tc.want == provider.HealthReady {
+				t.Skip("Windows file metadata cannot represent Unix execute bits")
+			}
+			bin := tc.path(t)
+			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
+			h := newAdapter("").CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: loggedIn()})
+			if h.State != tc.want {
+				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
+			}
+			if !strings.Contains(h.Reason, tc.reason) {
+				t.Fatalf("reason = %q, want it to mention %q", h.Reason, tc.reason)
+			}
+		})
 	}
 }

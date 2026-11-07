@@ -5,9 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/danielmaier42/claudeq/internal/provider"
+	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 )
 
 func newAdapter(detected string) *Adapter {
@@ -157,9 +160,9 @@ func fakeBinary(t *testing.T) string {
 func TestCheckHealthReady(t *testing.T) {
 	bin := fakeBinary(t)
 	a := newAdapter(bin)
-	h := a.CheckHealth(context.Background(), instance(bin), &fakeProber{
+	h := a.CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: &fakeProber{
 		out: map[string][]byte{"--version": []byte("1.18.30\n")},
-	})
+	}})
 	if h.State != provider.HealthReady {
 		t.Fatalf("State = %v, want ready (reason: %q)", h.State, h.Reason)
 	}
@@ -170,7 +173,7 @@ func TestCheckHealthReady(t *testing.T) {
 
 func TestCheckHealthNotInstalled(t *testing.T) {
 	a := newAdapter("")
-	h := a.CheckHealth(context.Background(), instance(""), &fakeProber{})
+	h := a.CheckHealth(context.Background(), instance(""), provider.NativeHost{Prober: &fakeProber{}})
 	if h.State != provider.HealthNotInstalled {
 		t.Fatalf("State = %v, want not_installed", h.State)
 	}
@@ -181,7 +184,7 @@ func TestCheckHealthInvalidConfigDir(t *testing.T) {
 	a := newAdapter(bin)
 	inst := instance(bin)
 	inst.ConfigDir = filepath.Join(t.TempDir(), "does-not-exist")
-	h := a.CheckHealth(context.Background(), inst, &fakeProber{})
+	h := a.CheckHealth(context.Background(), inst, provider.NativeHost{Prober: &fakeProber{}})
 	if h.State != provider.HealthInvalidConfiguration {
 		t.Fatalf("State = %v, want invalid_configuration", h.State)
 	}
@@ -190,9 +193,9 @@ func TestCheckHealthInvalidConfigDir(t *testing.T) {
 func TestCheckHealthVersionProbeFails(t *testing.T) {
 	bin := fakeBinary(t)
 	a := newAdapter(bin)
-	h := a.CheckHealth(context.Background(), instance(bin), &fakeProber{
+	h := a.CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: &fakeProber{
 		err: map[string]error{"--version": os.ErrDeadlineExceeded},
-	})
+	}})
 	if h.State != provider.HealthCheckFailed {
 		t.Fatalf("State = %v, want check_failed when --version cannot be answered", h.State)
 	}
@@ -204,7 +207,7 @@ func TestListModelsParsesPlainOutput(t *testing.T) {
 	p := &fakeProber{out: map[string][]byte{
 		"models": []byte("lmstudio/openai/gpt-oss-20b\nlmstudio/qwen/qwen3.6-35b-a3b\n"),
 	}}
-	got := a.ListModels(context.Background(), instance(bin), p)
+	got := a.ListModels(context.Background(), instance(bin), provider.NativeHost{Prober: p})
 	want := []provider.Model{
 		{ID: "lmstudio/openai/gpt-oss-20b", Label: "lmstudio/openai/gpt-oss-20b"},
 		{ID: "lmstudio/qwen/qwen3.6-35b-a3b", Label: "lmstudio/qwen/qwen3.6-35b-a3b"},
@@ -223,7 +226,7 @@ func TestListModelsFiltersAnErrorLine(t *testing.T) {
 	p := &fakeProber{out: map[string][]byte{
 		"models": []byte("Error: Provider not found: opencode\n"),
 	}}
-	got := a.ListModels(context.Background(), instance(bin), p)
+	got := a.ListModels(context.Background(), instance(bin), provider.NativeHost{Prober: p})
 	if got != nil {
 		t.Errorf("ListModels = %v, want nil for an error line", got)
 	}
@@ -231,7 +234,7 @@ func TestListModelsFiltersAnErrorLine(t *testing.T) {
 
 func TestListModelsNoBinaryYieldsNoSuggestions(t *testing.T) {
 	a := newAdapter("")
-	got := a.ListModels(context.Background(), instance(""), &fakeProber{})
+	got := a.ListModels(context.Background(), instance(""), provider.NativeHost{Prober: &fakeProber{}})
 	if got != nil {
 		t.Errorf("ListModels = %v, want nil — opencode ships no models of its own", got)
 	}
@@ -279,5 +282,54 @@ func TestOperatorEnvironmentTravelsWithTheCommand(t *testing.T) {
 	}
 	if want := []string{"OPENROUTER_API_KEY=sk-secret"}; !reflect.DeepEqual(cmd.Env, want) {
 		t.Fatalf("env = %q, want %q", cmd.Env, want)
+	}
+}
+
+// TestCheckHealthAppliesThePlatformExecutableRule drives the readiness check
+// through both platforms' rules. Windows reports no execute bit on any file, so
+// a real opencode.exe used to be refused as "not executable" while the CLI ran
+// fine from a terminal.
+func TestCheckHealthAppliesThePlatformExecutableRule(t *testing.T) {
+	file := func(name string, mode os.FileMode) func(t *testing.T) string {
+		return func(t *testing.T) string {
+			p := filepath.Join(t.TempDir(), name)
+			if err := os.WriteFile(p, []byte("x"), mode); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+			return p
+		}
+	}
+	tests := []struct {
+		name   string
+		goos   string
+		path   func(t *testing.T) string
+		want   provider.HealthState
+		reason string
+	}{
+		{name: "windows exe without execute bits", goos: "windows", path: file("opencode.exe", 0o600), want: provider.HealthReady},
+		{name: "windows npm cmd shim", goos: "windows", path: file("opencode.CMD", 0o600), want: provider.HealthReady},
+		{name: "windows bat launcher", goos: "windows", path: file("opencode.bat", 0o600), want: provider.HealthReady},
+		{name: "windows text file", goos: "windows", path: file("opencode.txt", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows extensionless file", goos: "windows", path: file("opencode", 0o755), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "windows directory", goos: "windows", path: func(t *testing.T) string { return t.TempDir() }, want: provider.HealthNotInstalled, reason: "directory"},
+		{name: "windows missing file", goos: "windows", path: func(t *testing.T) string { return filepath.Join(t.TempDir(), "opencode.exe") }, want: provider.HealthNotInstalled, reason: "cannot be run"},
+		{name: "unix exe name without execute bits", goos: "linux", path: file("opencode.exe", 0o644), want: provider.HealthNotInstalled, reason: "not executable"},
+		{name: "unix file with execute bits", goos: "darwin", path: file("opencode", 0o755), want: provider.HealthReady},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && tc.goos != "windows" && tc.want == provider.HealthReady {
+				t.Skip("Windows file metadata cannot represent Unix execute bits")
+			}
+			bin := tc.path(t)
+			t.Cleanup(binpath.UseOSRulesForTest(tc.goos))
+			h := newAdapter("").CheckHealth(context.Background(), instance(bin), provider.NativeHost{Prober: &fakeProber{out: map[string][]byte{"--version": []byte("1.18.30\n")}}})
+			if h.State != tc.want {
+				t.Fatalf("state = %q (%s), want %q", h.State, h.Reason, tc.want)
+			}
+			if !strings.Contains(h.Reason, tc.reason) {
+				t.Fatalf("reason = %q, want it to mention %q", h.Reason, tc.reason)
+			}
+		})
 	}
 }

@@ -265,6 +265,41 @@ export interface ProviderInstance {
   fallback_provider: string
   fallback_model: string
   enabled: boolean
+  // Where the CLI runs. Empty (or absent) is this computer; set only in DispatchQ for Windows.
+  execution?: ProviderExecution
+}
+
+// Execution environment of a provider. Fixed once the provider exists.
+export interface ProviderExecution {
+  // Absent or "" is this computer; "wsl" is a Linux distribution of WSL.
+  type?: '' | 'wsl'
+  distro?: string
+  // Linux user; empty is the distribution's default user.
+  user?: string
+}
+
+// GET /api/wsl. supported is DispatchQ for Windows; available is wsl.exe present (it may still have no distribution).
+export interface WSLStatus {
+  supported: boolean
+  available: boolean
+}
+
+// GET /api/wsl/distros -> WSLDistro[].
+export interface WSLDistro {
+  name: string
+  default: boolean
+  state?: string
+  version?: number
+}
+
+// POST /api/wsl/detect {distro, user, kind} -> WSLDetection.
+export interface WSLDetection {
+  binary?: string
+  home: string
+  user: string
+  arch: string
+  interop: boolean
+  warnings?: string[]
 }
 
 /**
@@ -309,6 +344,8 @@ export interface ProviderInput {
   enabled?: boolean | null
   // The complete list; a name left out is removed. Omit to leave the variables alone.
   env?: ProviderEnvInput[]
+  // Only on POST; an update may repeat it but not change it.
+  execution?: ProviderExecution
 }
 
 // GET /api/providers/kinds -> ProviderKindInfo[].

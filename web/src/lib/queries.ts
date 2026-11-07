@@ -18,6 +18,7 @@ import type {
   Stats,
   StatsRange,
   UpdateStatus,
+  WSLStatus,
 } from './types'
 
 // Every list is kept current in the background, not only the open view: a view
@@ -82,6 +83,10 @@ export const useProviderKinds = () =>
   })
 // The limits poll reads only what the daemon last read from the providers;
 // asking them again (?fresh=1) is for opening the Dashboard and ⌘R.
+// Whether this build can run providers in WSL. The daemon answers without
+// starting wsl.exe; the distribution list is asked only when Linux is chosen.
+export const useWSLStatus = () =>
+  useQuery({...poll<WSLStatus>(['wsl'], '/api/wsl', false), staleTime: Infinity})
 export const useLimits = () => useQuery(poll<LimitsResponse>(keys.limits, '/api/limits'))
 export const usePools = () => useQuery(poll<Pool[]>(keys.pools, '/api/pools', 15_000))
 export const useSettings = () => useQuery(poll<Settings>(keys.settings, '/api/settings', 30_000))

@@ -16,7 +16,7 @@ import {Input} from '@/components/ui/input'
 import {Label} from '@/components/ui/label'
 import {toast} from '@/components/ui/toaster'
 import {errorMessage, post, put} from '@/lib/api'
-import {useProviderList} from '@/lib/providers'
+import {executionLabel, useProviderList} from '@/lib/providers'
 import {invalidate, keys, useLimits} from '@/lib/queries'
 import type {Pool, PoolInput} from '@/lib/types'
 import {cn} from '@/lib/utils'
@@ -169,6 +169,7 @@ function PoolForm({pool, onDone}: {pool?: Pool; onDone: () => void}) {
                     <span className="ml-2 text-[12px] text-muted-foreground">
                       {p
                         ? (p.type_name || p.kind) +
+                          (executionLabel(p.execution) ? ` · ${executionLabel(p.execution)}` : '') +
                           (otherKind ? ' · another type' : '') +
                           (p.enabled ? '' : ' · switched off')
                         : 'unavailable: no longer configured'}

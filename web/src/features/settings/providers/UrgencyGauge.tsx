@@ -18,7 +18,11 @@ export function UrgencyGauge({
   barClassName?: string
 }) {
   const text = urgencyText(u)
-  if (u.tier > 0) return <div className="text-[12px] text-muted-foreground">{text}</div>
+  if (u.tier > 0) {
+    // A used-up window reads red, like a used-up credit balance beside it.
+    const usedUp = / used up$/.test(text)
+    return <div className={cn('text-[12px]', usedUp ? 'text-danger' : 'text-muted-foreground')}>{text}</div>
+  }
   const pos = (v: number) => `${(Math.min(v, BACKFILL_MAX) / BACKFILL_MAX) * 100}%`
   return (
     <Tooltip

@@ -450,19 +450,17 @@ first. The window opens on the Dashboard:
   Haiku, a fraction of a cent when it answers and nothing when it is refused),
   and every run on the account counts as a proof too. A ping that cannot reach
   the account at all (no network at login, say) is no test and is tried again
-  an hour later. The line says what the
-  latest proof found and when: *Credit OK · the ping answered 3 h ago*, or
-  *No credit left · a run was refused 10 min ago*. Until the first ping it
-  reads *Credit balance unknown*. An account refused with *Credit balance is
-  too low* turns red and says *No credit left*; it takes no work until a ping
-  gets an answer again, also across a restart of the app, and its tasks go to
-  the next pool member or fallback at once. The next day's ping checks it
+  an hour later. The line says what the latest proof found, on the right where
+  a plan account says *week used up*: *credit available*, or *credit used up* in red; its tooltip says which proof and when. An account
+  refused with *Credit balance is too low* is treated exactly like a used-up
+  week: it takes no work until a ping gets an answer again, also across a
+  restart of the app, its tasks go to the next pool member or fallback at once,
+  and no banner announces it. The next day's ping checks it
   again; after topping up the credit, **Read now** pings every API-key account
   at once and unlocks the account straight away. Opening the Dashboard and
-  **⌘R** do not ping. The banner on top reads only *No credit left*, and a rate
-  limit on another provider keeps its own banner beside it. A billing refusal
+  **⌘R** do not ping. A billing refusal
   that does not name the credit balance (a spend limit set on the account,
-  say) pauses the provider the same way and reads *Billing refused*.
+  say) pauses the provider the same way and also reads *credit used up*.
   `dispatchq provider limits` shows the same latest proof.
   Right under it, the **Pool** card puts every
   [pool](#provider-pools) on one line, its members in the order a run started

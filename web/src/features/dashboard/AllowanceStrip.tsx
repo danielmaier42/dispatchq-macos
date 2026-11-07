@@ -15,7 +15,10 @@ import {cn} from '@/lib/utils'
 import {
   blockText,
   byName,
+  creditBlock,
   creditHint,
+  creditLabel,
+  creditRefused,
   creditText,
   leftLevel,
   limitStatusText,
@@ -145,8 +148,10 @@ function ProviderLine({
   const weekSlot = five ? slot.second[3] : slot.first[3]
   const age = rowAge(l, newest)
   // An account block outranks the windows: whatever they say, the provider
-  // takes no work until the block lifts.
-  const blocked = blockText(p, now)
+  // takes no work until the block lifts. A block about an API key's credit
+  // is said in the credit column instead, like a used-up week.
+  const credit = creditLabel(p)
+  const blocked = credit && creditBlock(p) ? '' : blockText(p, now)
   return (
     <div className={cn(row, 'min-h-10 px-4 py-2')}>
       <div className={cn(head, 'flex min-w-0 items-center gap-2')}>
@@ -193,27 +198,42 @@ function ProviderLine({
       ) : (
         // Without windows the reason takes their place: muted where there is
         // simply nothing to show, in warning colour only for a failed read.
-        <Tooltip content={l.api_key ? creditHint : undefined}>
+        // An API-key account has its credit to show instead, on the right.
+        !credit && (
           <p
             className={cn(
               bothWindows,
               'truncate text-[12.5px]',
               failed ? 'text-warning-text' : 'text-muted-foreground',
             )}
-            tabIndex={l.api_key ? 0 : undefined}
           >
-            {creditText(p, now) || limitStatusText(l, now)}
+            {limitStatusText(l, now)}
           </p>
-        </Tooltip>
+        )
       )}
       <div className={cn(gauge, 'flex min-w-0 justify-end')}>
-        {p.urgency && hasWindows && (
-          <UrgencyGauge
-            u={p.urgency}
-            threshold={threshold}
-            spare={p.backfill}
-            barClassName="hidden w-12 @min-[250px]:block @min-[860px]:w-20"
-          />
+        {credit ? (
+          <Tooltip content={`${creditText(p, now).replace(/\.?$/, '.')} ${creditHint}`}>
+            <div
+              className={cn(
+                'truncate rounded-sm text-[12px]',
+                creditRefused(credit) ? 'text-danger' : 'text-muted-foreground',
+              )}
+              tabIndex={0}
+            >
+              {credit}
+            </div>
+          </Tooltip>
+        ) : (
+          p.urgency &&
+          hasWindows && (
+            <UrgencyGauge
+              u={p.urgency}
+              threshold={threshold}
+              spare={p.backfill}
+              barClassName="hidden w-12 @min-[250px]:block @min-[860px]:w-20"
+            />
+          )
         )}
       </div>
     </div>

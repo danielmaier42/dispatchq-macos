@@ -1,10 +1,10 @@
 import {Check, CircleAlert, PenLine} from 'lucide-react'
 import {useState} from 'react'
 import {Button} from '@/components/ui/button'
-import {describeSchedule} from '@/features/queue/schedule'
 import type {AssistantAction, AssistantTaskDraft} from '@/lib/types'
 import {cn} from '@/lib/utils'
 import {canEdit, confirmCard, editCard} from '../actions'
+import {taskDetailRows} from '../details'
 import {setCard, type Card} from '../store'
 
 // What each proposal is called on its card and on its confirm button.
@@ -143,36 +143,7 @@ export function ActionCard({entryId, index, card}: {entryId: number; index: numb
 // just the changed fields for an update.
 function TaskDetails({draft, full}: {draft: AssistantTaskDraft; full: boolean}) {
   const [expanded, setExpanded] = useState(false)
-  const rows: [string, string][] = []
-  if (!full && draft.name) rows.push(['Name', draft.name])
-  if (full || draft.kind)
-    rows.push(['Kind', draft.kind === 'script' ? 'Script, runs without a model' : 'Agent job'])
-  if (draft.id) rows.push(['Id', draft.id])
-  if (draft.trigger || draft.cron || draft.fixed_at)
-    rows.push([
-      'When',
-      describeSchedule({trigger: draft.trigger ?? 'asap', cron: draft.cron, fixed_at: draft.fixed_at}),
-    ])
-  if (draft.working_dir) rows.push(['Folder', draft.working_dir])
-  if (draft.group) rows.push(['Group', draft.group])
-  if (draft.provider) rows.push(['Provider', draft.provider])
-  if (draft.pool) rows.push(['Pool', draft.pool])
-  if (draft.model) rows.push(['Model', draft.model])
-  if (draft.reasoning_effort) rows.push(['Effort', draft.reasoning_effort])
-  if (draft.permissions === 'skip') rows.push(['Permissions', 'May do anything'])
-  else if (draft.permissions === 'default' && !full) rows.push(['Permissions', 'Default'])
-  if (draft.depends_on?.length) rows.push(['Waits for', draft.depends_on.join(', ')])
-  if (draft.clear?.length) rows.push(['Cleared', draft.clear.join(', ')])
-  const switches: [keyof AssistantTaskDraft, string][] = [
-    ['enabled', 'Enabled'],
-    ['parallel', 'Parallel'],
-    ['notify_on_result', 'Notify'],
-    ['quiet_history', 'Quiet history'],
-    ['backfill', 'Backfill'],
-    ['include_results', 'Their results'],
-  ]
-  for (const [k, label] of switches)
-    if (typeof draft[k] === 'boolean') rows.push([label, draft[k] ? 'On' : 'Off'])
+  const rows = taskDetailRows(draft, full)
 
   return (
     <div className="mt-1.5 space-y-1.5">

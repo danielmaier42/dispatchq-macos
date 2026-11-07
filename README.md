@@ -1539,6 +1539,14 @@ silent.
 - A notification that waited more than 24 hours — the daemon was not running —
   is dropped with a log line rather than delivered as if it were current.
 - It also works outside a run, from a shell: then it is sent without attribution.
+- The run must be allowed to execute the command. An agent job with default
+  permissions runs unattended, so nobody can approve a prompt: a command that
+  needs approval, `dispatchq notify`, `queue` and `publish` included, is refused
+  unless the provider's own allow rules already permit it. Either add such a
+  rule in the provider's settings, turn on **Skip permission prompts** for the
+  task (`--skip-permissions=true` on `dispatchq edit` or `queue`), or make it a
+  script job. The assistant's proposal card shows which permissions a new agent
+  job gets.
 
 ## Script jobs
 

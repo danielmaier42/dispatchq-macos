@@ -140,6 +140,8 @@ func TestSystemPromptCarriesTheWholeCLI(t *testing.T) {
 		"macOS Notification Center",
 		"never estimate one",
 		"Never set permissions \"skip\" on your own",
+		"runs it under permissions \"default\" only if the provider's allow rules already permit it",
+		"an allow rule in the provider's own settings",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("the prompt lacks %q", want)

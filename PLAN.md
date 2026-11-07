@@ -1,6 +1,6 @@
 # dispatchq — Solution Concept (PLAN)
 
-Windows port planning is tracked separately in [docs/windows/PLAN.md](docs/windows/PLAN.md). A first local-only Windows proof of concept is implemented (see its status table); the macOS plan below remains unchanged.
+Windows port planning is tracked separately in [docs/windows/PLAN.md](docs/windows/PLAN.md). A native Windows beta (x64 and ARM64, unpublished) is implemented (see its status table); the macOS plan below remains unchanged.
 
 Status: draft for review · No implementation until explicitly commissioned.
 Based on: `anforderungskatalog-taskqueue.md` (v0.2) + clarification dialogue (decisions D1–D8 below).

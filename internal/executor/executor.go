@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -194,17 +195,63 @@ const wslSystemPrompt = `
 
 This run is inside a Linux system of the Windows Subsystem for Linux (WSL). "$DISPATCHQ_BIN" is DispatchQ for Windows, started through WSL's Windows interop; it accepts Linux paths for --dir and --file and turns them into Windows ones. If starting it fails with an exec format or interop error, Windows interop is off in this Linux system: say so in your final answer instead of retrying.`
 
-// systemPromptFor is systemPrompt plus what a run outside the daemon's own
-// system needs to know. A native run gets exactly systemPrompt.
-func systemPromptFor(h provider.Host, custom string) string {
-	if h == nil || h.Execution().IsNative() {
-		return systemPrompt(custom)
-	}
-	custom = strings.TrimSpace(custom)
-	if custom == "" {
+// powerShellRewrites turn the built-in prompt, written for a POSIX shell on
+// macOS, into what a native Windows run needs: PowerShell calls of the CLI,
+// Windows' data directory and notification center, and a disk-sweep warning
+// about Windows' own pitfalls. Every old text must occur in
+// builtinSystemPrompt; a test holds them to it, so an edit of the prompt cannot
+// silently leave Bash syntax in Windows runs.
+var powerShellRewrites = []string{
+	`"${DISPATCHQ_BIN:-dispatchq}"`,
+	`& $(if ($env:DISPATCHQ_BIN) { $env:DISPATCHQ_BIN } else { 'dispatchq' })`,
+
+	"dispatchq stores its data in the directory named by the DISPATCHQ_HOME environment variable (falling back to ~/Library/Application Support/dispatchq when unset).",
+	"dispatchq stores its data in the directory named by the DISPATCHQ_HOME environment variable ($env:DISPATCHQ_HOME, falling back to $env:APPDATA\\dispatchq when unset).",
+
+	"(macOS Notification Center, and whichever",
+	"(Windows notifications, and whichever",
+
+	"no find /, find ~, rg --files ~, or mdfind without -onlyin. Such a sweep walks into Music, Photos, cloud-synced folders (~/Library/CloudStorage) and network volumes, and macOS answers with a privacy prompt that names DispatchQ, blocks the run until someone clicks, and looks to the operator as if DispatchQ were reading their private data. Find tools with command -v or their known install locations,",
+	"no Get-ChildItem -Recurse over C:\\ or $HOME, no where.exe /R over a drive, no rg --files over $HOME. Such a sweep walks into OneDrive and other cloud-synced folders, which can download every file on demand, and into network drives; it takes very long and looks to the operator as if DispatchQ were reading their private data. Find tools with Get-Command or their known install locations,",
+
+	"queue a program instead of a prompt: --prompt is then the script itself, run without any model",
+	"queue a program instead of a prompt: --prompt is then the script itself, a PowerShell script on this system, run without any model",
+}
+
+// windowsShellPrompt closes the built-in prompt for a native Windows run.
+const windowsShellPrompt = `
+
+This run is on Windows. The shell commands above are PowerShell: run them as written, in PowerShell, never through Bash or cmd.exe, and quote values with single quotes where nothing inside must expand. Paths are Windows paths and environment variables are $env:NAME. This is not a Mac: never use macOS tools such as osascript, open or pbcopy.`
+
+// windowsBuiltinSystemPrompt is builtinSystemPrompt for a native Windows run.
+var windowsBuiltinSystemPrompt = strings.NewReplacer(powerShellRewrites...).Replace(builtinSystemPrompt) + windowsShellPrompt
+
+// hostGOOS is the system native runs happen on, a variable for tests.
+var hostGOOS = runtime.GOOS
+
+// builtinPromptFor is the built-in prompt for a run on host h. Where the run
+// happens is the provider's execution: a WSL run is a Linux shell whatever the
+// daemon's system, a native run uses the daemon's own system. macOS and other
+// POSIX systems get builtinSystemPrompt unchanged.
+func builtinPromptFor(h provider.Host) string {
+	if h != nil && !h.Execution().IsNative() {
 		return builtinSystemPrompt + wslSystemPrompt
 	}
-	return builtinSystemPrompt + wslSystemPrompt + customSystemPromptIntro + custom
+	if hostGOOS == "windows" {
+		return windowsBuiltinSystemPrompt
+	}
+	return builtinSystemPrompt
+}
+
+// systemPromptFor is the built-in prompt for the run's host (builtinPromptFor)
+// with the operator's custom prompt, introduced, at the end.
+func systemPromptFor(h provider.Host, custom string) string {
+	base := builtinPromptFor(h)
+	custom = strings.TrimSpace(custom)
+	if custom == "" {
+		return base
+	}
+	return base + customSystemPromptIntro + custom
 }
 
 // Executor builds and runs provider invocations.

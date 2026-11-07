@@ -59,7 +59,7 @@ func TestSystemPromptIsAppendedAsOneValue(t *testing.T) {
 	if args[len(args)-3] != "--append-system-prompt" {
 		t.Fatalf("expected --append-system-prompt before the prompt, got %v", args[len(args)-3:])
 	}
-	if got := args[len(args)-2]; got != builtinSystemPrompt {
+	if got := args[len(args)-2]; got != builtinPromptFor(provider.NativeHost{}) {
 		t.Fatalf("append-system-prompt value = %q, want the built-in prompt", got)
 	}
 	if !strings.Contains(selfQueueSystemPrompt, "queue --prompt") {
@@ -124,7 +124,7 @@ func TestCommandAppendsCustomSystemPrompt(t *testing.T) {
 	}
 	got := args[len(args)-2]
 	// Built-in first, custom last.
-	if !strings.HasPrefix(got, builtinSystemPrompt) {
+	if !strings.HasPrefix(got, builtinPromptFor(provider.NativeHost{})) {
 		t.Fatal("built-in prompt must come first")
 	}
 	if !strings.HasSuffix(got, custom) {

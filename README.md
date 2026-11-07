@@ -1,7 +1,8 @@
 <div align="center">
   <img src="docs/branding/dispatchq/dispatchq-logo.svg" width="96" height="96" alt="DispatchQ">
   <h1>DispatchQ</h1>
-  <p>A queue for unattended coding-agents that runs on your Mac</p>
+  <p>A queue for unattended coding-agents that runs on your Computer</p>
+  <p>macOS on Apple silicon · Windows x64 and ARM64 (<a href="#windows-beta">beta</a>)</p>
   <p><a href="https://www.dispatchq.de/">Website</a></p>
 </div>
 
@@ -31,10 +32,12 @@ workflow engine:
   A prompt can say *"if you find something worth fixing, queue it instead of
   doing it now."*
 - **Built for 3 a.m.** Every run is told it is unattended. Prompts are checked
-  against this Mac before they are queued. Hung runs are killed, orphaned runs
-  recovered, and the Mac is woken for timed work and held awake while it runs.
+  against this Computer before they are queued. Hung runs are killed, orphaned
+  runs recovered, and the Computer is held awake while a run is in flight; on
+  macOS it is also woken for timed work.
 - **Nothing leaves the machine.** Tasks, settings and history are plain files
-  under `~/Library/Application Support/dispatchq`, and the daemon listens on
+  under `~/Library/Application Support/dispatchq` (on Windows
+  `%APPDATA%\dispatchq`), and the daemon listens on
   loopback only. The agent CLIs talk to their own services; DispatchQ itself
   contacts nothing but GitHub's release API for update checks, and
   [feedback](#sending-feedback) is filed by you, in your browser.
@@ -58,7 +61,7 @@ workflow engine:
   expire: a *backfill* task runs only while a provider is so far behind on its
   week that part of it would go unused, and waits otherwise.
 - **Hand a task to a colleague** as a `.dispatchq` file. They import it, adjust
-  the folder, and get the same job on their Mac.
+  the folder, and get the same job on their Computer.
 - **Just ask.** "Why did last night's run fail?", "show me the newest report",
   "every weekday at 7, summarise the open TODOs in this repo": the
   [assistant](#asking-dispatchq) answers in a sentence, opens what you asked for,
@@ -111,14 +114,16 @@ workflow engine:
 DispatchQ is two pieces that share a file-based store:
 
 - **A background daemon (`dispatchqd`)** installed as a per-user launchd
-  LaunchAgent. It starts at login, restarts if it exits, and does all the work:
-  scheduling, running tasks through the provider's CLI, tracking the rate
-  limit, planning wake-ups, pruning history, sending notifications, and serving
+  LaunchAgent on macOS, where it starts at login and restarts if it exits; on
+  Windows it starts from the per-user Run key at sign-in and is not restarted
+  if it exits. It does all the work: scheduling, running tasks through the
+  provider's CLI, tracking the rate limit, planning wake-ups, pruning history, sending notifications, and serving
   the dashboard on `127.0.0.1`. Exactly one daemon owns a data directory: a
   second one started against the same store says so and exits, so a queue is
   never scheduled twice.
-- **A native app window (`dispatchqapp`)** that wraps that dashboard in a macOS
-  WKWebView window. The app is just the UI — closing it never stops scheduling,
+- **A native app window (`dispatchqapp`)** that wraps that dashboard in a
+  WKWebView window on macOS and a WebView2 window on Windows. The app is just
+  the UI — closing it never stops scheduling,
   and the daemon keeps running with the window shut.
 
 The nightly cycle looks like this:
@@ -136,13 +141,17 @@ The nightly cycle looks like this:
    visible while it lasts: a banner names the time the queue continues, the run is
    marked **rescheduled** in the Log with its resume time, and you can drop that
    resume there so the task does not start again.
-4. To run a timed task past a scheduled sleep, it wakes the Mac with `pmset`, and
-   holds the Mac awake (`caffeinate`) while a run is in flight so a task never
-   freezes mid-run.
+4. On macOS, to run a timed task past a scheduled sleep, it wakes the Mac with
+   `pmset`, and holds the Mac awake (`caffeinate`) while a run is in flight so a
+   task never freezes mid-run. On Windows it holds the PC awake while a run is
+   active but does not wake it from sleep.
 5. Results — success, failure, rate-limit wait, or auth problem — land in the
    **Log** with the full run output, optionally with a notification.
 
 ## Install
+
+These steps install DispatchQ on macOS. For Windows, see
+[Windows (beta)](#windows-beta).
 
 1. Download the latest `dispatchq-<version>-macos-arm64.pkg` from the
    [Releases](https://github.com/danielmaier42/dispatchq-app/releases) page
@@ -429,7 +438,7 @@ explains it.
 - **One at a time by default.** A task marked *parallel* runs alongside other
   parallel tasks.
 - **Pause everything** with one switch in Settings: a run in flight finishes,
-  nothing new starts, and the Mac is not woken.
+  nothing new starts, and the Computer is not woken.
 
 **Providers**
 
@@ -470,7 +479,7 @@ explains it.
   [What every run is told](#what-every-run-is-told).
 - **Custom system prompt** appended to every run after the built-in one.
 - **Prompt review.** Before a task is queued, Claude reads the prompt against
-  this Mac and names what would go wrong at 3 a.m.; one click applies the
+  this Computer and names what would go wrong at 3 a.m.; one click applies the
   rewrite. See [The prompt review](#the-prompt-review).
 - **Self-queueing.** A run schedules follow-up tasks with `dispatchq queue`. See
   [Letting a task queue follow-up work](#letting-a-task-queue-follow-up-work).
@@ -495,10 +504,11 @@ explains it.
 
 - **Hung runs are killed** after a configurable idle timeout, whole process
   group included. Orphaned runs are recovered after a crash or power loss.
-- **Wake and stay awake.** `pmset` wakes the Mac at each task's time plus an
-  hourly heartbeat, `caffeinate` holds it through a run, and a run frozen
-  across a long sleep is not mistaken for a hung one. A broken wake setup is
-  shown in the dashboard.
+- **Wake and stay awake.** On macOS, `pmset` wakes the Mac at each task's time
+  plus an hourly heartbeat, `caffeinate` holds it through a run, and a run
+  frozen across a long sleep is not mistaken for a hung one. A broken wake setup
+  is shown in the dashboard. On Windows the PC is held awake during a run but
+  not woken from sleep.
 - **File-access prompts up front.** Task folders are read at login and on
   edit, so macOS asks for Documents access while you are present.
 - **Bounded history.** Old runs are pruned to a configurable count.
@@ -658,7 +668,7 @@ first. The window opens on the Dashboard:
   so it can still be explained after the badge is gone. **Export** in a row's **…** menu saves the task as a `.dispatchq`
   file via the native save panel, and **Import…** in the toolbar opens such a
   file in the task sheet for review. Whenever a prompt is written or changed,
-  Claude checks it against this Mac and shows what it found in a purple banner
+  Claude checks it against this Computer and shows what it found in a purple banner
   under the prompt box, with **Apply** to take the rewrite; just opening a sheet
   again shows the earlier finding and costs nothing. A [script job](#script-jobs)
   is reviewed as the program it is, and the sheet hides the provider, model and
@@ -796,7 +806,7 @@ Settings lists its sections on the left — **General**, **Appearance**,
 **Execution**, **Notifications**, **Providers**, **Pools**, **Assistant**,
 **System** and **About**; **↑**/**↓** step through them. An available update puts a red dot on
 **About**, which shows the app's claim, "A queue for unattended coding-agents that
-runs on your Mac", and is where the update banner and button live.
+runs on your computer", and is where the update banner and button live.
 
 Switches, menus and pickers apply the moment they change. Typed text (the
 custom system prompt and the notification channels) waits for the bar that
@@ -814,7 +824,7 @@ in the list, and leaving Settings keeps the draft for the session.
 | | Runs | Stop a run with no output for | Idle-timeout watchdog: kills a hung run (default 30 min; a working run keeps streaming and is unaffected; Off disables it). |
 | | | Keep run history | How many runs (and their logs) to retain before pruning (default 500; Unlimited keeps everything). |
 | | Scheduler | Check for due tasks every | How often the daemon wakes to look for work (15 min – 6 h; also the wake safety-net interval). |
-| **Notifications** | On this Mac | Keep alerts on screen | Opens System Settings → Notifications, where DispatchQ's alert style lives: *Banners* disappear on their own, *Alerts* stay until you click them. A warning sits on top while macOS hides DispatchQ's notifications. |
+| **Notifications** | On this computer | Keep alerts on screen | Opens System Settings → Notifications, where DispatchQ's alert style lives: *Banners* disappear on their own, *Alerts* stay until you click them. A warning sits on top while macOS hides DispatchQ's notifications. |
 | | | Notify about new artifacts | On by default; the same switch sits as **Notify me** in the Artifacts toolbar. Off: a published artifact still lands in Artifacts, but raises no notification on any channel and no entry in Notifications. Switching it back on does not announce what was published in the meantime. |
 | | Pushover | Send to Pushover | Toggle plus API token and user key for phone push. A stored secret shows as *set*, with **Replace** and **Remove**; it is never shown again. |
 | | ntfy | Send to ntfy | Toggle, server (empty = ntfy.sh), topic, and an optional access token for a protected topic. |
@@ -823,10 +833,10 @@ in the list, and leaving Settings keeps the draft for the session.
 | | One card per provider | Its settings | Name and type, a health dot with **Check**, its current limits (the same bars as the Dashboard, when the harness reports any), the binary and configuration directory in use, the names of its environment variables, the default model, and the provider that takes over when the limit is reached (and the model it uses). The switch turns it on or off at once; **Edit** opens a dialog that saves that provider alone; **Make default** and **Remove** sit in its **…** menu. See [Providers](#providers). |
 | | | **Add provider** | Asks for an id, a type, a name and optionally a configuration directory. |
 | **Pools** | One card per pool | Its settings | Name, members and their weights, which member the next run goes to and why. **Edit** opens a dialog with, per provider of the pool's type, a switch for membership and a weight (empty = the plan size the provider reports, e.g. *auto · 20×*). **Remove** is refused while a task uses the pool. **Add pool** asks for an id, a name and the members. See [Provider pools](#provider-pools). |
-| **Assistant** | Prompt review | Check prompts with Claude | Whether Claude reviews a prompt against this Mac before the task is queued (on by default). |
+| **Assistant** | Prompt review | Check prompts with Claude | Whether Claude reviews a prompt against this Computer before the task is queued (on by default). |
 | | | Review provider / Review model | Which provider answers the review, and with which model. Only providers that can hold an *aside* are offered; *Default* follows the global default provider, and the model falls back to the reviewing provider's own default. |
 | | Assistant | Assistant provider / Assistant model | Which provider answers in [Ask DispatchQ](#asking-dispatchq) and drafts the GitHub issue on the [Feedback](#sending-feedback) page, and with which model. Left at *DispatchQ's choice*, on Claude Code the chat uses a mid-size model (Sonnet) and feedback a small one (Haiku), rather than whatever you picked for real tasks; other harnesses use their own default. Only providers that can hold an *aside* are offered. |
-| **System** | Danger zone | Remove DispatchQ from this Mac | **Uninstall…** asks you to type *uninstall*, then opens the uninstaller in the macOS Installer. Your tasks, history and settings are kept unless you select them under **Customize**. See [Uninstall](#uninstall). |
+| **System** | Danger zone | Remove DispatchQ from this computer | **Uninstall…** asks you to type *uninstall*, then opens the uninstaller in the macOS Installer. Your tasks, history and settings are kept unless you select them under **Customize**. See [Uninstall](#uninstall). |
 | **About** | Software updates | Version / Check for updates | Current version, when the last check ran, and a manual **Check for updates** (`dispatchq update check` does the same from a terminal; the running app shows the result within a minute); an available update shows its notes with **Download & install**, **Dismiss** and **All releases**. On a development build, **Reinstall** downloads the latest release and opens its installer; it stays disabled, with the reason, while that release is older than the oldest one that can read this build's data (2.0.0 for now, since 1.x cannot run on data moved by the DispatchQ rename). |
 
 ## Providers
@@ -1729,7 +1739,7 @@ a dependent job consolidates. More output than a run record may carry keeps the
 as an agent run, and **Cancel task** stops it and its whole process tree.
 
 **Checked before it is queued.** Like a prompt, a script is read against this
-Mac while you write it — missing paths, commands the daemon's PATH does not
+Computer while you write it — missing paths, commands the daemon's PATH does not
 have, anything that waits for a person. See
 [The prompt review](#the-prompt-review).
 
@@ -1932,7 +1942,7 @@ in both paths and nothing is added.
 
 ## The prompt review
 
-A prompt written for one Mac rarely fits the next one unchanged, and a task
+A prompt written for one Computer rarely fits the next one unchanged, and a task
 queued for 3 a.m. has nobody around to notice. So whenever a draft prompt is
 written or changed — in a new task, an edit, a replay or an import — DispatchQ has
 Claude read it against *this* machine and, if something is off, shows it in a
@@ -2016,7 +2026,7 @@ Practicalities:
   it, so changing the review provider or model — or the default provider the
   review follows — never replays an answer the new one did not give.
 - A task sheet without a working directory yet — an imported task, whose folder
-  came from another Mac — waits for you to choose one before reviewing, since
+  came from another Computer — waits for you to choose one before reviewing, since
   every relative path would otherwise be unresolvable.
 - File content it was given is treated as data. Instructions found inside a
   file cannot steer the review, and any rewrite is shown to you in the prompt
@@ -2047,7 +2057,7 @@ it declines in one line.
   same way. **Nothing in the queue changes until you confirm the card**, and a
   newer proposal for the same thing ("make it 8 instead") replaces the older
   card. Before a card is shown, DispatchQ checks it: an invented task or run is
-  dropped, and a draft whose folder does not exist on this Mac, whose cron does
+  dropped, and a draft whose folder does not exist on this Computer, whose cron does
   not parse or whose provider is unknown is marked and can only be edited.
 
 The assistant covers the whole [command line](#command-line-interface). A task draft
@@ -2189,10 +2199,11 @@ that.
   since the limit is not yours to lift.
 - **Auth problems don't retry.** A login/authentication error is recorded as
   `auth_error` and notified so you can re-login; it is not retried automatically.
-- **Wake-ups.** After each pass the daemon registers a `pmset` wake at the nearest
+- **Wake-ups (macOS).** After each pass the daemon registers a `pmset` wake at the nearest
   relevant time (next fixed start, next cron occurrence, or limit reset) plus a
   recurring heartbeat wake, so the Mac can sleep between runs and wake when
-  there's work.
+  there's work. Windows has no scheduled wake: nothing runs while the PC
+  sleeps.
 - **Run outcomes** are one of: `running`, `success`, `failed`,
   `rate_limited_waiting` (shown as *rescheduled* while its session is still
   queued to continue), `auth_error`, `canceled` (stopped by the user — either the
@@ -2200,8 +2211,9 @@ that.
 
 ## Data on disk
 
-Everything lives under `~/Library/Application Support/dispatchq` (override with the
-`DISPATCHQ_HOME` environment variable):
+Everything lives under `~/Library/Application Support/dispatchq` on macOS and
+`%APPDATA%\dispatchq` on Windows (override with the `DISPATCHQ_HOME`
+environment variable):
 
 | Path | Contents |
 |------|----------|
@@ -2213,12 +2225,13 @@ Everything lives under `~/Library/Application Support/dispatchq` (override with 
 | `notifications.json` | Outbox of notifications sent with `dispatchq notify`, waiting for the daemon to deliver them (normally empty). |
 | `inbox.json` | The last 200 notifications the daemon sent (title, message, kind, what each points at, read flag), as listed in the Notifications view. |
 | `state.json` | Machine bookkeeping: read/unread flags (runs and artifacts), which artifacts have been notified about, cron anchors, pending-resume sessions, the provider health you were last told about, the latest credit proof of each API-key account (ping or run, answered or refused), which queue groups are folded shut, dismissed update version, the What's new edition you closed, whether the ClaudeQ rename check is done. |
-| `dispatchqd.out.log` / `dispatchqd.err.log` | Daemon stdout/stderr. |
+| `dispatchqd.out.log` / `dispatchqd.err.log` | Daemon stdout/stderr on macOS; on Windows the daemon log is `dispatchqd.log`. |
 | `../claudeq` | After an update from ClaudeQ: a link from the old data folder to this one (see [Coming from ClaudeQ](#coming-from-claudeq)). |
 | `.lock` / `.daemon.lock` | Lock files, both empty of interest. `.lock` serializes config/state writes between the daemon and a `dispatchq` command; `.daemon.lock` holds the running daemon's pid and is what makes a second daemon on the same store refuse to start. Both are released when the holding process exits, so neither needs clearing by hand. |
 
-The LaunchAgent itself is at
-`~/Library/LaunchAgents/de.maierdaniel.dispatchq.plist`.
+On macOS the LaunchAgent itself is at
+`~/Library/LaunchAgents/de.maierdaniel.dispatchq.plist`; on Windows the daemon
+starts from the per-user Run key instead.
 
 ## Uninstall
 
@@ -2304,7 +2317,8 @@ verification notes are in [PLAN.md](PLAN.md).
 
 ## Requirements
 
-- macOS 12 or newer on an Apple silicon Mac
+- macOS 12 or newer on an Apple silicon Mac, or for the Windows beta
+  Windows 11 on an x64 or ARM64 PC (Windows 10 may work but is untested)
 - The [Claude Code](https://claude.com/claude-code) CLI, installed and
   authenticated
 - Optionally the [Codex](https://learn.chatgpt.com/docs/developer-commands?surface=cli)

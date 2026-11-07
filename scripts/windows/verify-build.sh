@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Check a scripts/build-windows.sh result independently of the build, before CI
 # uploads it or a release publishes it: the installer's exact file name, the
-# machine type of every payload program and WSL helper, the version and source
-# commit stamped into the programs, the checksum and BUILD-INFO.json.
+# machine type of every payload program and WSL helper, the version stamped
+# into the programs, the source commit, the checksum and BUILD-INFO.json.
 #
 # Usage: scripts/windows/verify-build.sh ARCH VERSION SOURCE_SHA OUT_DIR
 #   ARCH        amd64, x64 or arm64
@@ -23,15 +23,21 @@ STAGE="$ROOT/build/windows/stage-$WIN_LABEL"
 SETUP="$(windows_installer_name "$VERSION" "$WIN_LABEL")"
 
 fail() { echo "verify-build: $*" >&2; exit 1; }
-VERSION_RE="$(printf '%s' "$VERSION" | sed 's/[][\\.*^$+?(){}|/]/\\&/g')"
 
 for exe in dispatchqapp dispatchqd dispatchq; do
   got="$(pe_machine "$STAGE/$exe.exe" || echo unreadable)"
   [ "$got" = "$WIN_MACHINE" ] || fail "$exe.exe has PE machine $got, expected $WIN_MACHINE"
+  # -trimpath keeps -ldflags out of the Go build information, so the stamped
+  # version is checked as the literal string it puts into the program.
+  LC_ALL=C grep -aqF "v$VERSION" "$STAGE/$exe.exe" || fail "$exe.exe is not stamped with version v$VERSION"
+  # Go records the commit only when it builds from a plain clone (not from a
+  # git worktree); when it is there it must match too. BUILD-INFO.json below
+  # names the commit in every case.
   info="$(go version -m "$STAGE/$exe.exe")" || fail "$exe.exe carries no Go build information"
-  grep -qE "internal/version\.Version=v$VERSION_RE([ \"]|\$)" <<<"$info" || fail "$exe.exe is not stamped with version v$VERSION"
-  grep -qE "^[[:space:]]+build[[:space:]]+vcs.revision=$SOURCE_SHA\$" <<<"$info" || fail "$exe.exe was not built from $SOURCE_SHA"
-  grep -qE "^[[:space:]]+build[[:space:]]+vcs.modified=false\$" <<<"$info" || fail "$exe.exe was built from a modified tree"
+  if grep -qE "^[[:space:]]+build[[:space:]]+vcs.revision=" <<<"$info"; then
+    grep -qE "^[[:space:]]+build[[:space:]]+vcs.revision=$SOURCE_SHA\$" <<<"$info" || fail "$exe.exe was not built from $SOURCE_SHA"
+    grep -qE "^[[:space:]]+build[[:space:]]+vcs.modified=false\$" <<<"$info" || fail "$exe.exe was built from a modified tree"
+  fi
   echo "$exe.exe: PE machine 0x$got, v$VERSION, $SOURCE_SHA"
 done
 for pair in amd64:003e arm64:00b7; do

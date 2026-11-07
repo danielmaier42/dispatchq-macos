@@ -29,6 +29,11 @@ VERSION_RE="$(printf '%s' "$VERSION" | sed 's/[][\\.*^$+?(){}|/]/\\&/g')"
 others="$(cd "$OUT" && find . -maxdepth 1 -type f -name '*.pkg' ! -name "$PKG_NAME")"
 [ -z "$others" ] || fail "unexpected packages next to $PKG_NAME: $others"
 
+# The package is built from the working tree, which must be SOURCE_SHA, clean.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[ "$(git -C "$ROOT" rev-parse HEAD)" = "$SOURCE_SHA" ] || fail "the checkout is $(git -C "$ROOT" rev-parse HEAD), expected $SOURCE_SHA"
+[ -z "$(git -C "$ROOT" status --porcelain)" ] || fail "the checkout has uncommitted changes"
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 pkgutil --expand-full "$OUT/$PKG_NAME" "$WORK/x" >/dev/null
@@ -43,8 +48,12 @@ for exe in dispatchqapp dispatchqd dispatchq; do
   [ "$(lipo -archs "$bin")" = "$MACHO" ] || fail "$exe is $(lipo -archs "$bin" 2>&1), expected only $MACHO"
   info="$(go version -m "$bin")" || fail "$exe carries no Go build information"
   grep -qE "internal/version\.Version=v$VERSION_RE([ \"]|\$)" <<<"$info" || fail "$exe is not stamped with version v$VERSION"
-  grep -qE "^[[:space:]]+build[[:space:]]+vcs.revision=$SOURCE_SHA\$" <<<"$info" || fail "$exe was not built from $SOURCE_SHA"
-  grep -qE "^[[:space:]]+build[[:space:]]+vcs.modified=false\$" <<<"$info" || fail "$exe was built from a modified tree"
+  # Go records the commit only when it builds from a plain clone (not from a
+  # git worktree); when it is there it must match the checked commit too.
+  if grep -qE "^[[:space:]]+build[[:space:]]+vcs.revision=" <<<"$info"; then
+    grep -qE "^[[:space:]]+build[[:space:]]+vcs.revision=$SOURCE_SHA\$" <<<"$info" || fail "$exe was not built from $SOURCE_SHA"
+    grep -qE "^[[:space:]]+build[[:space:]]+vcs.modified=false\$" <<<"$info" || fail "$exe was built from a modified tree"
+  fi
   echo "$exe: $(lipo -archs "$bin"), v$VERSION, $SOURCE_SHA"
 done
 

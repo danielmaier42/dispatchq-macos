@@ -472,16 +472,6 @@ func (e *Executor) Run(ctx context.Context, req Request) (provider.Result, error
 		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
 	}
 	cmd := proc.Cmd
-	configureProcessGroup(cmd) // so a killed run takes its whole process tree with it
-	if proc.Interrupt != nil {
-		// The environment stops its own tree first (a Linux tree a Windows Job
-		// Object cannot see), then the hard stop runs as for any run.
-		hard := cmd.Cancel
-		cmd.Cancel = func() error {
-			proc.Interrupt()
-			return hard()
-		}
-	}
 
 	// Output goes through exec's own copying, not a pipe read here until EOF:
 	// a daemon a tool call left behind holds the pipe open long after the
@@ -492,12 +482,12 @@ func (e *Executor) Run(ctx context.Context, req Request) (provider.Result, error
 	cmd.Stderr = log
 	cmd.WaitDelay = pipeReleaseDelay
 
-	if err := cmd.Start(); err != nil {
-		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
-	}
-	release, err := attachProcessTree(cmd) // Windows: the Job Object that owns the run's tree
+	// Started as the owner of its whole process tree, so a killed run takes
+	// every descendant with it. The environment stops its own tree first (a
+	// Linux tree a Windows Job Object cannot see), then the hard stop runs as
+	// for any run.
+	release, err := proc.Start()
 	if err != nil {
-		abortStarted(cmd)
 		return provider.Result{}, fmt.Errorf("start %s: %w", invocation.Path, err)
 	}
 	defer release()

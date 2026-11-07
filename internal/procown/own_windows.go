@@ -1,6 +1,6 @@
 //go:build windows
 
-package executor
+package procown
 
 import (
 	"errors"
@@ -16,17 +16,18 @@ import (
 // jobs maps a started command to the Job Object that owns its process tree.
 var jobs sync.Map // *exec.Cmd -> windows.Handle
 
-// configureProcessGroup gives the CLI its own process group without a console
-// window and, on context cancellation (a user cancel, the idle watchdog,
-// shutdown), tears down its whole descendant tree.
+// prepare gives the program its own process group without a console window
+// and, on context cancellation (a user cancel, the idle watchdog, a request
+// deadline, shutdown), tears down its whole descendant tree.
 //
 // Windows has no process groups to signal, so the tree is owned through a Job
 // Object. A process joins a job only at the moment it is assigned, never its
 // earlier children, so the process is created suspended: its first instruction
-// has not run when attachProcessTree puts it into the job and resumes it, and
-// every descendant it ever starts is a member. A command configured here must
-// therefore go through attachProcessTree right after Start, or it never runs.
-func configureProcessGroup(cmd *exec.Cmd) {
+// has not run when attach puts it into the job and resumes it, and every
+// descendant it ever starts is a member. Only Start calls prepare, and Start
+// always attaches (and so resumes) or stops the program, so a command is never
+// left suspended.
+func prepare(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
@@ -40,16 +41,16 @@ func configureProcessGroup(cmd *exec.Cmd) {
 	}
 }
 
-// attachProcessTree puts the started, still suspended process into a new Job
-// Object that kills every member when its last handle closes, so a daemon that
-// dies takes its runs with it, and then lets it run. If ownership cannot be
+// attach puts the started, still suspended process into a new Job Object
+// that kills every member when its last handle closes, so a daemon that dies
+// takes its programs with it, and then lets it run. If ownership cannot be
 // established the process is not resumed and an error is returned; the caller
-// must then stop it (abortStarted).
+// must then stop it (abort).
 //
 // The returned release detaches that kill-on-close behaviour and closes the
-// handle: a run that finished on its own leaves nothing behind to kill, and a
-// daemon a tool left running on purpose stays running, as on macOS.
-func attachProcessTree(cmd *exec.Cmd) (release func(), err error) {
+// handle: a program that finished on its own leaves nothing behind to kill,
+// and a daemon a tool left running on purpose stays running, as on macOS.
+func attach(cmd *exec.Cmd) (release func(), err error) {
 	if cmd.Process == nil {
 		return nil, errors.New("process tree: the command has not started")
 	}

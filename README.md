@@ -244,7 +244,7 @@ It reuses the same daemon, queue and dashboard. What differs on Windows:
 | Background service | `dispatchqd.exe`, started from the per-user Run key at sign-in; runs only while you are signed in |
 | Data | `%APPDATA%\dispatchq`; the daemon log is `dispatchqd.log` there |
 | Providers | native `claude`, `codex`, `opencode` found in the usual install folders, npm and scoop shims, then `PATH`; an npm or scoop `.cmd` shim is resolved to the program it starts; a Claude login is read from `.credentials.json` |
-| Cancel | every run starts suspended, joins a Windows Job Object and is then resumed, so even a child started at once belongs to it; cancelling, the idle watchdog or the daemon dying ends the whole process tree, and a run whose job cannot be set up does not start |
+| Cancel | every run starts suspended, joins a Windows Job Object and is then resumed, so even a child started at once belongs to it; cancelling, the idle watchdog or the daemon dying ends the whole process tree, and a run whose job cannot be set up does not start. The assistant, prompt reviews, readiness probes and the Codex limits reading start the same way, so a cancelled or timed-out request also ends every tool its provider started |
 | Script jobs | run as Windows PowerShell, written as UTF-8 with a byte order mark so non-ASCII text survives; a `#!` line is refused |
 | Agent jobs | the built-in guidance tells the agent to call the CLI in PowerShell through `$env:DISPATCHQ_BIN` (a bare `dispatchq` when it is unset) and names Windows paths; a provider in WSL gets the Linux shell version |
 | Keep awake | held while a run is active (the display may still sleep) |

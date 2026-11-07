@@ -1,6 +1,6 @@
 //go:build windows
 
-package executor
+package procown
 
 import (
 	"context"
@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 	switch os.Getenv(helperEnv) {
 	case "spawner":
 		// Start a long-lived child immediately, record its pid, then idle.
-		child := exec.Command(os.Args[0], "-test.run=^$")
+		child := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^$")
 		child.Env = append(os.Environ(), helperEnv+"=sleeper")
 		if err := child.Start(); err != nil {
 			os.Exit(3)
@@ -43,14 +43,10 @@ func TestMain(m *testing.M) {
 	case "owner":
 		// Stand in for the daemon: own a spawner through the real code path and
 		// then wait to be killed abruptly.
-		cmd := exec.Command(os.Args[0], "-test.run=^$")
+		cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^$")
 		cmd.Env = append(os.Environ(), helperEnv+"=spawner")
-		configureProcessGroup(cmd)
-		if err := cmd.Start(); err != nil {
+		if _, err := Start(cmd, nil); err != nil {
 			os.Exit(3)
-		}
-		if _, err := attachProcessTree(cmd); err != nil {
-			os.Exit(4)
 		}
 		time.Sleep(10 * time.Minute)
 		os.Exit(0)
@@ -91,13 +87,8 @@ func startSpawner(ctx context.Context, t *testing.T) (*exec.Cmd, uint32, func())
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), helperEnv+"=spawner", "DISPATCHQ_PID_FILE="+pidFile)
-	configureProcessGroup(cmd)
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	release, err := attachProcessTree(cmd)
+	release, err := Start(cmd, nil)
 	if err != nil {
-		abortStarted(cmd)
 		t.Fatal(err)
 	}
 	return cmd, readPID(t, pidFile), release
@@ -117,7 +108,7 @@ func TestCancelKillsDescendantStartedImmediately(t *testing.T) {
 // The daemon dying abruptly (no cancel, no release) still takes the tree along.
 func TestOwnerDeathKillsDescendants(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
-	owner := exec.Command(os.Args[0], "-test.run=^$")
+	owner := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^$")
 	owner.Env = append(os.Environ(), helperEnv+"=owner", "DISPATCHQ_PID_FILE="+pidFile)
 	if err := owner.Start(); err != nil {
 		t.Fatal(err)
@@ -132,15 +123,74 @@ func TestOwnerDeathKillsDescendants(t *testing.T) {
 
 // A process the job cannot own is not left running.
 func TestAttachFailureDoesNotResume(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), helperEnv+"=sleeper")
-	configureProcessGroup(cmd)
+	prepare(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	_ = cmd.Process.Kill() // gone before it can be assigned
 	_ = cmd.Wait()
-	if _, err := attachProcessTree(cmd); err == nil {
+	if _, err := attach(cmd); err == nil {
 		t.Fatal("attaching a dead process must fail, not report success")
+	}
+	if _, ok := jobs.Load(cmd); ok {
+		t.Fatal("a failed attach left its job object registered")
+	}
+}
+
+// The interrupt an environment supplies runs ahead of the hard stop.
+func TestCancelRunsInterruptFirst(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), helperEnv+"=sleeper")
+	interrupted := make(chan struct{})
+	release, err := Start(cmd, func() { close(interrupted) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	cancel()
+	_ = cmd.Wait()
+	select {
+	case <-interrupted:
+	default:
+		t.Fatal("cancel did not run the environment's interrupt")
+	}
+}
+
+// A program that ends on its own gives its job back: release leaves no handle
+// registered, and a second program is owned independently.
+func TestReleaseForgetsTheJob(t *testing.T) {
+	for range 2 {
+		cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=^$")
+		release, err := Start(cmd, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := jobs.Load(cmd); !ok {
+			t.Fatal("a started program has no job object")
+		}
+		if err := cmd.Wait(); err != nil {
+			t.Fatal(err)
+		}
+		release()
+		if _, ok := jobs.Load(cmd); ok {
+			t.Fatal("release left the job object registered")
+		}
+	}
+}
+
+// A program that cannot be created is reported, and nothing is registered.
+func TestStartFailureLeavesNothing(t *testing.T) {
+	cmd := exec.CommandContext(context.Background(), filepath.Join(t.TempDir(), "missing.exe"))
+	if _, err := Start(cmd, nil); err == nil {
+		t.Fatal("starting a missing program reported success")
+	}
+	if cmd.Process != nil {
+		t.Fatal("a failed start left a process")
+	}
+	if _, ok := jobs.Load(cmd); ok {
+		t.Fatal("a failed start registered a job object")
 	}
 }

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -105,10 +106,14 @@ func (ExecProber) Probe(ctx context.Context, c Command) ([]byte, error) {
 	if len(c.Env) > 0 {
 		cmd.Env = append(cmd.Environ(), c.Env...)
 	}
-	// A probe that leaves a grandchild holding the output pipe must not hold the
-	// caller past the timeout.
-	cmd.WaitDelay = time.Second
-	return cmd.CombinedOutput()
+	// The probe owns its process tree, so the timeout stops anything it
+	// started; one that escaped the tree and holds the output pipe cannot hold
+	// the caller past the timeout either (see runOwned).
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err = runOwned(ctx, cmd)
+	return out.Bytes(), err
 }
 
 // DefaultHealthTTL is how long a verdict is reused. It is short because a

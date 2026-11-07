@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/danielmaier42/claudeq/internal/provider/binpath"
 	"github.com/danielmaier42/claudeq/internal/system"
@@ -66,6 +68,11 @@ func (NativeHost) WorkDir(_ context.Context, stored string) (string, error) { re
 
 // Output implements Host. It returns stdout only, so a warning the CLI writes
 // to stderr can never end up inside the JSON that gets parsed.
+//
+// The CLI runs as the owner of its whole process tree: a cancelled or expired
+// request stops every tool it started, and a process that escaped the tree
+// but still holds the output open cannot keep the request waiting past
+// outputReleaseDelay.
 func (NativeHost) Output(ctx context.Context, cmd Command, dir string) ([]byte, error) {
 	c, err := binpath.CommandContext(ctx, cmd.Path, cmd.Args...) // the adapter built this from the configured provider
 	if err != nil {
@@ -79,16 +86,74 @@ func (NativeHost) Output(ctx context.Context, cmd Command, dir string) ([]byte, 
 	if cmd.Stdin != "" {
 		c.Stdin = strings.NewReader(cmd.Stdin)
 	}
-	out, err := c.Output()
+	var stdout bytes.Buffer
+	stderr := &headBuffer{max: stderrKeep}
+	c.Stdout = &stdout
+	c.Stderr = stderr
+	err = runOwned(ctx, c)
+	out := stdout.Bytes()
 	if err != nil {
 		var ee *exec.ExitError
-		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
-			return out, fmt.Errorf("%w: %s", err, shortenText(string(ee.Stderr), 300))
+		if errors.As(err, &ee) && stderr.buf.Len() > 0 {
+			return out, fmt.Errorf("%w: %s", err, shortenText(stderr.String(), 300))
 		}
 		return out, err
 	}
 	return out, nil
 }
+
+// outputReleaseDelay bounds how long a finished or stopped program's output is
+// still drained when a process outside its owned tree holds the pipe open.
+const outputReleaseDelay = time.Second
+
+// stderrKeep is how much of a failing CLI's stderr is kept for its error.
+const stderrKeep = 4 << 10
+
+// runOwned runs c, prepared but not started, as the owner of its whole
+// process tree and waits for it.
+//
+// A program that exited successfully while a process it left behind still
+// held its output open has given its answer; giving up on that pipe after
+// outputReleaseDelay is not a failure. That process is left running, as a
+// daemon a tool starts on purpose in a queued run is.
+//
+// A program stopped because ctx ended reports that, even when it managed to
+// exit successfully while its tree was being stopped (a shell's wait returns
+// 0 once its children are killed).
+func runOwned(ctx context.Context, c *exec.Cmd) error {
+	c.WaitDelay = outputReleaseDelay
+	release, err := (&Process{Cmd: c}).Start()
+	if err != nil {
+		return err
+	}
+	defer release()
+	err = c.Wait()
+	if errors.Is(err, exec.ErrWaitDelay) && c.ProcessState != nil && c.ProcessState.Success() {
+		err = nil
+	}
+	if err == nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
+}
+
+// headBuffer keeps the first max bytes written to it and discards the rest,
+// so a CLI that floods stderr cannot grow the daemon's memory. The buffer is a
+// field, not embedded, so exec's copying cannot reach bytes.Buffer.ReadFrom
+// and bypass the cap.
+type headBuffer struct {
+	buf bytes.Buffer
+	max int
+}
+
+func (b *headBuffer) Write(p []byte) (int, error) {
+	if room := b.max - b.buf.Len(); room > 0 {
+		_, _ = b.buf.Write(p[:min(room, len(p))])
+	}
+	return len(p), nil
+}
+
+func (b *headBuffer) String() string { return b.buf.String() }
 
 // Command implements Host.
 //

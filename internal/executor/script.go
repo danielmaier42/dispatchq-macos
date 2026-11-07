@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/danielmaier42/claudeq/internal/procown"
 	"github.com/danielmaier42/claudeq/internal/provider"
 	"github.com/danielmaier42/claudeq/internal/store"
 )
@@ -59,7 +60,6 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 	cmd := exec.CommandContext(runCtx, name, args...) //nolint:gosec // the script is the operator's own job definition
 	cmd.Dir = req.Task.WorkingDir
 	cmd.Env = e.runEnv(req, nil) // lets the script queue agent jobs (self-queue)
-	configureProcessGroup(cmd)   // so a killed run takes its whole process tree with it
 	// What the jobs it waited for answered arrives on stdin, where a script can
 	// read it. Without dependencies that is the empty string, which closes stdin
 	// immediately — an unattended run must never sit waiting for input.
@@ -77,12 +77,8 @@ func (e *Executor) runScript(ctx context.Context, req Request) (provider.Result,
 	cmd.Stderr = live
 	cmd.WaitDelay = pipeReleaseDelay // a daemon the script left behind must not hold the run open
 
-	if err := cmd.Start(); err != nil {
-		return provider.Result{}, fmt.Errorf("start script: %w", err)
-	}
-	release, err := attachProcessTree(cmd) // Windows: the Job Object that owns the run's tree
+	release, err := procown.Start(cmd, nil) // so a killed run takes its whole process tree with it
 	if err != nil {
-		abortStarted(cmd)
 		return provider.Result{}, fmt.Errorf("start script: %w", err)
 	}
 	defer release()

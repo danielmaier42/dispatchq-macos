@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/danielmaier42/claudeq/internal/procown"
 	"github.com/danielmaier42/claudeq/internal/store"
 )
 
@@ -184,6 +185,15 @@ type Process struct {
 	// hard stop. It is how a cancel reaches Linux descendants that a Windows
 	// Job Object cannot see.
 	Interrupt func()
+}
+
+// Start starts the program as the owner of its whole process tree (see
+// procown.Start): cancelling the context the command was built with stops the
+// program and every process it started, Interrupt first. On success the
+// caller waits with Cmd.Wait and calls release afterwards; on failure nothing
+// is left running.
+func (p *Process) Start() (release func(), err error) {
+	return procown.Start(p.Cmd, p.Interrupt)
 }
 
 // ErrNotDirectory is what StatDir returns for a path that is not a directory.

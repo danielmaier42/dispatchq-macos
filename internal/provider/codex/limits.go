@@ -78,6 +78,13 @@ func (a *Adapter) ReadLimits(ctx context.Context, inst provider.Instance, h prov
 // askAppServer runs the app server, holds the rateLimitsRequest conversation
 // and returns the answer to the question. The server stays up for as long as
 // its input is open, so the process is stopped as soon as the answer is in.
+//
+// The server runs as the owner of its whole process tree: stopping it, after
+// the answer or when the caller's context ends, stops every tool it started.
+// The answer is read through exec's own copying, not from the pipe until EOF,
+// so a process that escaped the tree and still holds the output open cannot
+// keep the caller waiting: the context ends the wait, and Wait gives that pipe
+// up after WaitDelay.
 func askAppServer(ctx context.Context, h provider.Host, c provider.Command) (json.RawMessage, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -87,22 +94,52 @@ func askAppServer(ctx context.Context, h provider.Host, c provider.Command) (jso
 	}
 	cmd, stdin := proc.Cmd, proc.Stdin
 	cmd.WaitDelay = time.Second
-	stdout, err := cmd.StdoutPipe()
+	stdout, stdoutW := io.Pipe()
+	cmd.Stdout = stdoutW
+	release, err := proc.Start()
 	if err != nil {
-		return nil, fmt.Errorf("codex app-server stdout: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
+		_ = stdoutW.Close()
 		return nil, fmt.Errorf("start codex app-server: %w", err)
 	}
+	answered := make(chan appServerAnswer, 1)
+	go func() {
+		answered <- readRateLimits(stdout)
+		// What follows is not read, but it must still be drained, or exec's
+		// copying blocks on it and Wait with it.
+		_, _ = io.Copy(io.Discard, stdout)
+	}()
 	defer func() {
 		_ = stdin.Close()
 		cancel()
 		_ = cmd.Wait()
+		_ = stdoutW.Close() // ends the reader if it is still draining
+		release()
 	}()
 	if _, err := io.WriteString(stdin, strings.Join(rateLimitsRequest, "\n")+"\n"); err != nil {
 		return nil, fmt.Errorf("write to codex app-server: %w", err)
 	}
 
+	select {
+	case a := <-answered:
+		if !a.replied && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return a.res, a.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// appServerAnswer is what readRateLimits found.
+type appServerAnswer struct {
+	replied bool // the server answered the question, with limits or an error
+	res     json.RawMessage
+	err     error
+}
+
+// readRateLimits reads the app server's output until the answer to the limits
+// question.
+func readRateLimits(stdout io.Reader) appServerAnswer {
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
 	for sc.Scan() {
@@ -111,18 +148,18 @@ func askAppServer(ctx context.Context, h provider.Host, c provider.Command) (jso
 			continue
 		}
 		if r.Error != nil {
-			return nil, fmt.Errorf("the Codex CLI could not report its limits (%s)", redact(r.Error.Message))
+			return appServerAnswer{replied: true, err: fmt.Errorf("the Codex CLI could not report its limits (%s)", redact(r.Error.Message))}
 		}
-		return r.Result, nil
-	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return appServerAnswer{replied: true, res: r.Result}
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("read codex app-server: %w", err)
+		return appServerAnswer{err: fmt.Errorf("read codex app-server: %w", err)}
 	}
-	return nil, errors.New("codex app-server ended without reporting its limits")
+	return appServerAnswer{err: errAppServerEnded}
 }
+
+// errAppServerEnded is the answer of a server whose output ended without one.
+var errAppServerEnded = errors.New("codex app-server ended without reporting its limits")
 
 // parseRateLimits turns the app server's answer into limit windows.
 func parseRateLimits(raw json.RawMessage) ([]provider.LimitWindow, string, error) {

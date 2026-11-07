@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Build a DispatchQ Windows installer (cross-compiled from macOS or Linux) for x64
-# or ARM64. Pull request CI runs this script on macOS for both architectures and
-# keeps the results as workflow artifacts for beta testing; no release workflow
-# builds or publishes Windows installers.
+# or ARM64. CI runs this script on macOS for both architectures: every pull
+# request keeps the results as workflow artifacts for beta testing, and the
+# release workflow attaches both to each version's GitHub Release.
 #
 # Output (default dist/windows/ for x64, dist/windows-arm64/ for ARM64):
-#   DispatchQ-<version>-windows-<x64|arm64>-setup.exe
+#   dispatchq-<version>-windows-<x64|arm64>-beta.exe
 #   SHA256SUMS        checksum of the installer
 #   BUILD-INFO.json   source commit, toolchain and payload architecture
 #
@@ -30,7 +30,7 @@ set -euo pipefail
 export GOMAXPROCS="${GOMAXPROCS:-8}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=windows/arch.sh
+# shellcheck source=SCRIPTDIR/windows/arch.sh
 . "$ROOT/scripts/windows/arch.sh"
 
 ARCH="${DISPATCHQ_WINDOWS_ARCH:-amd64}"
@@ -62,7 +62,7 @@ else
   BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
   VERSION="dev-${BRANCH//\//-}"
 fi
-SETUP="DispatchQ-${VERSION}-windows-${WIN_LABEL}-setup.exe"
+SETUP="$(windows_installer_name "$VERSION" "$WIN_LABEL")"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "build-windows: $1 not found ($2)" >&2; exit 1; }; }
 need go "install Go"
@@ -159,11 +159,6 @@ for arch in amd64 arm64; do
   GOOS=linux GOARCH="$arch" CGO_ENABLED=0 \
     go build -trimpath -ldflags "$LDFLAGS" -o "$STAGE/wsl/dispatchq-wsl-linux-$arch" "$ROOT/cmd/dispatchq-wsl"
 done
-elf_machine() { # prints the e_machine of a 64-bit little-endian ELF file, in hex
-  [ "$(head -c 4 "$1" | od -An -tx1 | tr -d ' \n')" = "7f454c46" ] || return 1
-  [ "$(od -An -tx1 -j4 -N2 "$1" | tr -d ' \n')" = "0201" ] || return 1
-  od -An -tx1 -j18 -N2 "$1" | awk '{print $2 $1}'
-}
 for pair in amd64:003e arm64:00b7; do
   arch="${pair%%:*}" want="${pair##*:}"
   got="$(elf_machine "$STAGE/wsl/dispatchq-wsl-linux-$arch" || echo unreadable)"

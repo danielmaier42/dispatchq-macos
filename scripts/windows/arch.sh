@@ -1,3 +1,4 @@
+# shellcheck shell=bash disable=SC2034 # sourced: the WIN_* variables are its output
 # Target architecture settings for scripts/build-windows.sh. Sourced, not run.
 #
 # windows_arch NAME resolves NAME (amd64 or x64, arm64 or aarch64) and sets:
@@ -24,4 +25,19 @@ pe_machine() {
   off=$(od -An -tu4 -j60 -N4 "$1" 2>/dev/null | tr -d ' ')
   [ -n "$off" ] && [ "$(od -An -c -j"$off" -N2 "$1" 2>/dev/null | tr -d ' ')" = PE ] || return 1
   printf '%x\n' "$(od -An -tu2 -j$((off + 4)) -N2 "$1" | tr -d ' ')"
+}
+
+# elf_machine FILE prints the e_machine of a 64-bit little-endian ELF file in hex
+# (003e x86-64, 00b7 AArch64): the WSL helpers' architecture.
+elf_machine() {
+  [ "$(head -c 4 "$1" | od -An -tx1 | tr -d ' \n')" = "7f454c46" ] || return 1
+  [ "$(od -An -tx1 -j4 -N2 "$1" | tr -d ' \n')" = "0201" ] || return 1
+  od -An -tx1 -j18 -N2 "$1" | awk '{print $2 $1}'
+}
+
+# windows_installer_name VERSION LABEL prints the published installer's file name.
+# The Windows edition is a beta: only its file name says so, the version is the
+# release's own.
+windows_installer_name() {
+  printf 'dispatchq-%s-windows-%s-beta.exe\n' "$1" "$2"
 }

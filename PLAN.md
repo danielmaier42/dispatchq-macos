@@ -1,6 +1,6 @@
 # dispatchq — Solution Concept (PLAN)
 
-Windows port planning is tracked separately in [docs/windows/PLAN.md](docs/windows/PLAN.md). A native Windows beta (x64 and ARM64, unpublished) is implemented (see its status table); the macOS plan below remains unchanged.
+Windows port planning is tracked separately in [docs/windows/PLAN.md](docs/windows/PLAN.md). A native Windows beta (x64 and ARM64) is implemented (see its status table); from the next release on, every release attaches both Windows installers as beta files next to the macOS package; the macOS plan below remains unchanged.
 
 Status: draft for review · No implementation until explicitly commissioned.
 Based on: `anforderungskatalog-taskqueue.md` (v0.2) + clarification dialogue (decisions D1–D8 below).
@@ -384,7 +384,7 @@ audience is Mac-using developers who already run Claude Code.
 - **v1: unsigned.** No Apple Developer ID yet. The `.pkg` and app are not notarized.
 - **Consequence (Gatekeeper):** first run needs a one-time bypass — either right-click → **Open**,
   "Open Anyway" in *System Settings → Privacy & Security*, or install via Terminal
-  (`sudo installer -pkg dispatchq-<ver>.pkg -target /`, which is not GUI-Gatekeeper-blocked).
+  (`sudo installer -pkg dispatchq-<ver>-macos-arm64.pkg -target /`, which is not GUI-Gatekeeper-blocked).
 - **Upgrade path:** the pipeline is written notarization-ready. Adding a Developer ID later =
   provide certs + App Store Connect key as secrets and enable the (already-stubbed) sign +
   `notarytool` + `staple` steps. No structural rework; the Gatekeeper friction then disappears.
@@ -407,14 +407,21 @@ auto-setup and, at the end, reopens the freshly installed app in the user's GUI 
 | Daemon startup, and right after a task is added/edited with a folder in a new protected location | Native **"allow access to your Documents?"** (TCC Files & Folders) — automatic and tickable; see §13 |
 
 ### 11.3 GitHub Actions release pipeline
-Triggered on tag `v*`:
-1. **Build** on `macos-14` runner: compile the Go daemon + helper as a **universal binary**
-   (arm64 + amd64 via `lipo`) → supports Apple Silicon *and* Intel colleagues; build the Wails
-   `.app`.
-2. **(Stub, disabled without Developer ID)** sign app + `.pkg` with Developer ID.
-3. **Package**: `pkgbuild`/`productbuild` → `dispatchq-<ver>.pkg` (+ optional `.dmg`).
-4. **(Stub)** notarize via `notarytool` + `staple`.
-5. **Release**: create the GitHub Release and upload the `.pkg` (and `.dmg`) as assets.
+Triggered on tag `v*`. Asset names follow `dispatchq-<version>-<platform>-<architecture>(-beta).<ending>`:
+1. **Build macOS** on the `macos-latest` (Apple silicon) runner after the race test suite:
+   the `.app` for arm64 only (the originally planned universal binary was never built; Intel
+   Macs are not supported) → `dispatchq-<ver>-macos-arm64.pkg`.
+   `scripts/verify-pkg.sh` checks that all three programs are arm64 only and carry the tag's
+   version and commit.
+2. **Build Windows** in parallel, one macOS runner per architecture, with
+   `scripts/build-windows.sh` → `dispatchq-<ver>-windows-x64-beta.exe` and
+   `dispatchq-<ver>-windows-arm64-beta.exe`; `scripts/windows/verify-build.sh` checks PE and WSL
+   helper machine types, version, commit, checksum and `BUILD-INFO.json`.
+3. **(Stub, disabled without Developer ID)** sign app + `.pkg` with Developer ID; notarize via
+   `notarytool` + `staple`.
+4. **Release**: only when all three builds passed, `scripts/release-assets.sh` checks that
+   exactly the three expected files arrived with matching checksums, and one GitHub Release
+   (not a pre-release) gets all three. A failed build publishes nothing.
 
 ### 11.4 Per-colleague prerequisites (documented, not installed by us)
 - Claude Code installed, in `PATH`, and **logged in** (catalog §2/§8 assumption).

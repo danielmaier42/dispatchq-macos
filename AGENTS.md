@@ -72,8 +72,9 @@ If any gate fails, it is fixed before the work is reported — never reported wi
 
 - A GitHub Actions **CI workflow** runs on every PR and every push to `main`: build + `gofmt` check + `go vet` +
   `golangci-lint` + `go test ./... -race`. Red CI blocks a release.
-- The **release workflow** (tag `v*`) is separate and builds the universal binary + unsigned
-  `.pkg` (see `PLAN.md` §11); it depends on CI being green.
+- The **release workflow** (tag `v*`) is separate and builds the unsigned Apple silicon
+  `.pkg` and both Windows beta installers, publishing only when all three pass (see
+  `PLAN.md` §11.3); it depends on CI being green.
 
 ## 5. How results are reported to the maintainer
 

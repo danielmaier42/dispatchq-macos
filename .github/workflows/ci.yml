@@ -77,7 +77,8 @@ jobs:
   # Beta test downloads of the Windows edition: both installers, built from the
   # commit under test by scripts/build-windows.sh exactly as on a maintainer's
   # Mac, and uploaded as workflow artifacts of this run. Nothing is released or
-  # published here; the tag-driven release workflow stays macOS-only.
+  # published here; the tag-driven release workflow builds the same installers
+  # for every release.
   windows-installer:
     name: windows-installer (${{ matrix.label }})
     # The script cross-compiles from macOS: Homebrew's mingw-w64 for x64 and the
@@ -91,10 +92,8 @@ jobs:
         include:
           - arch: amd64
             label: x64
-            machine: "8664"
           - arch: arm64
             label: arm64
-            machine: aa64
     env:
       # A pull request builds its head commit, not GitHub's merge preview, so the
       # artifact matches a commit on the branch testers can name.
@@ -158,39 +157,20 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # The script already refuses a payload of the wrong machine type; this
-      # checks the result independently of its architecture table.
+      # checks the result independently, as the release workflow does.
       - name: Verify the installer
         env:
           OUT: ${{ steps.build.outputs.out }}
           VERSION: ${{ steps.build.outputs.version }}
-          ARCH: ${{ matrix.arch }}
-          LABEL: ${{ matrix.label }}
-          MACHINE: ${{ matrix.machine }}
         run: |
-          . scripts/windows/arch.sh
-          fail() { echo "::error::$*"; exit 1; }
-          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ] || fail "checked out $(git rev-parse HEAD), expected $SOURCE_SHA"
-          for exe in dispatchqapp dispatchqd dispatchq; do
-            got="$(pe_machine "build/windows/stage-$LABEL/$exe.exe" || echo unreadable)"
-            [ "$got" = "$MACHINE" ] || fail "$exe.exe has PE machine $got, expected $MACHINE"
-            echo "$exe.exe: PE machine 0x$got"
-          done
-          setup="DispatchQ-$VERSION-windows-$LABEL-setup.exe"
-          [ -s "$OUT/$setup" ] || fail "missing $OUT/$setup"
-          got="$(pe_machine "$OUT/$setup" || echo unreadable)"
-          [ "$got" = 14c ] || fail "installer has PE machine $got, expected the x86 NSIS stub (14c)"
-          (cd "$OUT" && shasum -a 256 -c SHA256SUMS)
-          jq -e --arg head "$SOURCE_SHA" --arg version "$VERSION" --arg target "windows/$ARCH" \
-            --arg machine "0x$MACHINE" --arg setup "$setup" \
-            '.source_head == $head and .source_dirty == false and .version == $version
-             and .target == $target and .payload_pe_machine == $machine and .installer == $setup' \
-            "$OUT/BUILD-INFO.json" >/dev/null || { cat "$OUT/BUILD-INFO.json"; fail "BUILD-INFO.json does not match this build"; }
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ] || { echo "::error::checked out $(git rev-parse HEAD), expected $SOURCE_SHA"; exit 1; }
+          scripts/windows/verify-build.sh "${{ matrix.arch }}" "$VERSION" "$SOURCE_SHA" "$OUT"
           cat "$OUT/BUILD-INFO.json"
 
       - name: Upload the beta installer
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: DispatchQ-${{ steps.build.outputs.version }}-windows-${{ matrix.label }}
+          name: dispatchq-${{ steps.build.outputs.version }}-windows-${{ matrix.label }}-beta
           path: ${{ steps.build.outputs.out }}/
           if-no-files-found: error
           retention-days: 14

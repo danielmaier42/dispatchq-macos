@@ -49,14 +49,14 @@ describe('Sidebar', () => {
   it('shows the full sidebar in a wide window', () => {
     media.narrow = false
     show()
-    expect(screen.getByText('Search & commands')).toBeTruthy()
+    expect(screen.getByText('Search...')).toBeTruthy()
     expect(screen.queryByLabelText('Expand sidebar')).toBeNull()
   })
 
   it('folds to icons in a narrow window and keeps the badge', () => {
     media.narrow = true
     show()
-    expect(screen.queryByText('Search & commands')).toBeNull()
+    expect(screen.queryByText('Search...')).toBeNull()
     expect(screen.getByLabelText('Queue')).toBeTruthy()
     expect(screen.getByLabelText('Notifications').textContent).toBe('3')
   })
@@ -65,9 +65,9 @@ describe('Sidebar', () => {
     media.narrow = true
     show()
     fireEvent.click(screen.getByLabelText('Expand sidebar'))
-    expect(screen.getByText('Search & commands')).toBeTruthy()
+    expect(screen.getByText('Search...')).toBeTruthy()
     act(() => navigate('queue'))
-    expect(screen.queryByText('Search & commands')).toBeNull()
+    expect(screen.queryByText('Search...')).toBeNull()
   })
 
   it('puts the overlay away on Escape and when the window widens', () => {

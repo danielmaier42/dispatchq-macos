@@ -362,7 +362,9 @@ check "NFA-06 data choice clears preferences via cfprefsd"  contains "$WORK/laun
 DISPATCHQ_CONSOLE_USER=root sh "$U/x/uninstall-data.pkg/Scripts/postinstall" >/dev/null 2>&1
 num_check "NFA-06 data choice without a console user is a no-op" "$?" -eq 0
 check "release pipeline triggers on version tags"          contains "$ROOT/.github/workflows/release.yml" 'tags:'
-check "release pipeline attaches the installer pkg"        contains "$ROOT/.github/workflows/release.yml" "dispatchq-.*.pkg"
+check "release pipeline attaches the installer pkg"        contains "$ROOT/.github/workflows/release.yml" "dispatchq-.*-macos-.*.pkg"
+check "release pipeline attaches the Windows x64 beta"     contains "$ROOT/.github/workflows/release.yml" "dispatchq-.*-windows-x64-beta.exe"
+check "release pipeline attaches the Windows ARM64 beta"   contains "$ROOT/.github/workflows/release.yml" "dispatchq-.*-windows-arm64-beta.exe"
 
 echo
 echo "=========================================="

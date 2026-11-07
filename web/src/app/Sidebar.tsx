@@ -119,7 +119,7 @@ function Panel({onCollapse, className}: {onCollapse?: () => void; className?: st
           className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-[12.5px] text-subtle-foreground shadow-xs transition-colors hover:text-foreground"
         >
           <Search className="size-3.5 shrink-0" />
-          <span className="flex-1 truncate text-left">Search & commands</span>
+          <span className="flex-1 truncate text-left">Search...</span>
           <Kbd className="shrink-0">{keyCombo('K')}</Kbd>
         </button>
       </div>
@@ -198,8 +198,8 @@ function Rail({onExpand}: {onExpand: () => void}) {
           <Plus />
         </Button>
       </Tooltip>
-      <Tooltip content={withShortcut('Search & commands', keyCombo('K'))} side="right">
-        <Button variant="secondary" size="icon" onClick={openPalette} aria-label="Search & commands">
+      <Tooltip content={withShortcut('Search...', keyCombo('K'))} side="right">
+        <Button variant="secondary" size="icon" onClick={openPalette} aria-label="Search...">
           <Search />
         </Button>
       </Tooltip>

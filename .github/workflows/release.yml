@@ -1,27 +1,39 @@
 name: Release
 
-# Build the installer on a version tag and attach it to a GitHub Release.
+# Build every installer on a version tag and attach them to one GitHub Release:
+#   dispatchq-<version>-macos-arm64.pkg   (Apple silicon only, checked in
+#                                         every program)
+#   dispatchq-<version>-windows-x64-beta.exe
+#   dispatchq-<version>-windows-arm64-beta.exe
+# The Windows edition is a beta only in its file names; the version and the
+# release (not a pre-release) are shared. The release is published only after
+# all three builds succeeded and passed their checks, so a failed build never
+# leaves a release with some installers missing.
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  macos:
     runs-on: macos-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      arch: ${{ steps.version.outputs.arch }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # tags needed so build-pkg.sh can derive the version
+          fetch-depth: 0 # full history and tags, as the release build always had
+          persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26"
           check-latest: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: web/.nvmrc
           cache: npm
@@ -29,6 +41,20 @@ jobs:
 
       - name: Install librsvg (icon rendering)
         run: brew install librsvg
+
+      # build-app.sh builds for the runner's own architecture, Apple silicon
+      # only. verify-pkg.sh fails the release unless every program in the
+      # package is arm64 and nothing else, so a runner change can never publish
+      # a package under a wrong architecture name.
+      - name: Read the version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          {
+            echo "version=${TAG#v}"
+            echo "arch=arm64"
+          } >> "$GITHUB_OUTPUT"
 
       # A tag push does not trigger ci.yml (branches/PRs only), so gate the
       # release on the (deterministic) test suite here — never release a broken
@@ -45,10 +71,124 @@ jobs:
         # package is the only build that carries a real version number.
         env:
           DISPATCHQ_VERSION: ${{ github.ref_name }}
-        run: ./scripts/build-pkg.sh dist
+        run: ./scripts/build-pkg.sh dist/macos
+
+      - name: Verify the installer package
+        run: scripts/verify-pkg.sh "${{ steps.version.outputs.arch }}" "${{ steps.version.outputs.version }}" "$GITHUB_SHA" dist/macos
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-macos-${{ steps.version.outputs.arch }}
+          path: |
+            dist/macos/dispatchq-*.pkg
+            dist/macos/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  # One runner per architecture: build-windows.sh stages the web UI and its
+  # payload inside the checkout, so the two builds never share one.
+  windows:
+    name: windows (${{ matrix.label }})
+    # Cross-compiled from macOS with the toolchains the pull request builds use:
+    # Homebrew's mingw-w64 for x64, the pinned llvm-mingw release for ARM64.
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            label: x64
+          - arch: arm64
+            label: arm64
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+          check-latest: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install build tools
+        run: |
+          tools="makensis librsvg imagemagick"
+          if [ "${{ matrix.arch }}" = amd64 ]; then tools="$tools mingw-w64"; fi
+          # shellcheck disable=SC2086 # word splitting is intended
+          brew install $tools
+
+      # The script verifies the llvm-mingw download's checksum; the cache only
+      # saves the fetch.
+      - name: Read the pinned llvm-mingw release
+        if: matrix.arch == 'arm64'
+        id: llvm
+        run: echo "release=$(sed -n 's/^LLVM_MINGW_RELEASE=//p' scripts/build-windows.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache llvm-mingw
+        if: matrix.arch == 'arm64'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/windows/cache/toolchains
+          key: llvm-mingw-${{ steps.llvm.outputs.release }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build the installer
+        env:
+          DISPATCHQ_VERSION: ${{ github.ref_name }}
+        run: scripts/build-windows.sh --arch "${{ matrix.arch }}" "dist/windows-${{ matrix.label }}"
+
+      - name: Verify the installer
+        env:
+          TAG: ${{ github.ref_name }}
+        run: scripts/windows/verify-build.sh "${{ matrix.arch }}" "${TAG#v}" "$GITHUB_SHA" "dist/windows-${{ matrix.label }}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-windows-${{ matrix.label }}
+          path: |
+            dist/windows-${{ matrix.label }}/dispatchq-*.exe
+            dist/windows-${{ matrix.label }}/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.macos.outputs.version }}
+      MAC_ARCH: ${{ needs.macos.outputs.arch }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: artifacts
+
+      # Exactly the three expected installers, each matching the checksum its
+      # build recorded; anything else stops the release before it exists.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+          persist-credentials: false
+
+      - name: Check the installers
+        run: src/scripts/release-assets.sh "$VERSION" "$MAC_ARCH" artifacts release
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/dispatchq-*.pkg
+          files: |
+            release/dispatchq-${{ needs.macos.outputs.version }}-macos-${{ needs.macos.outputs.arch }}.pkg
+            release/dispatchq-${{ needs.macos.outputs.version }}-windows-x64-beta.exe
+            release/dispatchq-${{ needs.macos.outputs.version }}-windows-arm64-beta.exe
+          fail_on_unmatched_files: true
           generate_release_notes: true

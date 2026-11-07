@@ -144,8 +144,10 @@ The nightly cycle looks like this:
 
 ## Install
 
-1. Download the latest `dispatchq-<version>.pkg` from the
-   [Releases](https://github.com/danielmaier42/dispatchq-app/releases) page.
+1. Download the latest `dispatchq-<version>-macos-arm64.pkg` from the
+   [Releases](https://github.com/danielmaier42/dispatchq-app/releases) page
+   (older releases name it `dispatchq-<version>.pkg`). It runs on Apple silicon
+   Macs only; there is no Intel build.
 2. Open it and follow the installer.
 
 The package installs **DispatchQ** to `/Applications`, sets up a per-user
@@ -202,11 +204,16 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/dispa
 ## Windows (beta)
 
 There is a native Windows beta for x64 and ARM64 PCs. It needs no WSL. It is
-**not published**: releases and the website offer only the macOS installer. Every
-CI run builds both installers for beta testing and keeps them as workflow
-artifacts of that run (`DispatchQ-<version>-windows-<x64|arm64>`, kept 14 days,
-for signed-in GitHub users), never as release assets. Or build the installer
-yourself on a Mac (or Linux) and copy it over:
+**not published yet**: no release so far carries a Windows installer. From the
+next release on, every release attaches both Windows installers next to the
+macOS one, under the release's own version:
+`dispatchq-<version>-windows-x64-beta.exe` and
+`dispatchq-<version>-windows-arm64-beta.exe`. Only the file name marks them as
+beta; the version number and the release are the same as for macOS. Until then,
+every CI run builds both installers for beta testing and keeps them as workflow
+artifacts of that run (`dispatchq-<version>-windows-<x64|arm64>-beta`, kept 14
+days, for signed-in GitHub users). Or build the installer yourself on a Mac (or
+Linux) and copy it over:
 
 ```sh
 brew install mingw-w64 makensis librsvg imagemagick   # once
@@ -214,7 +221,7 @@ scripts/build-windows.sh                              # x64, writes dist/windows
 scripts/build-windows.sh --arch arm64                 # ARM64, writes dist/windows-arm64/
 ```
 
-That produces `DispatchQ-<version>-windows-<x64|arm64>-setup.exe`, a
+That produces `dispatchq-<version>-windows-<x64|arm64>-beta.exe`, a
 `SHA256SUMS` file and a `BUILD-INFO.json` naming the source commit and
 toolchain. The ARM64 build needs [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
 for the window's C++ part; on a Mac the script downloads the pinned official
@@ -334,7 +341,7 @@ on Windows at all (see [docs/windows/PLAN.md](docs/windows/PLAN.md) for the veri
 DispatchQ was called **ClaudeQ** up to version 1.x. Version 2.0 renames the
 app, the binaries and everything they write, and moves an existing
 installation over on its own. Update as usual, from the update banner or by
-opening the new `dispatchq-<version>.pkg`; the GitHub repository keeps its old
+opening the new release's `.pkg`; the GitHub repository keeps its old
 name for now, so updates keep arriving from the same place.
 
 What the update does:
@@ -2259,9 +2266,9 @@ Requires Go 1.26+, Node.js 22+ with npm (for the web UI) and `librsvg`
 
 ```sh
 scripts/build-app.sh    # build/DispatchQ.app          (double-click or `open` it)
-scripts/build-pkg.sh    # dist/dispatchq-<version>.pkg  (installer)
+scripts/build-pkg.sh    # dist/dispatchq-<version>-macos-arm64.pkg  (installer)
 make web                # only the web UI, into internal/api/web
-scripts/build-windows.sh  # dist/windows/…-setup.exe  (local Windows beta build, see above)
+scripts/build-windows.sh  # dist/windows/…-windows-x64-beta.exe  (local Windows beta build, see above)
 ```
 
 The daemon embeds the web UI when it is compiled, so build the UI first
@@ -2273,7 +2280,9 @@ run `npm run dev` in `web/` (it proxies `/api` to `127.0.0.1:10765`, or to
 Run the same quality gates CI enforces with `make check` (format, vet, lint,
 race tests, and the web UI's typecheck, lint and tests). Releases are built automatically: pushing a `v*` tag runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the
-universal `.pkg` on macOS and attaches it to the GitHub Release.
+Apple silicon `.pkg` and both Windows beta installers, checks each one's file
+name, architecture, version and source commit, and publishes the GitHub Release
+only when all three succeeded.
 
 ## Architecture
 
@@ -2296,7 +2305,7 @@ verification notes are in [PLAN.md](PLAN.md).
 
 ## Requirements
 
-- macOS 12 or newer
+- macOS 12 or newer on an Apple silicon Mac
 - The [Claude Code](https://claude.com/claude-code) CLI, installed and
   authenticated
 - Optionally the [Codex](https://learn.chatgpt.com/docs/developer-commands?surface=cli)

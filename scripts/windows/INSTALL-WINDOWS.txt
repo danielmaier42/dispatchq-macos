@@ -1,11 +1,12 @@
-DispatchQ for Windows (beta, not published)
-=====================================================
+DispatchQ for Windows (beta)
+============================
 
 What this is
   A first native Windows edition of DispatchQ: the same dashboard and queue as the
   Mac app, in a WebView2 window, with the same daemon running in your signed-in
-  session. It has not been published and has had little testing on real Windows
-  machines. Keep the macOS app as the reference.
+  session. It has had little testing on real Windows machines. Keep the macOS app
+  as the reference. Releases attach it as a beta next to the macOS installer, with
+  the same version number; "beta" is only in the file name.
 
 Requirements
   - Windows 11 on an x64 PC: the x64 installer.
@@ -31,7 +32,7 @@ Requirements
     and signed in inside Linux.
 
 Install
-  1. Double-click DispatchQ-<version>-windows-<x64|arm64>-setup.exe. No administrator rights
+  1. Double-click dispatchq-<version>-windows-<x64|arm64>-beta.exe. No administrator rights
      are needed; it installs for your user under %LOCALAPPDATA%\Programs\DispatchQ.
   2. Windows SmartScreen will warn that the publisher is unknown (the installer is not
      signed). Choose "More info", then "Run anyway".
@@ -115,6 +116,6 @@ First-start checklist
   [ ] Report anything that fails, with %APPDATA%\dispatchq\dispatchqd.log.
 
 Verify the download
-  Compare the SHA-256 of the installer with SHA256SUMS next to it:
-    Get-FileHash .\DispatchQ-<version>-windows-<x64|arm64>-setup.exe -Algorithm SHA256
+  A CI or locally built installer comes with SHA256SUMS; compare its SHA-256:
+    Get-FileHash .\dispatchq-<version>-windows-<x64|arm64>-beta.exe -Algorithm SHA256
   BUILD-INFO.json next to it names the source commit and the architecture.

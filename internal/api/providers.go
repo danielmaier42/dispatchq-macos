@@ -98,7 +98,9 @@ func (s *server) views(ctx context.Context, set provider.Set, only string, fresh
 			caps, desc := ad.Capabilities(), ad.Describe()
 			v.ReasoningEffort, v.Asides = caps.ReasoningEffort, caps.Asides
 			v.TypeName, v.DefaultConfigDir = desc.Name, desc.DefaultConfigDir
-			if inst.BinaryPath == "" {
+			// Detection looks at this computer, so it describes a native
+			// instance only; a Linux one is found by the dialog's Find.
+			if inst.BinaryPath == "" && inst.Execution.IsNative() {
 				v.Detected = ad.DetectBinary()
 			}
 		}
@@ -157,6 +159,10 @@ type providerInput struct {
 	// leaves the stored ones alone; a list replaces them, so a variable left out
 	// is removed.
 	Env *[]envInput `json:"env"`
+	// Execution is where the instance runs. Absent is this computer. It is
+	// chosen when the instance is created; an update may repeat it but not
+	// change it.
+	Execution *provider.Execution `json:"execution"`
 }
 
 // envInput is one variable of that list. A missing value keeps the one already
@@ -209,6 +215,9 @@ func (s *server) addProvider(w http.ResponseWriter, r *http.Request) {
 		FallbackModel:    in.FallbackModel,
 		Enabled:          in.Enabled == nil || *in.Enabled,
 	}
+	if in.Execution != nil {
+		inst.Execution = *in.Execution
+	}
 	if inst.Name == "" {
 		inst.Name = inst.ID
 	}
@@ -240,6 +249,9 @@ func (s *server) updateProvider(w http.ResponseWriter, r *http.Request) {
 	err := app.EditProvider(s.d.Store, s.d.Registry, id, func(inst *provider.Instance) error {
 		if in.Kind != "" && provider.Kind(in.Kind) != inst.Kind {
 			return errors.New("a provider's kind cannot be changed; remove it and add a new one")
+		}
+		if in.Execution != nil && *in.Execution != inst.Execution {
+			return fmt.Errorf("provider %q runs in %s; that cannot be changed. To run in another environment, add a new provider", inst.ID, inst.Execution.Label())
 		}
 		inst.Name = in.Name
 		if inst.Name == "" {

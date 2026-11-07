@@ -389,3 +389,59 @@ func TestResolveBackfill(t *testing.T) {
 		})
 	}
 }
+
+// A member or fallback that cannot open the task's folder is stepped over,
+// whatever its rank, and a pool member that holds the session is not resumed
+// there. The note says why.
+func TestUnreachableFolderStepsOverMembersAndFallbacks(t *testing.T) {
+	set, _ := poolSet(t)
+	limits := limitsOf(map[string]Limits{
+		"max":  reading(20, 10, 40, 5*24*time.Hour),
+		"team": reading(5, 10, 90, 4*time.Hour), // ranks first when reachable
+	})
+	unreachable := errors.New("other distribution")
+	av := Availability{
+		Limits:  limits,
+		Now:     func() time.Time { return poolNow },
+		Reaches: func(inst Instance) error { return map[string]error{"team": unreachable}[inst.ID] },
+	}
+	for _, sel := range []Selection{{PoolID: "claude-pool"}, {PoolID: "claude-pool", Prefer: "team"}, {PoolID: "claude-pool", Backfill: true}} {
+		res, err := set.ResolveAvailable(sel, av)
+		if sel.Backfill {
+			if err == nil && res.Instance.ID == "team" {
+				t.Fatalf("backfill went to the unreachable member")
+			}
+			continue
+		}
+		if err != nil || res.Instance.ID != "max" {
+			t.Fatalf("%+v: resolved %+v, %v; want max", sel, res, err)
+		}
+	}
+	scores := RankPool(set, set.Pools()[0], av.rankInputs())
+	for _, sc := range scores {
+		if sc.ProviderID == "team" && !strings.Contains(sc.Note, "can't reach this task's folder") {
+			t.Errorf("team note = %q", sc.Note)
+		}
+	}
+
+	// A rate-limit fallback into an environment that cannot reach the folder is
+	// not taken; the task waits on its own provider instead.
+	fb, err := NewSet("a", []Instance{
+		{ID: "a", Kind: KindClaudeCode, Enabled: true, FallbackProvider: "b"},
+		{ID: "b", Kind: KindClaudeCode, Enabled: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	av = Availability{
+		OutOfAllowance: func(id string) bool { return id == "a" },
+		Reaches:        func(inst Instance) error { return map[string]error{"b": unreachable}[inst.ID] },
+	}
+	if res, _ := fb.ResolveAvailable(Selection{ProviderID: "a"}, av); res.Instance.ID != "a" || res.Substituted() {
+		t.Fatalf("fallback crossed into an unreachable environment: %+v", res)
+	}
+	av.Reaches = nil
+	if res, _ := fb.ResolveAvailable(Selection{ProviderID: "a"}, av); res.Instance.ID != "b" {
+		t.Fatalf("reachable fallback not taken: %+v", res)
+	}
+}

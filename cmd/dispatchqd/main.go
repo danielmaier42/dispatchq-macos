@@ -29,6 +29,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/assistant"
 	"github.com/danielmaier42/claudeq/internal/clock"
 	"github.com/danielmaier42/claudeq/internal/engine"
+	"github.com/danielmaier42/claudeq/internal/execenv"
 	"github.com/danielmaier42/claudeq/internal/executor"
 	"github.com/danielmaier42/claudeq/internal/feedback"
 	"github.com/danielmaier42/claudeq/internal/limit"
@@ -157,6 +158,13 @@ func cmdRun(args []string) error {
 	// job, and is shared with the API so the dashboard's polling costs no extra
 	// processes.
 	registry := adapters.Default()
+	// DispatchQ for Windows can run a provider inside WSL. Installing the
+	// service starts nothing; wsl.exe runs only for an instance configured to
+	// run there, so a native-only setup never touches WSL.
+	if svc := execenv.Platform(home); svc != nil {
+		registry.SetWSL(svc)
+		go reapWSL(st, registry)
+	}
 	// Runs from before dispatchq kept the model the harness reported get it
 	// read back out of their logs, so usage splits by the model that ran.
 	if _, err := provider.BackfillReportedModels(st, registry); err != nil {
@@ -453,4 +461,31 @@ func resolveQueueBin() string {
 		return cand
 	}
 	return ""
+}
+
+// reapWSL stops Linux process trees an earlier daemon of this installation
+// left behind in WSL, when that daemon died so abruptly that its helpers could
+// not stop them and their liveness lease did not either (the helper itself
+// was killed). It asks only the distributions and users a configured provider
+// runs in, and the helper there touches only this installation's records whose
+// helper is provably gone.
+func reapWSL(st *store.Store, reg *provider.Registry) {
+	set, err := app.Providers(st)
+	if err != nil {
+		return
+	}
+	svc := reg.WSL()
+	seen := map[provider.Execution]bool{}
+	for _, inst := range set.All() {
+		e := inst.Execution
+		if e.Type != provider.ExecWSL || seen[e] || !inst.Enabled {
+			continue
+		}
+		seen[e] = true
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		if err := svc.Reap(ctx, e); err != nil {
+			fmt.Fprintf(os.Stderr, "dispatchqd: cleaning up after earlier runs in %s: %v\n", e.Label(), err)
+		}
+		cancel()
+	}
 }

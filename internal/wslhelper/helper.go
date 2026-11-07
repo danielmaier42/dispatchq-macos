@@ -364,7 +364,7 @@ func (h *Helper) baseEnv(login bool) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), loginEnvTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, h.loginShell(), "-ilc", loginEnvScript) //nolint:gosec // the user's own shell with a fixed script
-	cmd.Stdin = nil                                                        // /dev/null: the control channel is never the shell's input
+	cmd.Stdin = nil                                                         // /dev/null: the control channel is never the shell's input
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {

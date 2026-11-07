@@ -12,6 +12,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/danielmaier42/claudeq/internal/clock"
+	"github.com/danielmaier42/claudeq/internal/execenv"
 	"github.com/danielmaier42/claudeq/internal/executor"
 	"github.com/danielmaier42/claudeq/internal/limit"
 	"github.com/danielmaier42/claudeq/internal/notify"
@@ -462,7 +464,7 @@ func (e *Engine) assign(ctx context.Context, set provider.Set, due []task.Task, 
 		}
 		sel := selectionFor(t, st)
 		sel.Backfill, sel.MinUrgency = t.Backfill, backfill
-		res, err := set.ResolveAvailable(sel, av)
+		res, err := set.ResolveAvailable(sel, withFolder(av, t))
 		if errors.Is(err, provider.ErrNoSpare) {
 			// Waiting for spare allowance is the normal state of backfill work,
 			// not a provider problem worth announcing.
@@ -541,6 +543,17 @@ func (e *Engine) availability(ctx context.Context) provider.Availability {
 		},
 		Now: e.clock.Now,
 	}
+}
+
+// withFolder narrows av to the instances that can open t's folder, so a pool
+// or a fallback never hands the task to an environment that cannot reach it
+// (a native Windows instance and a Linux path, or a WSL instance and a folder
+// in another distribution). The provider a task names directly is not
+// replaced; its run fails with the reason instead.
+func withFolder(av provider.Availability, t task.Task) provider.Availability {
+	dir := t.WorkingDir
+	av.Reaches = func(inst provider.Instance) error { return execenv.CanReach(inst.Execution, dir, runtime.GOOS) }
+	return av
 }
 
 // inheritedProvider is the instance a job queued by this run should inherit
@@ -680,7 +693,7 @@ func (h providerHealth) reason(res provider.Resolved) string {
 // it may run under, or why it may not. It is the single-task form of
 // refreshProviderHealth, for the manual "run now".
 func (e *Engine) resolveRunnable(ctx context.Context, set provider.Set, st *store.State, t task.Task) (provider.Resolved, error) {
-	res, err := set.ResolveAvailable(selectionFor(t, st), e.availability(ctx))
+	res, err := set.ResolveAvailable(selectionFor(t, st), withFolder(e.availability(ctx), t))
 	if err != nil {
 		return provider.Resolved{}, err
 	}

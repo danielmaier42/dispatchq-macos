@@ -18,6 +18,7 @@ import (
 	"github.com/danielmaier42/claudeq/internal/app"
 	"github.com/danielmaier42/claudeq/internal/clock"
 	"github.com/danielmaier42/claudeq/internal/engine"
+	"github.com/danielmaier42/claudeq/internal/execenv"
 	"github.com/danielmaier42/claudeq/internal/executor"
 	"github.com/danielmaier42/claudeq/internal/limit"
 	"github.com/danielmaier42/claudeq/internal/provider"
@@ -298,7 +299,20 @@ func cmdAdd(st *store.Store, args []string) error {
 // newProviderChecker builds the readiness checker the task commands use. It is
 // a variable so tests can answer for a harness that is not installed on the
 // machine running them.
-var newProviderChecker = func() *provider.Checker { return provider.NewChecker(adapters.Default()) }
+var newProviderChecker = func() *provider.Checker { return provider.NewChecker(cliRegistry()) }
+
+// cliRegistry is the adapter registry of a CLI command. DispatchQ for Windows
+// adds its WSL service, which starts nothing unless a WSL provider is
+// configured; everywhere else the registry knows native providers only.
+func cliRegistry() *provider.Registry {
+	reg := adapters.Default()
+	if home, err := store.DefaultHome(); err == nil {
+		if svc := execenv.Platform(home); svc != nil {
+			reg.SetWSL(svc)
+		}
+	}
+	return reg
+}
 
 // ensureRunnable refuses to file work for a provider (or a pool none of whose
 // members) can run it. The point of the queue is unattended execution, so a
@@ -726,7 +740,7 @@ func cmdMove(st *store.Store, args []string) error {
 // inhibitor like the daemon's engine, so a long `dispatchq run-now` is not
 // frozen by idle sleep when the user walks away.
 func newRunNowEngine(st *store.Store, c clock.Clock, queueBin string) *engine.Engine {
-	registry := adapters.Default()
+	registry := cliRegistry()
 	eng := engine.New(st, limit.NewGates(c), &executor.Executor{
 		Registry: registry, Home: st.Home(), QueueBin: queueBin,
 	}, c, provider.NewChecker(registry))

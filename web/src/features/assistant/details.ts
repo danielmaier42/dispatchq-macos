@@ -6,7 +6,7 @@ import type {AssistantTaskDraft} from '@/lib/types'
 // approval, `dispatchq notify` included, is refused unless the provider's allow
 // rules already permit it. The card says so, so the operator can choose before
 // a run fails instead of finding out from it.
-export const PERMISSIONS_DEFAULT_LABEL = 'Provider rules: commands not already allowed are refused'
+export const PERMISSIONS_DEFAULT_LABEL = 'Only commands the provider allows'
 export const PERMISSIONS_SKIP_LABEL = 'May do anything'
 
 // taskDetailRows lists what a task proposal sets: the whole job for a new one
